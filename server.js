@@ -1,32 +1,29 @@
+/* ================= IMPORTS ================= */
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const cors = require('cors');
 const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
-const MongoStore = require('connect-mongo');
 
 const app = express();
 
+/* ================= MIDDLEWARE ================= */
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const mongoUrl = process.env.MONGODB_URI || 'mongodb://localhost:27017/test';
-const store = new MongoStore({ mongoUrl, collectionName: 'sessions' });
-
 app.use(session({
   secret: 'transfert-secret',
   resave: false,
-  saveUninitialized: false,
-  store,
-  cookie: { maxAge: 1000 * 60 * 60 * 24 }
+  saveUninitialized: false
 }));
 
-mongoose.connect(mongoUrl)
+/* ================= MONGODB ================= */
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test')
   .then(() => console.log('✅ MongoDB connecté'))
   .catch(console.error);
 
+/* ================= SCHEMAS ================= */
 const userSchema = new mongoose.Schema({
   senderFirstName: String,
   senderLastName: String,
@@ -56,11 +53,13 @@ const authUserSchema = new mongoose.Schema({
 });
 const AuthUser = mongoose.model('AuthUser', authUserSchema);
 
+/* ================= MIDDLEWARE AUTH ================= */
 function requireLogin(req, res, next){
   if(req.session.userId) return next();
   res.redirect('/login');
 }
 
+/* ================= AUTH ================= */
 app.get('/login', (req,res) => {
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔑 Connexion</h2>
@@ -111,6 +110,7 @@ app.get('/logout', (req,res) => {
   res.redirect('/login');
 });
 
+/* ================= FORMULAIRE /users ================= */
 app.get('/users', requireLogin, (req,res)=>{
   if(!req.session.formAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
@@ -128,6 +128,7 @@ app.post('/auth/form',(req,res)=>{
   res.redirect('/users/choice');
 });
 
+/* ================= AUTH LIST ================= */
 app.post('/auth/list', requireLogin, (req, res) => {
   const code = req.body.code;
   if (code === '147') {
@@ -141,6 +142,7 @@ app.post('/auth/list', requireLogin, (req, res) => {
   }
 });
 
+/* ================= PAGE CHOIX ================= */
 app.get('/users/choice', requireLogin, (req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   res.send(`<html>
@@ -159,10 +161,12 @@ button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;borde
 </body></html>`);
 });
 
+/* ================= LOOKUP ================= */
 app.get('/users/lookup', requireLogin, (req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const mode = req.query.mode || 'edit';
   req.session.choiceMode = mode;
+
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px;background:#eef2f7">
 <h3>📞 Numéro expéditeur</h3>
 <form method="post" action="/users/lookup">
@@ -175,6 +179,7 @@ app.get('/users/lookup', requireLogin, (req,res)=>{
 app.post('/users/lookup', requireLogin, async (req,res)=>{
   const u = await User.findOne({ senderPhone:req.body.phone }).sort({ createdAt: -1 });
   req.session.prefill = u || { senderPhone: req.body.phone };
+
   if(req.session.choiceMode === 'new') req.session.editId = null;
   else if(u) req.session.editId = u._id;
   else if(req.session.choiceMode === 'edit') req.session.editId = null;
@@ -190,14 +195,17 @@ app.post('/users/lookup', requireLogin, async (req,res)=>{
 Aucun transfert trouvé pour ce numéro<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
     }
   }
+
   res.redirect('/users/form');
 });
 
+/* ================= FORMULAIRE /users/form ================= */
 app.get('/users/form', requireLogin, (req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const u = req.session.prefill || {};
   const isEdit = !!req.session.editId;
   const locations = ['France','Labé','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+
   res.send(`<!DOCTYPE html>
 <html>
 <head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -286,6 +294,7 @@ function cancelTransfer(){
 </body></html>`);
 });
 
+/* ================= CRUD ================= */
 app.post('/users', requireLogin, async (req,res)=>{
   const code=Math.floor(100000+Math.random()*900000).toString();
   await new User({...req.body, code,status:'actif'}).save();
@@ -306,19 +315,20 @@ app.post('/users/delete', requireLogin, async (req,res)=>{
   res.json({message:'❌ Transfert supprimé'});
 });
 
+/* ================= RETRAIT ================= */
 app.post('/users/retirer', requireLogin, async (req,res)=>{
-  const {id, mode} = req.body;
-  if(!["Espèces","Orange Money","Produit","Service"].includes(mode))
-    return res.status(400).json({message:"Mode invalide"});
+  const {id,mode} = req.body;
+  if(!["Espèces","Orange Money","Produit","Service"].includes(mode)) return res.status(400).json({message:"Mode invalide"});
   const user = await User.findById(id);
   if(!user) return res.status(404).json({message:"Transfert introuvable"});
   user.recoveryMode = mode;
-  user.retraitHistory.push({date: new Date(), mode});
+  user.retraitHistory.push({date:new Date(), mode});
   user.retired = true;
   await user.save();
   res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
 });
 
+/* ================= LISTE /users/all ================= */
 app.get('/users/all', requireLogin, async (req,res)=>{
   if(!req.session.listAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
@@ -328,6 +338,7 @@ app.get('/users/all', requireLogin, async (req,res)=>{
 <button>Valider</button>
 </form></body></html>`);
   }
+
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
   const grouped = {};
   let totalAmount = 0, totalRecovery = 0, totalFees = 0;
@@ -371,4 +382,62 @@ for(let dest in grouped){
   list.forEach(u=>{
     const isRetired = u.retired;
     subAmount += (u.amount||0); subRecovery += (u.recoveryAmount||0); subFees += (u.fees||0);
-    html += `<tr class="${isRetired
+    html += `<tr class="${isRetired?'retired':''}">
+<td>${u.senderFirstName||''} ${u.senderLastName||''}</td>
+<td>${u.senderPhone||''}</td>
+<td class="origin">${u.originLocation||''}</td>
+<td>${u.amount||0}</td>
+<td>${u.fees||0}</td>
+<td>${u.receiverFirstName||''} ${u.receiverLastName||''}</td>
+<td>${u.receiverPhone||''}</td>
+<td class="dest">${u.destinationLocation||''}</td>
+<td>${u.recoveryAmount||0}</td>
+<td>${u.code||''}</td>
+<td>${u.createdAt?new Date(u.createdAt).toLocaleString():''}</td>
+<td>${isRetired?'Montant retiré':`<button class="retirer" onclick="retirer('${u._id}',this.parentElement.parentElement)">💰 Retirer</button>`}</td>
+</tr>`;
+  });
+  html += `<tr class="sub"><td colspan="3">Sous-total ${dest}</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="2"></td><td></td></tr></table>`;
+}
+
+html += `<table><tr class="total"><td colspan="3">TOTAL GÉNÉRAL</td><td>${totalAmount}</td><td>${totalFees}</td><td colspan="2"></td><td></td><td>${totalRecovery}</td><td colspan="2"></td><td></td></tr></table>
+<script>
+async function retirer(id,row){
+  const mode = prompt('Mode de retrait: Espèces / Orange Money / Produit / Service');
+  if(!mode) return;
+  const res = await fetch('/users/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});
+  const data = await res.json();
+  alert(data.message);
+  row.classList.add('retired');
+  row.querySelector('button.retirer').outerHTML='Montant retiré';
+}
+</script></body></html>`;
+
+res.send(html);
+});
+
+/* ================= EXPORT PDF ================= */
+app.get('/users/export/pdf', requireLogin, async (req,res)=>{
+  const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
+  const doc = new PDFDocument({margin:30, size:'A4'});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','attachment;filename=transferts.pdf');
+  doc.pipe(res);
+
+  doc.fontSize(18).text('Liste des transferts', {align:'center'});
+  doc.moveDown();
+
+  users.forEach(u=>{
+    doc.fontSize(12).text(`Expéditeur: ${u.senderFirstName} ${u.senderLastName} | Tél: ${u.senderPhone} | Origine: ${u.originLocation} | Montant: ${u.amount} | Frais: ${u.fees}`);
+    doc.text(`Destinataire: ${u.receiverFirstName} ${u.receiverLastName} | Tél: ${u.receiverPhone} | Destination: ${u.destinationLocation}`);
+    doc.text(`Montant reçu: ${u.recoveryAmount} | Mode: ${u.recoveryMode} | Code: ${u.code}`);
+    doc.text(`Date: ${u.createdAt ? new Date(u.createdAt).toLocaleString() : ''}`);
+    doc.moveDown();
+  });
+
+  doc.end();
+});
+
+/* ================= SERVEUR RENDER-SAFE ================= */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
