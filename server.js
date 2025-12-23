@@ -2,7 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
+const MongoStore = require('connect-mongo')(session); // <- version <4
 const cors = require('cors');
 const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
@@ -19,20 +19,20 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test')
   .then(() => console.log('✅ MongoDB connecté'))
   .catch(console.error);
 
-/* ================= SESSION (PRODUCTION SAFE) ================= */
+/* ================= SESSION (Render-safe v3) ================= */
 app.use(session({
   name: 'transfert.sid',
   secret: process.env.SESSION_SECRET || 'transfert-secret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/test',
-    collectionName: 'sessions'
+  store: new MongoStore({
+    url: process.env.MONGODB_URI || 'mongodb://localhost:27017/test',
+    collection: 'sessions'
   }),
   cookie: {
     httpOnly: true,
     secure: false,
-    maxAge: 1000 * 60 * 60 * 12
+    maxAge: 1000 * 60 * 60 * 12 // 12h
   }
 }));
 
@@ -117,6 +117,7 @@ app.get('/users/all', requireLogin, async (req,res)=>{
   table{width:95%;margin:auto;border-collapse:collapse}
   td,th{border:1px solid #ccc;padding:6px;text-align:center}
   tr.retired{background:orange}
+  select{padding:5px}
   </style></head><body>
   <h2 style="text-align:center">📋 Transferts</h2>
   <table>
