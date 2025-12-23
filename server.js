@@ -20,202 +20,196 @@ app.use(session({
 
 /* ================= MONGODB ================= */
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test')
-  .then(() => console.log('✅ MongoDB connecté'))
-  .catch(console.error);
+.then(()=>console.log('✅ MongoDB connecté'))
+.catch(console.error);
 
 /* ================= SCHEMAS ================= */
 const userSchema = new mongoose.Schema({
-  senderFirstName: String,
-  senderLastName: String,
-  senderPhone: String,
-  originLocation: String,
-  amount: Number,
-  fees: Number,
-  feePercent: Number,
-  receiverFirstName: String,
-  receiverLastName: String,
-  receiverPhone: String,
-  destinationLocation: String,
-  recoveryAmount: Number,
-  recoveryMode: String,
-  code: String,
-  status: { type: String, default: 'actif' },
-  retraitHistory: [{ date: Date, mode: String }],
-  retired: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
+  senderFirstName:String,
+  senderLastName:String,
+  senderPhone:String,
+  originLocation:String,
+  amount:Number,
+  fees:Number,
+  feePercent:Number,
+  receiverFirstName:String,
+  receiverLastName:String,
+  receiverPhone:String,
+  destinationLocation:String,
+  recoveryAmount:Number,
+  recoveryMode:String,
+  code:String,
+  status:{type:String,default:'actif'},
+  retraitHistory:[{date:Date,mode:String}],
+  retired:{type:Boolean,default:false},
+  createdAt:{type:Date,default:Date.now}
 });
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model('User',userSchema);
 
 const authUserSchema = new mongoose.Schema({
-  username: { type: String, unique: true },
-  password: String,
-  createdAt: { type: Date, default: Date.now }
+  username:{type:String,unique:true},
+  password:String,
+  createdAt:{type:Date,default:Date.now}
 });
-const AuthUser = mongoose.model('AuthUser', authUserSchema);
+const AuthUser = mongoose.model('AuthUser',authUserSchema);
 
-/* ================= MIDDLEWARE AUTH ================= */
+/* ================= AUTH MIDDLEWARE ================= */
 function requireLogin(req,res,next){
   if(req.session.userId) return next();
   res.redirect('/login');
 }
 
 /* ================= AUTH ================= */
-app.get('/login', (req,res) => {
-  res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
+app.get('/login',(req,res)=>{
+res.send(`
+<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔑 Connexion</h2>
-<form method="post" action="/login">
-<input type="text" name="username" placeholder="Nom d'utilisateur" required><br><br>
+<form method="post">
+<input name="username" placeholder="Utilisateur" required><br><br>
 <input type="password" name="password" placeholder="Mot de passe" required><br><br>
 <button>Connexion</button>
 </form>
-<p>Pas de compte ? <a href="/register">Créer un compte</a></p>
-</body></html>`);
+<a href="/register">Créer un compte</a>
+</body></html>
+`);
 });
 
-app.post('/login', async (req,res) => {
-  const { username, password } = req.body;
-  const user = await AuthUser.findOne({ username });
-  if(!user) return res.send("Utilisateur inconnu");
-  const match = await bcrypt.compare(password, user.password);
-  if(!match) return res.send("Mot de passe incorrect");
-  req.session.userId = user._id;
-  res.redirect('/users/choice');
+app.post('/login',async(req,res)=>{
+const u=await AuthUser.findOne({username:req.body.username});
+if(!u) return res.send("Utilisateur inconnu");
+const ok=await bcrypt.compare(req.body.password,u.password);
+if(!ok) return res.send("Mot de passe incorrect");
+req.session.userId=u._id;
+res.redirect('/users/choice');
 });
 
-app.get('/register', (req,res) => {
-  res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
-<h2>📝 Créer un compte</h2>
-<form method="post" action="/register">
-<input type="text" name="username" placeholder="Nom d'utilisateur" required><br><br>
-<input type="password" name="password" placeholder="Mot de passe" required><br><br>
+app.get('/register',(req,res)=>{
+res.send(`
+<html><body style="font-family:Arial;text-align:center;padding-top:60px">
+<h2>📝 Inscription</h2>
+<form method="post">
+<input name="username" required><br><br>
+<input type="password" name="password" required><br><br>
 <button>Créer</button>
 </form>
-<p>Déjà un compte ? <a href="/login">Se connecter</a></p>
-</body></html>`);
+</body></html>
+`);
 });
 
-app.post('/register', async (req,res) => {
-  const { username, password } = req.body;
-  const hashedPassword = await bcrypt.hash(password,10);
-  try{
-    await new AuthUser({ username, password: hashedPassword }).save();
-    res.send("✅ Compte créé ! <a href='/login'>Se connecter</a>");
-  } catch(err){
-    res.send("Erreur, nom d'utilisateur déjà pris");
-  }
+app.post('/register',async(req,res)=>{
+const hash=await bcrypt.hash(req.body.password,10);
+await new AuthUser({username:req.body.username,password:hash}).save();
+res.redirect('/login');
 });
 
-app.get('/logout', (req,res) => {
-  req.session.destroy();
-  res.redirect('/login');
+app.get('/logout',(req,res)=>{
+req.session.destroy(()=>res.redirect('/login'));
 });
 
-/* ================= FORMULAIRE /users ================= */
-app.get('/users', requireLogin, (req,res)=>{
-  if(!req.session.formAccess){
-    return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
-<h2>🔒 Accès formulaire</h2>
-<form method="post" action="/auth/form">
-<input type="password" name="code" placeholder="Code 123" required><br><br>
-<button>Valider</button>
-</form></body></html>`);
-  }
-  res.redirect('/users/choice');
+/* ================= ACCÈS FORM ================= */
+app.get('/users',requireLogin,(req,res)=>{
+if(!req.session.formAccess){
+return res.send(`
+<form method="post" action="/auth/form" style="text-align:center;margin-top:80px">
+<input type="password" name="code" placeholder="Code 123">
+<button>OK</button>
+</form>
+`);
+}
+res.redirect('/users/choice');
 });
 
 app.post('/auth/form',(req,res)=>{
-  if(req.body.code==='123') req.session.formAccess=true;
-  res.redirect('/users/choice');
+if(req.body.code==='123') req.session.formAccess=true;
+res.redirect('/users/choice');
 });
 
-/* ================= AUTH LIST ================= */
-app.post('/auth/list', requireLogin, (req,res)=>{
-  const code = req.body.code;
-  if(code==='147'){
-    req.session.listAccess=true;
-    res.redirect('/users/all');
-  } else {
-    res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
-<h2>🔒 Code incorrect</h2>
-<a href="/users/all">🔙 Retour</a>
-</body></html>`);
-  }
-});
-
-/* ================= PAGE CHOIX ================= */
-app.get('/users/choice', requireLogin, (req,res)=>{
-  if(!req.session.formAccess) return res.redirect('/users');
-  res.send(`<html>
-<head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body{font-family:Arial;text-align:center;padding-top:40px;background:#eef2f7}
-button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;border-radius:5px;cursor:pointer}
-#new{background:#007bff} #edit{background:#28a745} #delete{background:#dc3545}
-</style></head>
-<body>
-<h2>📋 Gestion des transferts</h2>
-<a href="/users/lookup?mode=new"><button id="new">💾 Nouveau transfert</button></a><br>
-<a href="/users/lookup?mode=edit"><button id="edit">✏️ Modifier transfert</button></a><br>
-<a href="/users/lookup?mode=delete"><button id="delete">❌ Supprimer transfert</button></a><br>
-<br><a href="/logout">🚪 Déconnexion</a>
-</body></html>`);
+/* ================= CHOICE ================= */
+app.get('/users/choice',requireLogin,(req,res)=>{
+res.send(`
+<h2 style="text-align:center">Gestion</h2>
+<div style="text-align:center">
+<a href="/users/lookup?mode=new">Nouveau</a><br>
+<a href="/users/lookup?mode=edit">Modifier</a><br>
+<a href="/users/lookup?mode=delete">Supprimer</a><br>
+<a href="/users/all">Liste</a><br>
+<a href="/logout">Déconnexion</a>
+</div>
+`);
 });
 
 /* ================= LOOKUP ================= */
-app.get('/users/lookup', requireLogin, (req,res)=>{
-  if(!req.session.formAccess) return res.redirect('/users');
-  const mode = req.query.mode || 'edit';
-  req.session.choiceMode = mode;
-
-  res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px;background:#eef2f7">
-<h3>📞 Numéro expéditeur</h3>
-<form method="post" action="/users/lookup">
-<input name="phone" required><br><br>
+app.get('/users/lookup',requireLogin,(req,res)=>{
+req.session.choiceMode=req.query.mode;
+res.send(`
+<form method="post" style="text-align:center;margin-top:60px">
+<input name="phone" placeholder="Téléphone" required>
 <button>Continuer</button>
-</form><br><a href="/users/choice">🔙 Retour</a>
-</body></html>`);
+</form>
+`);
 });
 
-app.post('/users/lookup', requireLogin, async (req,res)=>{
-  const u = await User.findOne({ senderPhone:req.body.phone }).sort({ createdAt:-1 });
-  req.session.prefill = u || { senderPhone:req.body.phone };
-
-  if(req.session.choiceMode==='new') req.session.editId = null;
-  else if(u) req.session.editId = u._id;
-  else if(req.session.choiceMode==='edit') req.session.editId = null;
-  else if(req.session.choiceMode==='delete'){
-    if(u){
-      await User.findByIdAndDelete(u._id);
-      req.session.prefill = null;
-      req.session.editId = null;
-      return res.send(`<html><body style="text-align:center;font-family:Arial;padding-top:50px">
-❌ Transfert supprimé<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
-    } else {
-      return res.send(`<html><body style="text-align:center;font-family:Arial;padding-top:50px">
-Aucun transfert trouvé pour ce numéro<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
-    }
-  }
-  res.redirect('/users/form');
+app.post('/users/lookup',requireLogin,async(req,res)=>{
+const u=await User.findOne({senderPhone:req.body.phone}).sort({createdAt:-1});
+req.session.prefill=u||{senderPhone:req.body.phone};
+req.session.editId=u?u._id:null;
+if(req.session.choiceMode==='delete' && u){
+await User.findByIdAndDelete(u._id);
+return res.redirect('/users/choice');
+}
+res.redirect('/users/form');
 });
 
-/* ================= FORMULAIRE /users/form ================= */
-// ... garder exactement le même code du formulaire que tu avais avant avec calcul recoveryAmount et submit ...
+/* ================= FORM ================= */
+app.get('/users/form',requireLogin,(req,res)=>{
+const u=req.session.prefill||{};
+res.send(`
+<form id="f" style="max-width:500px;margin:auto">
+<input id="senderPhone" value="${u.senderPhone||''}" placeholder="Téléphone"><br>
+<input id="amount" type="number" value="${u.amount||''}" placeholder="Montant"><br>
+<input id="fees" type="number" value="${u.fees||''}" placeholder="Frais"><br>
+<input id="recoveryAmount" readonly><br>
+<button>Enregistrer</button>
+</form>
+<script>
+const a=amount,f=fees,r=recoveryAmount;
+function c(){r.value=(+a.value||0)-(+f.value||0);}
+a.oninput=c;f.oninput=c;c();
+f.onsubmit=async e=>{
+e.preventDefault();
+const res=await fetch('/users',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({senderPhone:senderPhone.value,amount:+a.value,fees:+f.value,recoveryAmount:+r.value})});
+alert((await res.json()).message);
+}
+</script>
+`);
+});
 
 /* ================= CRUD ================= */
-// ... /users, /users/update, /users/delete ...
+app.post('/users',requireLogin,async(req,res)=>{
+const code=Math.random().toString().slice(2,8);
+await new User({...req.body,code}).save();
+res.json({message:'OK code '+code});
+});
 
-/* ================= RETRAIT ================= */
-// ... /users/retirer ...
+/* ================= LIST ================= */
+app.get('/users/all',requireLogin,async(req,res)=>{
+const users=await User.find();
+res.send(users.map(u=>`${u.senderPhone} ${u.amount}`).join('<br>'));
+});
 
-/* ================= LISTE /users/all ================= */
-// ... /users/all avec liste, sous-totaux, bouton retrait et PDF ...
-
-/* ================= EXPORT PDF ================= */
-// ... /users/export/pdf ...
-
-/* ================= REDIRECT /all ================= */
 app.get('/all',(req,res)=>res.redirect('/users/all'));
 
-/* ================= SERVEUR RENDER-SAFE ================= */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
+/* ================= PDF ================= */
+app.get('/users/export/pdf',requireLogin,async(req,res)=>{
+const users=await User.find();
+const doc=new PDFDocument();
+res.setHeader('Content-Type','application/pdf');
+doc.pipe(res);
+users.forEach(u=>doc.text(u.senderPhone+' '+u.amount));
+doc.end();
+});
+
+/* ================= SERVER ================= */
+const PORT=process.env.PORT||3000;
+app.listen(PORT,'0.0.0.0',()=>console.log('🚀 Server '+PORT));
