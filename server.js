@@ -130,24 +130,32 @@ app.post('/auth/form',(req,res)=>{
   res.redirect('/users/choice');
 });
 
+
 /* ================= AUTH LIST ================= */
 app.post('/auth/list', requireLogin, (req, res) => {
   const code = req.body.code;
+
   if (code === '147') {
     req.session.listAccess = true;
-    res.redirect('/users/all');
-  } else {
+    return res.redirect('/users/all');
+  }
 
-if(!req.session.listAccess){
   return res.send(`
-    <form method="post" action="/auth/list">
-      <input type="password" name="code" placeholder="Code 147" required>
-      <button>Valider</button>
-    </form>
-  `);
-}
+    <html>
+    <body style="font-family:Arial;text-align:center;padding-top:60px">
+      <h2>🔒 Code incorrect</h2>
 
-    /*res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">*/
+      <form method="post" action="/auth/list">
+        <input type="password" name="code" placeholder="Code 147" required><br><br>
+        <button>Valider</button>
+      </form>
+
+      <br>
+      <a href="/users/choice">🔙 Retour</a>
+    </body>
+    </html>
+  `);
+});
 
 
 <h2>🔒 Code incorrect</h2>
