@@ -60,10 +60,10 @@ const requireLogin = (req,res,next)=>{
 
 const requireListAccess = (req,res,next)=>{
   if(req.session.listAccess) return next();
-  res.redirect('/users/all');
+  res.redirect('/users/all/code');
 };
 
-/* ================= AUTH ================= */
+/* ================= AUTH ROUTES ================= */
 app.get('/login',(req,res)=>{
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔑 Connexion</h2>
@@ -117,14 +117,14 @@ app.get('/users/choice', requireLogin,(req,res)=>{
 <style>
 body{font-family:Arial;text-align:center;padding-top:40px;background:#eef2f7}
 button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;border-radius:5px;cursor:pointer}
-#new{background:#007bff} #edit{background:#28a745} #delete{background:#dc3545}
+#new{background:#007bff} #edit{background:#28a745} #delete{background:#dc3545} #list{background:#6c757d}
 </style></head>
 <body>
 <h2>📋 Gestion des transferts</h2>
 <a href="/users/lookup?mode=new"><button id="new">💾 Nouveau transfert</button></a><br>
 <a href="/users/lookup?mode=edit"><button id="edit">✏️ Modifier transfert</button></a><br>
 <a href="/users/lookup?mode=delete"><button id="delete">❌ Supprimer transfert</button></a><br>
-<br><a href="/users/all">📋 Liste des transferts</a><br>
+<a href="/users/all"><button id="list">📋 Liste des transferts</button></a><br>
 <br><a href="/logout">🚪 Déconnexion</a>
 </body></html>`);
 });
@@ -216,7 +216,7 @@ ${isEdit?'<button type="button" id="cancel" onclick="cancelTransfer()">❌ Suppr
 const amount = document.getElementById('amount');
 const fees = document.getElementById('fees');
 const recoveryAmount = document.getElementById('recoveryAmount');
-function updateRecoveryAmount(){recoveryAmount.value = (+amount.value||0) - (+fees.value||0);}
+function updateRecoveryAmount(){recoveryAmount.value=(+amount.value||0)-(+fees.value||0);}
 amount.addEventListener('input', updateRecoveryAmount);
 fees.addEventListener('input', updateRecoveryAmount);
 
@@ -253,37 +253,72 @@ fetch('/users/delete',{method:'POST'}).then(()=>location.href='/users/choice');
 
 /* ================= CRUD ================= */
 app.post('/users', requireLogin, async(req,res)=>{
-const code=Math.floor(100000+Math.random()*900000).toString();
-await new User({...req.body,code,status:'actif'}).save();
-res.json({message:'✅ Transfert enregistré | Code '+code});
+  const code = Math.floor(100000 + Math.random()*900000).toString();
+  await new User({...req.body, code, status:'actif'}).save();
+  res.json({message:'✅ Transfert enregistré | Code '+code});
 });
 
 app.post('/users/update', requireLogin, async(req,res)=>{
-await User.findByIdAndUpdate(req.session.editId,req.body);
-req.session.editId=null;
-res.json({message:'✏️ Transfert mis à jour'});
+  if(!req.session.editId) return res.status(400).json({message:'Aucun transfert sélectionné'});
+  await User.findByIdAndUpdate(req.session.editId, req.body);
+  req.session.editId = null;
+  res.json({message:'✏️ Transfert mis à jour'});
 });
 
 app.post('/users/delete', requireLogin, async(req,res)=>{
-await User.findByIdAndDelete(req.session.editId);
-req.session.editId=null;
-res.json({message:'❌ Transfert supprimé'});
+  if(!req.session.editId) return res.status(400).json({message:'Aucun transfert sélectionné'});
+  await User.findByIdAndDelete(req.session.editId);
+  req.session.editId = null;
+  res.json({message:'❌ Transfert supprimé'});
+});
+
+/* ================= RETRAIT ================= */
+app.post('/users/retirer', requireLogin, async(req,res)=>{
+  const {id,mode} = req.body;
+  if(!["Espèces","Orange Money","Produit","Service"].includes(mode)) return res.status(400).json({message:"Mode invalide"});
+  const user = await User.findById(id);
+  if(!user) return res.status(404).json({message:"Transfert introuvable"});
+  user.recoveryMode = mode;
+  user.retraitHistory.push({date:new Date(), mode});
+  user.retired = true;
+  await user.save();
+  res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
+});
+
+/* ================= ACCÈS LISTE ================= */
+app.get('/users/all/code', requireLogin,(req,res)=>{
+  res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
+<h2>🔒 Accès liste</h2>
+<form method="post">
+<input type="password" name="code" placeholder="Code 147" required><br><br>
+<button>Valider</button>
+</form>
+</body></html>`);
+});
+
+app.post('/users/all/code', requireLogin,(req,res)=>{
+  if(req.body.code==='147'){
+    req.session.listAccess=true;
+    return res.redirect('/users/all');
+  }
+  res.send('Code incorrect. <a href="/users/all/code">Réessayer</a>');
 });
 
 /* ================= LISTE ================= */
 app.get('/users/all', requireLogin, requireListAccess, async(req,res)=>{
-const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
-const grouped = {};
-let totalAmount=0, totalRecovery=0, totalFees=0;
-users.forEach(u=>{
-if(!grouped[u.destinationLocation]) grouped[u.destinationLocation]=[];
-grouped[u.destinationLocation].push(u);
-totalAmount+=(u.amount||0);
-totalRecovery+=(u.recoveryAmount||0);
-totalFees+=(u.fees||0);
-});
+  const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
+  const grouped = {};
+  let totalAmount = 0, totalRecovery = 0, totalFees = 0;
+  users.forEach(u=>{
+    if(!grouped[u.destinationLocation]) grouped[u.destinationLocation]=[];
+    grouped[u.destinationLocation].push(u);
+    totalAmount += u.amount||0;
+    totalRecovery += u.recoveryAmount||0;
+    totalFees += u.fees||0;
+  });
 
-let html=`<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+  let html = `<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 body{font-family:Arial;background:#f4f6f9}
 table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:40px}
@@ -302,19 +337,19 @@ button.retirer{padding:5px 10px;border:none;border-radius:4px;background:#28a745
 `;
 
 for(let dest in grouped){
-const list = grouped[dest];
-let subAmount=0,subRecovery=0,subFees=0;
-html+=`<h3 style="text-align:center;color:#007bff">Destination: ${dest}</h3><table>
+  const list = grouped[dest];
+  let subAmount=0, subRecovery=0, subFees=0;
+  html += `<h3 style="text-align:center;color:#007bff">Destination: ${dest}</h3><table>
 <tr>
 <th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th>
 <th>Destinataire</th><th>Tél Dest.</th><th>Destination</th>
 <th>Montant reçu</th><th>Code</th><th>Date</th><th>Action</th>
 </tr>`;
-list.forEach(u=>{
-const isRetired = u.retired;
-subAmount+=(u.amount||0); subRecovery+=(u.recoveryAmount||0); subFees+=(u.fees||0);
-html+=`<tr class="${isRetired?'retired':''}">
+  list.forEach(u=>{
+    const isRetired = u.retired;
+    subAmount += u.amount||0; subRecovery += u.recoveryAmount||0; subFees += u.fees||0;
+    html += `<tr class="${isRetired?'retired':''}">
 <td>${u.senderFirstName||''} ${u.senderLastName||''}</td>
 <td>${u.senderPhone||''}</td>
 <td class="origin">${u.originLocation||''}</td>
@@ -328,57 +363,45 @@ html+=`<tr class="${isRetired?'retired':''}">
 <td>${u.createdAt?new Date(u.createdAt).toLocaleString():''}</td>
 <td>${isRetired?'Montant retiré':`<button class="retirer" onclick="retirer('${u._id}',this.parentElement.parentElement)">💰 Retirer</button>`}</td>
 </tr>`;
-});
-html+=`<tr class="sub"><td colspan="3">Sous-total ${dest}</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="2"></td><td></td></tr></table>`;
+  });
+  html += `<tr class="sub"><td colspan="3">Sous-total ${dest}</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="2"></td><td></td></tr></table>`;
 }
 
-html+=`<table><tr class="total"><td colspan="3">TOTAL GÉNÉRAL</td><td>${totalAmount}</td><td>${totalFees}</td><td colspan="2"></td><td></td><td>${totalRecovery}</td><td colspan="2"></td><td></td></tr></table>
+html += `<table><tr class="total"><td colspan="3">TOTAL GÉNÉRAL</td><td>${totalAmount}</td><td>${totalFees}</td><td colspan="2"></td><td></td><td>${totalRecovery}</td><td colspan="2"></td><td></td></tr></table>
 <script>
 async function retirer(id,row){
-const mode=prompt('Mode de retrait: Espèces / Orange Money / Produit / Service');
-if(!mode) return;
-const res = await fetch('/users/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});
-const data=await res.json();
-alert(data.message);
-row.classList.add('retired');
-row.querySelector('button.retirer').outerHTML='Montant retiré';
+  const mode = prompt('Mode de retrait: Espèces / Orange Money / Produit / Service');
+  if(!mode) return;
+  const res = await fetch('/users/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});
+  const data = await res.json();
+  alert(data.message);
+  row.classList.add('retired');
+  row.querySelector('button.retirer').outerHTML='Montant retiré';
 }
 </script></body></html>`;
-
 res.send(html);
 });
 
-/* ================= RETRAIT ================= */
-app.post('/users/retirer', requireLogin, async(req,res)=>{
-const {id,mode} = req.body;
-const user = await User.findById(id);
-if(!user) return res.status(404).json({message:"Transfert introuvable"});
-user.retired = true;
-user.recoveryMode = mode;
-user.retraitHistory.push({date:new Date(),mode});
-await user.save();
-res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
-});
-
-/* ================= PDF ================= */
+/* ================= EXPORT PDF ================= */
 app.get('/users/export/pdf', requireLogin, async(req,res)=>{
-const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
-const doc = new PDFDocument({margin:30, size:'A4'});
-res.setHeader('Content-Type','application/pdf');
-res.setHeader('Content-Disposition','attachment;filename=transferts.pdf');
-doc.pipe(res);
+  const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
+  const doc = new PDFDocument({margin:30, size:'A4'});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','attachment;filename=transferts.pdf');
+  doc.pipe(res);
 
-doc.fontSize(18).text('Liste des transferts',{align:'center'});
-doc.moveDown();
-users.forEach(u=>{
-doc.fontSize(12).text(`Expéditeur: ${u.senderFirstName} ${u.senderLastName} | Tél: ${u.senderPhone} | Origine: ${u.originLocation} | Montant: ${u.amount} | Frais: ${u.fees}`);
-doc.text(`Destinataire: ${u.receiverFirstName} ${u.receiverLastName} | Tél: ${u.receiverPhone} | Destination: ${u.destinationLocation}`);
-doc.text(`Montant reçu: ${u.recoveryAmount} | Mode: ${u.recoveryMode} | Code: ${u.code}`);
-doc.text(`Date: ${u.createdAt?new Date(u.createdAt).toLocaleString():''}`);
-doc.moveDown();
-});
+  doc.fontSize(18).text('Liste des transferts', {align:'center'});
+  doc.moveDown();
 
-doc.end();
+  users.forEach(u=>{
+    doc.fontSize(12).text(`Expéditeur: ${u.senderFirstName} ${u.senderLastName} | Tél: ${u.senderPhone} | Origine: ${u.originLocation} | Montant: ${u.amount} | Frais: ${u.fees}`);
+    doc.text(`Destinataire: ${u.receiverFirstName} ${u.receiverLastName} | Tél: ${u.receiverPhone} | Destination: ${u.destinationLocation}`);
+    doc.text(`Montant reçu: ${u.recoveryAmount} | Mode: ${u.recoveryMode} | Code: ${u.code}`);
+    doc.text(`Date: ${u.createdAt ? new Date(u.createdAt).toLocaleString() : ''}`);
+    doc.moveDown();
+  });
+
+  doc.end();
 });
 
 /* ================= SERVEUR ================= */
