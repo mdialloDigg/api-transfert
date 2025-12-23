@@ -1,37 +1,32 @@
-/* ================= IMPORTS ================= */
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
-const MongoStore = require('connect-mongo'); // ✅ Import correct
+const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
 
 const app = express();
 
-/* ================= MIDDLEWARE ================= */
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Session avec MongoStore
 app.use(session({
   secret: 'transfert-secret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({ 
+  store: new MongoStore({
     mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/test',
     collectionName: 'sessions'
   }),
-  cookie: { maxAge: 1000 * 60 * 60 * 24 } // 1 jour
+  cookie: { maxAge: 1000 * 60 * 60 * 24 }
 }));
 
-/* ================= MONGODB ================= */
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test')
-  .then(() => console.log('✅ MongoDB connecté'))
+  .then(() => console.log('MongoDB connecté'))
   .catch(console.error);
 
-/* ================= SCHEMAS ================= */
 const userSchema = new mongoose.Schema({
   senderFirstName: String,
   senderLastName: String,
@@ -61,13 +56,11 @@ const authUserSchema = new mongoose.Schema({
 });
 const AuthUser = mongoose.model('AuthUser', authUserSchema);
 
-/* ================= MIDDLEWARE AUTH ================= */
 function requireLogin(req, res, next){
   if(req.session.userId) return next();
   res.redirect('/login');
 }
 
-/* ================= AUTH ================= */
 app.get('/login', (req,res) => {
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔑 Connexion</h2>
@@ -118,7 +111,6 @@ app.get('/logout', (req,res) => {
   res.redirect('/login');
 });
 
-/* ================= FORMULAIRE /users ================= */
 app.get('/users', requireLogin, (req,res)=>{
   if(!req.session.formAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
@@ -136,7 +128,6 @@ app.post('/auth/form',(req,res)=>{
   res.redirect('/users/choice');
 });
 
-/* ================= AUTH LIST ================= */
 app.post('/auth/list', requireLogin, (req, res) => {
   const code = req.body.code;
   if (code === '147') {
@@ -150,7 +141,6 @@ app.post('/auth/list', requireLogin, (req, res) => {
   }
 });
 
-/* ================= PAGE CHOIX ================= */
 app.get('/users/choice', requireLogin,(req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   res.send(`<html>
@@ -169,7 +159,6 @@ button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;borde
 </body></html>`);
 });
 
-/* ================= LOOKUP ================= */
 app.get('/users/lookup', requireLogin,(req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const mode = req.query.mode || 'edit';
@@ -207,8 +196,7 @@ Aucun transfert trouvé pour ce numéro<br><br><a href="/users/choice">🔙 Reto
   res.redirect('/users/form');
 });
 
-/* ================= FORMULAIRE /users/form ================= */
-app.get('/users/form', requireLogin, (req,res)=>{
+app.get('/users/form', requireLogin,(req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const u = req.session.prefill || {};
   const isEdit = !!req.session.editId;
@@ -302,7 +290,6 @@ function cancelTransfer(){
 </body></html>`);
 });
 
-/* ================= CRUD ================= */
 app.post('/users', requireLogin, async (req,res)=>{
   const code=Math.floor(100000+Math.random()*900000).toString();
   await new User({...req.body, code,status:'actif'}).save();
@@ -323,7 +310,6 @@ app.post('/users/delete', requireLogin, async (req,res)=>{
   res.json({message:'❌ Transfert supprimé'});
 });
 
-/* ================= RETRAIT ================= */
 app.post('/users/retirer', requireLogin, async (req,res)=>{
   const {id,mode} = req.body;
   if(!["Espèces","Orange Money","Produit","Service"].includes(mode)) return res.status(400).json({message:"Mode invalide"});
@@ -336,7 +322,6 @@ app.post('/users/retirer', requireLogin, async (req,res)=>{
   res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
 });
 
-/* ================= LISTE /users/all ================= */
 app.get('/users/all', requireLogin, async (req,res)=>{
   if(!req.session.listAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
@@ -424,7 +409,6 @@ async function retirer(id,row){
 res.send(html);
 });
 
-/* ================= EXPORT PDF ================= */
 app.get('/users/export/pdf', requireLogin, async (req,res)=>{
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
   const doc = new PDFDocument({margin:30, size:'A4'});
@@ -446,6 +430,5 @@ app.get('/users/export/pdf', requireLogin, async (req,res)=>{
   doc.end();
 });
 
-/* ================= SERVEUR RENDER-SAFE ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Serveur en écoute sur le port ${PORT}`));
