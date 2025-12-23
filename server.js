@@ -2,6 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
+const MongoStore = require('connect-mongo'); // ✅ Import correct
 const cors = require('cors');
 const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
@@ -12,10 +13,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ✅ Session avec MongoStore
 app.use(session({
   secret: 'transfert-secret',
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  store: MongoStore.create({ 
+    mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/test',
+    collectionName: 'sessions'
+  }),
+  cookie: { maxAge: 1000 * 60 * 60 * 24 } // 1 jour
 }));
 
 /* ================= MONGODB ================= */
@@ -143,7 +151,7 @@ app.post('/auth/list', requireLogin, (req, res) => {
 });
 
 /* ================= PAGE CHOIX ================= */
-app.get('/users/choice', requireLogin, (req,res)=>{
+app.get('/users/choice', requireLogin,(req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   res.send(`<html>
 <head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -162,7 +170,7 @@ button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;borde
 });
 
 /* ================= LOOKUP ================= */
-app.get('/users/lookup', requireLogin, (req,res)=>{
+app.get('/users/lookup', requireLogin,(req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const mode = req.query.mode || 'edit';
   req.session.choiceMode = mode;
