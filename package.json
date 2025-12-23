@@ -1,7 +1,6 @@
 {
   "name": "api-transfert",
   "version": "1.0.0",
-  "description": "Application de gestion de transferts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
