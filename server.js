@@ -158,11 +158,6 @@ app.post('/auth/list', requireLogin, (req, res) => {
 });
 
 
-<h2>🔒 Code incorrect</h2>
-<a href="/users/all">🔙 Retour</a>
-</body></html>`);
-  }
-});
 
 
 
