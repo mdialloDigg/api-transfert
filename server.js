@@ -307,19 +307,12 @@ app.post('/users/all/code', requireLogin,(req,res)=>{
   res.send('Code incorrect. <a href="/users/all/code">Réessayer</a>');
 });
 
-/* ================= LISTE AVEC SELECT ================= */
+/* ================= LISTE AVEC SÉPARATION ================= */
 app.get('/users/all', requireLogin, requireListAccess, async(req,res)=>{
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
-  const grouped = {};
-  let totalAmount = 0, totalRecovery = 0, totalFees = 0;
 
-  users.forEach(u=>{
-    if(!grouped[u.destinationLocation]) grouped[u.destinationLocation] = [];
-    grouped[u.destinationLocation].push(u);
-    totalAmount += u.amount||0;
-    totalRecovery += u.recoveryAmount||0;
-    totalFees += u.fees||0;
-  });
+  const notRetired = users.filter(u => !u.retired);
+  const retired = users.filter(u => u.retired);
 
   let html = `<html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -328,47 +321,38 @@ body{font-family:Arial;background:#f4f6f9}
 table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:40px}
 th,td{border:1px solid #ccc;padding:6px;font-size:13px;text-align:center}
 th{background:#007bff;color:#fff}
-.origin{background:#e3f0ff}
-.dest{background:#ffe3e3}
-.sub{background:#ddd;font-weight:bold}
-.total{background:#222;color:#fff;font-weight:bold}
 tr.retired{background-color:orange;color:#000;}
 button.retirer{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;}
 select.recoverySelect{padding:4px;font-size:13px}
+h2{margin-top:30px;text-align:center;color:#007bff;}
 </style></head><body>
-<h2 style="text-align:center">📋 Liste des transferts</h2>
+<h1 style="text-align:center">📋 Liste des transferts</h1>
 <button onclick="window.location='/users/export/pdf'">📄 Export PDF</button>
 <button onclick="fetch('/logout').then(()=>location.href='/login')">🚪 Déconnexion</button>
 `;
 
-  for(let dest in grouped){
-    const list = grouped[dest];
-    let subAmount=0, subRecovery=0, subFees=0;
-    html += `<h3 style="text-align:center;color:#007bff">Destination: ${dest}</h3><table>
+  // Transferts non retirés
+  html += `<h2>💰 Transferts non retirés</h2><table>
 <tr>
 <th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th>
 <th>Destinataire</th><th>Tél Dest.</th><th>Destination</th>
 <th>Montant reçu</th><th>Code</th><th>Date</th><th>Action</th>
 </tr>`;
-
-    list.forEach(u=>{
-      const isRetired = u.retired;
-      subAmount += u.amount||0; subRecovery += u.recoveryAmount||0; subFees += u.fees||0;
-      html += `<tr data-id="${u._id}" class="${isRetired?'retired':''}">
+  notRetired.forEach(u=>{
+    html += `<tr data-id="${u._id}">
 <td>${u.senderFirstName||''} ${u.senderLastName||''}</td>
 <td>${u.senderPhone||''}</td>
-<td class="origin">${u.originLocation||''}</td>
+<td>${u.originLocation||''}</td>
 <td>${u.amount||0}</td>
 <td>${u.fees||0}</td>
 <td>${u.receiverFirstName||''} ${u.receiverLastName||''}</td>
 <td>${u.receiverPhone||''}</td>
-<td class="dest">${u.destinationLocation||''}</td>
+<td>${u.destinationLocation||''}</td>
 <td>${u.recoveryAmount||0}</td>
 <td>${u.code||''}</td>
 <td>${u.createdAt?new Date(u.createdAt).toLocaleString():''}</td>
 <td>
-${isRetired ? 'Montant retiré' : `
 <select class="recoverySelect">
   <option>Espèces</option>
   <option>Orange Money</option>
@@ -377,15 +361,36 @@ ${isRetired ? 'Montant retiré' : `
   <option>Service</option>
 </select>
 <button class="retirerBtn">💰 Retirer</button>
-`}
 </td>
 </tr>`;
-    });
+  });
+  html += `</table>`;
 
-    html += `<tr class="sub"><td colspan="3">Sous-total ${dest}</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="2"></td><td></td></tr></table>`;
-  }
-
-  html += `<table><tr class="total"><td colspan="3">TOTAL GÉNÉRAL</td><td>${totalAmount}</td><td>${totalFees}</td><td colspan="2"></td><td></td><td>${totalRecovery}</td><td colspan="2"></td><td></td></tr></table>
+  // Transferts retirés
+  html += `<h2>✅ Transferts déjà retirés</h2><table>
+<tr>
+<th>Expéditeur</th><th>Tél</th><th>Origine</th>
+<th>Montant</th><th>Frais</th>
+<th>Destinataire</th><th>Tél Dest.</th><th>Destination</th>
+<th>Montant reçu</th><th>Code</th><th>Date</th><th>Action</th>
+</tr>`;
+  retired.forEach(u=>{
+    html += `<tr data-id="${u._id}" class="retired">
+<td>${u.senderFirstName||''} ${u.senderLastName||''}</td>
+<td>${u.senderPhone||''}</td>
+<td>${u.originLocation||''}</td>
+<td>${u.amount||0}</td>
+<td>${u.fees||0}</td>
+<td>${u.receiverFirstName||''} ${u.receiverLastName||''}</td>
+<td>${u.receiverPhone||''}</td>
+<td>${u.destinationLocation||''}</td>
+<td>${u.recoveryAmount||0}</td>
+<td>${u.code||''}</td>
+<td>${u.createdAt?new Date(u.createdAt).toLocaleString():''}</td>
+<td>Montant retiré</td>
+</tr>`;
+  });
+  html += `</table>
 <script>
 document.querySelectorAll('.retirerBtn').forEach(btn=>{
   btn.addEventListener('click', async e=>{
