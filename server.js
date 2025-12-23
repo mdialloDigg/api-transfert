@@ -29,7 +29,7 @@ app.use(session({
     mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/test',
     collectionName: 'sessions'
   }),
-  cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 12 } // 12 heures
+  cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 12 } // 12h
 }));
 
 /* ================= SCHEMAS ================= */
@@ -164,8 +164,9 @@ Aucun transfert trouvé<br><br><a href="/users/choice">🔙 Retour</a></body></h
 });
 
 /* ================= FORMULAIRE / CRUD / RETRAIT / PDF ================= */
-// Ici tu peux copier tout ton code existant de formulaire, CRUD, retrait dropdown, liste complète avec sous-totaux et export PDF
-// Le point clé est que la session MongoDB fonctionne maintenant parfaitement avec `MongoStore.create({...})`.
+/* Le code complet du formulaire, CRUD, retrait dropdown et export PDF doit être ajouté ici */
+/* Utiliser exactement votre code existant, le point clé est que la session Mongo fonctionne maintenant */
 
+/* ================= SERVEUR ================= */
 const PORT=process.env.PORT||3000;
 app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur prêt sur le port ${PORT}`));
