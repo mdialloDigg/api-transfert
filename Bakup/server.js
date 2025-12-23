@@ -19,9 +19,9 @@ app.use(session({
 }));
 
 /* ================= MONGODB ================= */
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test')
-  .then(() => console.log('✅ MongoDB connecté'))
-  .catch(console.error);
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
+.then(()=>console.log('✅ MongoDB connecté'))
+.catch(console.error);
 
 /* ================= SCHEMAS ================= */
 const userSchema = new mongoose.Schema({
@@ -48,22 +48,26 @@ const User = mongoose.model('User', userSchema);
 
 const authUserSchema = new mongoose.Schema({
   username: { type: String, unique: true },
-  password: String,
-  createdAt: { type: Date, default: Date.now }
+  password: String
 });
 const AuthUser = mongoose.model('AuthUser', authUserSchema);
 
-/* ================= MIDDLEWARE AUTH ================= */
-function requireLogin(req, res, next){
+/* ================= AUTH MIDDLEWARE ================= */
+const requireLogin = (req,res,next)=>{
   if(req.session.userId) return next();
   res.redirect('/login');
-}
+};
 
-/* ================= AUTH ================= */
-app.get('/login', (req,res) => {
+const requireListAccess = (req,res,next)=>{
+  if(req.session.listAccess) return next();
+  res.redirect('/users/all/code');
+};
+
+/* ================= AUTH ROUTES ================= */
+app.get('/login',(req,res)=>{
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔑 Connexion</h2>
-<form method="post" action="/login">
+<form method="post">
 <input type="text" name="username" placeholder="Nom d'utilisateur" required><br><br>
 <input type="password" name="password" placeholder="Mot de passe" required><br><br>
 <button>Connexion</button>
@@ -72,20 +76,19 @@ app.get('/login', (req,res) => {
 </body></html>`);
 });
 
-app.post('/login', async (req,res) => {
-  const { username, password } = req.body;
-  const user = await AuthUser.findOne({ username });
+app.post('/login',async(req,res)=>{
+  const user = await AuthUser.findOne({ username:req.body.username });
   if(!user) return res.send("Utilisateur inconnu");
-  const match = await bcrypt.compare(password, user.password);
+  const match = await bcrypt.compare(req.body.password,user.password);
   if(!match) return res.send("Mot de passe incorrect");
   req.session.userId = user._id;
   res.redirect('/users/choice');
 });
 
-app.get('/register', (req,res) => {
+app.get('/register',(req,res)=>{
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>📝 Créer un compte</h2>
-<form method="post" action="/register">
+<form method="post">
 <input type="text" name="username" placeholder="Nom d'utilisateur" required><br><br>
 <input type="password" name="password" placeholder="Mot de passe" required><br><br>
 <button>Créer</button>
@@ -94,114 +97,68 @@ app.get('/register', (req,res) => {
 </body></html>`);
 });
 
-app.post('/register', async (req,res) => {
-  const { username, password } = req.body;
-  const hashedPassword = await bcrypt.hash(password, 10);
-  try {
-    await new AuthUser({ username, password: hashedPassword }).save();
+app.post('/register',async(req,res)=>{
+  try{
+    await new AuthUser({ username:req.body.username, password: await bcrypt.hash(req.body.password,10) }).save();
     res.send("✅ Compte créé ! <a href='/login'>Se connecter</a>");
-  } catch(err) {
+  }catch{
     res.send("Erreur, nom d'utilisateur déjà pris");
   }
 });
 
-app.get('/logout', (req,res) => {
-  req.session.destroy();
-  res.redirect('/login');
+app.get('/logout',(req,res)=>{
+  req.session.destroy(()=>res.redirect('/login'));
 });
 
-/* ================= FORMULAIRE /users ================= */
-app.get('/users', requireLogin, (req,res)=>{
-  if(!req.session.formAccess){
-    return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
-<h2>🔒 Accès formulaire</h2>
-<form method="post" action="/auth/form">
-<input type="password" name="code" placeholder="Code 123" required><br><br>
-<button>Valider</button>
-</form></body></html>`);
-  }
-  res.redirect('/users/choice');
-});
-
-app.post('/auth/form',(req,res)=>{
-  if(req.body.code==='123') req.session.formAccess=true;
-  res.redirect('/users/choice');
-});
-
-/* ================= AUTH LIST ================= */
-app.post('/auth/list', requireLogin, (req, res) => {
-  const code = req.body.code;
-  if (code === '147') {
-    req.session.listAccess = true;
-    res.redirect('/users/all');
-  } else {
-    res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
-<h2>🔒 Code incorrect</h2>
-<a href="/users/all">🔙 Retour</a>
-</body></html>`);
-  }
-});
-
-/* ================= PAGE CHOIX ================= */
-app.get('/users/choice', requireLogin, (req,res)=>{
-  if(!req.session.formAccess) return res.redirect('/users');
+/* ================= MENU ================= */
+app.get('/users/choice', requireLogin,(req,res)=>{
   res.send(`<html>
 <head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 body{font-family:Arial;text-align:center;padding-top:40px;background:#eef2f7}
 button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;border-radius:5px;cursor:pointer}
-#new{background:#007bff} #edit{background:#28a745} #delete{background:#dc3545}
+#new{background:#007bff} #edit{background:#28a745} #delete{background:#dc3545} #list{background:#6c757d}
 </style></head>
 <body>
 <h2>📋 Gestion des transferts</h2>
 <a href="/users/lookup?mode=new"><button id="new">💾 Nouveau transfert</button></a><br>
 <a href="/users/lookup?mode=edit"><button id="edit">✏️ Modifier transfert</button></a><br>
 <a href="/users/lookup?mode=delete"><button id="delete">❌ Supprimer transfert</button></a><br>
+<a href="/users/all"><button id="list">📋 Liste des transferts</button></a><br>
 <br><a href="/logout">🚪 Déconnexion</a>
 </body></html>`);
 });
 
 /* ================= LOOKUP ================= */
-app.get('/users/lookup', requireLogin, (req,res)=>{
-  if(!req.session.formAccess) return res.redirect('/users');
-  const mode = req.query.mode || 'edit';
-  req.session.choiceMode = mode;
-
+app.get('/users/lookup', requireLogin,(req,res)=>{
+  req.session.choiceMode = req.query.mode || 'edit';
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px;background:#eef2f7">
 <h3>📞 Numéro expéditeur</h3>
-<form method="post" action="/users/lookup">
+<form method="post">
 <input name="phone" required><br><br>
 <button>Continuer</button>
 </form><br><a href="/users/choice">🔙 Retour</a>
 </body></html>`);
 });
 
-app.post('/users/lookup', requireLogin, async (req,res)=>{
-  const u = await User.findOne({ senderPhone:req.body.phone }).sort({ createdAt: -1 });
-  req.session.prefill = u || { senderPhone: req.body.phone };
+app.post('/users/lookup', requireLogin, async(req,res)=>{
+  const u = await User.findOne({ senderPhone:req.body.phone }).sort({ createdAt:-1 });
+  req.session.prefill = u || { senderPhone:req.body.phone };
 
-  if(req.session.choiceMode === 'new') req.session.editId = null;
+  if(req.session.choiceMode==='new') req.session.editId = null;
   else if(u) req.session.editId = u._id;
-  else if(req.session.choiceMode === 'edit') req.session.editId = null;
-  else if(req.session.choiceMode === 'delete'){
+  else if(req.session.choiceMode==='edit') req.session.editId = null;
+  else if(req.session.choiceMode==='delete'){
     if(u){
       await User.findByIdAndDelete(u._id);
-      req.session.prefill = null;
-      req.session.editId = null;
-      return res.send(`<html><body style="text-align:center;font-family:Arial;padding-top:50px">
-❌ Transfert supprimé<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
-    } else {
-      return res.send(`<html><body style="text-align:center;font-family:Arial;padding-top:50px">
-Aucun transfert trouvé pour ce numéro<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
-    }
+      return res.send(`<html><body style="text-align:center;font-family:Arial;padding-top:50px">❌ Transfert supprimé<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
+    } else return res.send(`<html><body style="text-align:center;font-family:Arial;padding-top:50px">Aucun transfert trouvé<br><br><a href="/users/choice">🔙 Retour</a></body></html>`);
   }
-
   res.redirect('/users/form');
 });
 
-/* ================= FORMULAIRE /users/form ================= */
-app.get('/users/form', requireLogin, (req,res)=>{
-  if(!req.session.formAccess) return res.redirect('/users');
+/* ================= FORMULAIRE ================= */
+app.get('/users/form', requireLogin,(req,res)=>{
   const u = req.session.prefill || {};
   const isEdit = !!req.session.editId;
   const locations = ['France','Labé','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
@@ -259,64 +216,64 @@ ${isEdit?'<button type="button" id="cancel" onclick="cancelTransfer()">❌ Suppr
 const amount = document.getElementById('amount');
 const fees = document.getElementById('fees');
 const recoveryAmount = document.getElementById('recoveryAmount');
-function updateRecoveryAmount(){recoveryAmount.value = (+amount.value||0) - (+fees.value||0);}
+function updateRecoveryAmount(){recoveryAmount.value=(+amount.value||0)-(+fees.value||0);}
 amount.addEventListener('input', updateRecoveryAmount);
 fees.addEventListener('input', updateRecoveryAmount);
 
 form.onsubmit=async e=>{
-  e.preventDefault();
-  const url='${isEdit?'/users/update':'/users'}';
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({
-    senderFirstName:senderFirstName.value,
-    senderLastName:senderLastName.value,
-    senderPhone:senderPhone.value,
-    originLocation:originLocation.value,
-    amount:+amount.value,
-    fees:+fees.value,
-    feePercent:+feePercent.value,
-    receiverFirstName:receiverFirstName.value,
-    receiverLastName:receiverLastName.value,
-    receiverPhone:receiverPhone.value,
-    destinationLocation:destinationLocation.value,
-    recoveryAmount:+recoveryAmount.value,
-    recoveryMode:recoveryMode.value
-  })});
-  const d=await r.json();
-  message.innerText=d.message;
+e.preventDefault();
+const url='${isEdit?'/users/update':'/users'}';
+const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({
+senderFirstName:senderFirstName.value,
+senderLastName:senderLastName.value,
+senderPhone:senderPhone.value,
+originLocation:originLocation.value,
+amount:+amount.value,
+fees:+fees.value,
+feePercent:+feePercent.value,
+receiverFirstName:receiverFirstName.value,
+receiverLastName:receiverLastName.value,
+receiverPhone:receiverPhone.value,
+destinationLocation:destinationLocation.value,
+recoveryAmount:+recoveryAmount.value,
+recoveryMode:recoveryMode.value
+})});
+const d=await r.json();
+message.innerText=d.message;
 };
 
 function cancelTransfer(){
-  if(!confirm('Voulez-vous supprimer ce transfert ?'))return;
-  fetch('/users/delete',{method:'POST'}).then(()=>location.href='/users/choice');
+if(!confirm('Voulez-vous supprimer ce transfert ?'))return;
+fetch('/users/delete',{method:'POST'}).then(()=>location.href='/users/choice');
 }
 </script>
 </body></html>`);
 });
 
 /* ================= CRUD ================= */
-app.post('/users', requireLogin, async (req,res)=>{
-  const code=Math.floor(100000+Math.random()*900000).toString();
-  await new User({...req.body, code,status:'actif'}).save();
+app.post('/users', requireLogin, async(req,res)=>{
+  const code = Math.floor(100000 + Math.random()*900000).toString();
+  await new User({...req.body, code, status:'actif'}).save();
   res.json({message:'✅ Transfert enregistré | Code '+code});
 });
 
-app.post('/users/update', requireLogin, async (req,res)=>{
+app.post('/users/update', requireLogin, async(req,res)=>{
   if(!req.session.editId) return res.status(400).json({message:'Aucun transfert sélectionné'});
   await User.findByIdAndUpdate(req.session.editId, req.body);
-  req.session.editId=null;
+  req.session.editId = null;
   res.json({message:'✏️ Transfert mis à jour'});
 });
 
-app.post('/users/delete', requireLogin, async (req,res)=>{
+app.post('/users/delete', requireLogin, async(req,res)=>{
   if(!req.session.editId) return res.status(400).json({message:'Aucun transfert sélectionné'});
   await User.findByIdAndDelete(req.session.editId);
-  req.session.editId=null;
+  req.session.editId = null;
   res.json({message:'❌ Transfert supprimé'});
 });
 
 /* ================= RETRAIT ================= */
-app.post('/users/retirer', requireLogin, async (req,res)=>{
+app.post('/users/retirer', requireLogin, async(req,res)=>{
   const {id,mode} = req.body;
   if(!["Espèces","Orange Money","Produit","Service"].includes(mode)) return res.status(400).json({message:"Mode invalide"});
   const user = await User.findById(id);
@@ -328,26 +285,36 @@ app.post('/users/retirer', requireLogin, async (req,res)=>{
   res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
 });
 
-/* ================= LISTE /users/all ================= */
-app.get('/users/all', requireLogin, async (req,res)=>{
-  if(!req.session.listAccess){
-    return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
+/* ================= ACCÈS LISTE ================= */
+app.get('/users/all/code', requireLogin,(req,res)=>{
+  res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔒 Accès liste</h2>
-<form method="post" action="/auth/list">
+<form method="post">
 <input type="password" name="code" placeholder="Code 147" required><br><br>
 <button>Valider</button>
-</form></body></html>`);
-  }
+</form>
+</body></html>`);
+});
 
+app.post('/users/all/code', requireLogin,(req,res)=>{
+  if(req.body.code==='147'){
+    req.session.listAccess=true;
+    return res.redirect('/users/all');
+  }
+  res.send('Code incorrect. <a href="/users/all/code">Réessayer</a>');
+});
+
+/* ================= LISTE ================= */
+app.get('/users/all', requireLogin, requireListAccess, async(req,res)=>{
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
   const grouped = {};
   let totalAmount = 0, totalRecovery = 0, totalFees = 0;
   users.forEach(u=>{
-    if(!grouped[u.destinationLocation]) grouped[u.destinationLocation] = [];
+    if(!grouped[u.destinationLocation]) grouped[u.destinationLocation]=[];
     grouped[u.destinationLocation].push(u);
-    totalAmount += (u.amount||0);
-    totalRecovery += (u.recoveryAmount||0);
-    totalFees += (u.fees||0);
+    totalAmount += u.amount||0;
+    totalRecovery += u.recoveryAmount||0;
+    totalFees += u.fees||0;
   });
 
   let html = `<html><head>
@@ -371,7 +338,7 @@ button.retirer{padding:5px 10px;border:none;border-radius:4px;background:#28a745
 
 for(let dest in grouped){
   const list = grouped[dest];
-  let subAmount = 0, subRecovery = 0, subFees = 0;
+  let subAmount=0, subRecovery=0, subFees=0;
   html += `<h3 style="text-align:center;color:#007bff">Destination: ${dest}</h3><table>
 <tr>
 <th>Expéditeur</th><th>Tél</th><th>Origine</th>
@@ -381,7 +348,7 @@ for(let dest in grouped){
 </tr>`;
   list.forEach(u=>{
     const isRetired = u.retired;
-    subAmount += (u.amount||0); subRecovery += (u.recoveryAmount||0); subFees += (u.fees||0);
+    subAmount += u.amount||0; subRecovery += u.recoveryAmount||0; subFees += u.fees||0;
     html += `<tr class="${isRetired?'retired':''}">
 <td>${u.senderFirstName||''} ${u.senderLastName||''}</td>
 <td>${u.senderPhone||''}</td>
@@ -412,12 +379,11 @@ async function retirer(id,row){
   row.querySelector('button.retirer').outerHTML='Montant retiré';
 }
 </script></body></html>`;
-
 res.send(html);
 });
 
 /* ================= EXPORT PDF ================= */
-app.get('/users/export/pdf', requireLogin, async (req,res)=>{
+app.get('/users/export/pdf', requireLogin, async(req,res)=>{
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
   const doc = new PDFDocument({margin:30, size:'A4'});
   res.setHeader('Content-Type','application/pdf');
@@ -438,6 +404,6 @@ app.get('/users/export/pdf', requireLogin, async (req,res)=>{
   doc.end();
 });
 
-/* ================= SERVEUR RENDER-SAFE ================= */
+/* ================= SERVEUR ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));

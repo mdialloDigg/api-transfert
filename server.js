@@ -275,14 +275,17 @@ app.post('/users/delete', requireLogin, async(req,res)=>{
 /* ================= RETRAIT ================= */
 app.post('/users/retirer', requireLogin, async(req,res)=>{
   const {id,mode} = req.body;
-  if(!["Espèces","Orange Money","Produit","Service"].includes(mode)) return res.status(400).json({message:"Mode invalide"});
+  if(!["Espèces","Orange Money","Wave","Produit","Service"].includes(mode)) 
+      return res.status(400).json({message:"Mode invalide"});
   const user = await User.findById(id);
   if(!user) return res.status(404).json({message:"Transfert introuvable"});
+  if(user.retired) return res.status(400).json({message:"Transfert déjà retiré"});
   user.recoveryMode = mode;
   user.retraitHistory.push({date:new Date(), mode});
   user.retired = true;
+  user.recoveryAmount = user.amount - user.fees;
   await user.save();
-  res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
+  res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.recoveryAmount});
 });
 
 /* ================= ACCÈS LISTE ================= */
@@ -304,13 +307,14 @@ app.post('/users/all/code', requireLogin,(req,res)=>{
   res.send('Code incorrect. <a href="/users/all/code">Réessayer</a>');
 });
 
-/* ================= LISTE ================= */
+/* ================= LISTE AVEC SELECT ================= */
 app.get('/users/all', requireLogin, requireListAccess, async(req,res)=>{
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
   const grouped = {};
   let totalAmount = 0, totalRecovery = 0, totalFees = 0;
+
   users.forEach(u=>{
-    if(!grouped[u.destinationLocation]) grouped[u.destinationLocation]=[];
+    if(!grouped[u.destinationLocation]) grouped[u.destinationLocation] = [];
     grouped[u.destinationLocation].push(u);
     totalAmount += u.amount||0;
     totalRecovery += u.recoveryAmount||0;
@@ -330,26 +334,28 @@ th{background:#007bff;color:#fff}
 .total{background:#222;color:#fff;font-weight:bold}
 tr.retired{background-color:orange;color:#000;}
 button.retirer{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;}
+select.recoverySelect{padding:4px;font-size:13px}
 </style></head><body>
 <h2 style="text-align:center">📋 Liste des transferts</h2>
 <button onclick="window.location='/users/export/pdf'">📄 Export PDF</button>
 <button onclick="fetch('/logout').then(()=>location.href='/login')">🚪 Déconnexion</button>
 `;
 
-for(let dest in grouped){
-  const list = grouped[dest];
-  let subAmount=0, subRecovery=0, subFees=0;
-  html += `<h3 style="text-align:center;color:#007bff">Destination: ${dest}</h3><table>
+  for(let dest in grouped){
+    const list = grouped[dest];
+    let subAmount=0, subRecovery=0, subFees=0;
+    html += `<h3 style="text-align:center;color:#007bff">Destination: ${dest}</h3><table>
 <tr>
 <th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th>
 <th>Destinataire</th><th>Tél Dest.</th><th>Destination</th>
 <th>Montant reçu</th><th>Code</th><th>Date</th><th>Action</th>
 </tr>`;
-  list.forEach(u=>{
-    const isRetired = u.retired;
-    subAmount += u.amount||0; subRecovery += u.recoveryAmount||0; subFees += u.fees||0;
-    html += `<tr class="${isRetired?'retired':''}">
+
+    list.forEach(u=>{
+      const isRetired = u.retired;
+      subAmount += u.amount||0; subRecovery += u.recoveryAmount||0; subFees += u.fees||0;
+      html += `<tr data-id="${u._id}" class="${isRetired?'retired':''}">
 <td>${u.senderFirstName||''} ${u.senderLastName||''}</td>
 <td>${u.senderPhone||''}</td>
 <td class="origin">${u.originLocation||''}</td>
@@ -361,25 +367,48 @@ for(let dest in grouped){
 <td>${u.recoveryAmount||0}</td>
 <td>${u.code||''}</td>
 <td>${u.createdAt?new Date(u.createdAt).toLocaleString():''}</td>
-<td>${isRetired?'Montant retiré':`<button class="retirer" onclick="retirer('${u._id}',this.parentElement.parentElement)">💰 Retirer</button>`}</td>
+<td>
+${isRetired ? 'Montant retiré' : `
+<select class="recoverySelect">
+  <option>Espèces</option>
+  <option>Orange Money</option>
+  <option>Wave</option>
+  <option>Produit</option>
+  <option>Service</option>
+</select>
+<button class="retirerBtn">💰 Retirer</button>
+`}
+</td>
 </tr>`;
-  });
-  html += `<tr class="sub"><td colspan="3">Sous-total ${dest}</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="2"></td><td></td></tr></table>`;
-}
+    });
 
-html += `<table><tr class="total"><td colspan="3">TOTAL GÉNÉRAL</td><td>${totalAmount}</td><td>${totalFees}</td><td colspan="2"></td><td></td><td>${totalRecovery}</td><td colspan="2"></td><td></td></tr></table>
+    html += `<tr class="sub"><td colspan="3">Sous-total ${dest}</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="2"></td><td></td></tr></table>`;
+  }
+
+  html += `<table><tr class="total"><td colspan="3">TOTAL GÉNÉRAL</td><td>${totalAmount}</td><td>${totalFees}</td><td colspan="2"></td><td></td><td>${totalRecovery}</td><td colspan="2"></td><td></td></tr></table>
 <script>
-async function retirer(id,row){
-  const mode = prompt('Mode de retrait: Espèces / Orange Money / Produit / Service');
-  if(!mode) return;
-  const res = await fetch('/users/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});
-  const data = await res.json();
-  alert(data.message);
-  row.classList.add('retired');
-  row.querySelector('button.retirer').outerHTML='Montant retiré';
-}
+document.querySelectorAll('.retirerBtn').forEach(btn=>{
+  btn.addEventListener('click', async e=>{
+    const row = e.target.closest('tr');
+    const select = row.querySelector('.recoverySelect');
+    const mode = select.value;
+    const id = row.dataset.id;
+
+    const res = await fetch('/users/retirer',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id, mode})
+    });
+
+    const data = await res.json();
+    alert(data.message);
+    row.classList.add('retired');
+    row.querySelector('td:last-child').innerText='Montant retiré';
+  });
+});
 </script></body></html>`;
-res.send(html);
+
+  res.send(html);
 });
 
 /* ================= EXPORT PDF ================= */
