@@ -2,7 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
+const MongoStore = require('connect-mongo'); // v4+
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
@@ -29,7 +29,7 @@ app.use(session({
     mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/test',
     collectionName: 'sessions'
   }),
-  cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 12 } // 12h
+  cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 12 } // 12 heures
 }));
 
 /* ================= SCHEMAS ================= */
@@ -130,7 +130,7 @@ app.get('/users/choice', requireLogin, (req,res)=>{
 </body></html>`);
 });
 
-/* ================= LOOKUP / FORM ================= */
+/* ================= LOOKUP ================= */
 app.get('/users/lookup', requireLogin, (req,res)=>{
   const mode = req.query.mode || 'edit';
   req.session.choiceMode = mode;
@@ -164,7 +164,7 @@ Aucun transfert trouvé<br><br><a href="/users/choice">🔙 Retour</a></body></h
 });
 
 /* ================= FORMULAIRE / CRUD / RETRAIT / PDF ================= */
-// (Ici tu peux copier tout ton code formulaire, CRUD, retrait dropdown, liste complète avec sous-totaux et export PDF)
+// Ici tu peux copier tout ton code existant de formulaire, CRUD, retrait dropdown, liste complète avec sous-totaux et export PDF
 // Le point clé est que la session MongoDB fonctionne maintenant parfaitement avec `MongoStore.create({...})`.
 
 const PORT=process.env.PORT||3000;
