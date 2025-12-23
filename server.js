@@ -132,7 +132,7 @@ app.post('/auth/form',(req,res)=>{
 
 
 /* ================= AUTH LIST ================= */
-app.post('/auth/list', requireLogin, (req, res) => {
+app.post('/users/all', requireLogin, (req, res) => {
   const code = req.body.code;
 
   if (code === '147') {
@@ -145,7 +145,7 @@ app.post('/auth/list', requireLogin, (req, res) => {
     <body style="font-family:Arial;text-align:center;padding-top:60px">
       <h2>🔒 Code incorrect</h2>
 
-      <form method="post" action="/auth/list">
+      <form method="post" action="/users/all">
         <input type="password" name="code" placeholder="Code 147" required><br><br>
         <button>Valider</button>
       </form>
@@ -366,7 +366,7 @@ app.get('/users/all', requireLogin, requireListAccess, async (req,res)=>{
   if(!req.session.listAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔒 Accès liste</h2>
-<form method="post" action="/auth/list">
+<form method="post" action="/users/all">
 <input type="password" name="code" placeholder="Code 147" required><br><br>
 <button>Valider</button>
 </form></body></html>`);
