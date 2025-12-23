@@ -110,6 +110,8 @@ app.get('/logout', (req,res) => {
   res.redirect('/login');
 });
 
+
+
 /* ================= FORMULAIRE /users ================= */
 app.get('/users', requireLogin, (req,res)=>{
   if(!req.session.formAccess){
@@ -135,12 +137,32 @@ app.post('/auth/list', requireLogin, (req, res) => {
     req.session.listAccess = true;
     res.redirect('/users/all');
   } else {
-    res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
+
+if(!req.session.listAccess){
+  return res.send(`
+    <form method="post" action="/auth/list">
+      <input type="password" name="code" placeholder="Code 147" required>
+      <button>Valider</button>
+    </form>
+  `);
+}
+
+    /*res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">*/
+
+
 <h2>🔒 Code incorrect</h2>
 <a href="/users/all">🔙 Retour</a>
 </body></html>`);
   }
 });
+
+
+
+
+
+
+
+
 
 /* ================= PAGE CHOIX ================= */
 app.get('/users/choice', requireLogin, (req,res)=>{
@@ -328,8 +350,16 @@ app.post('/users/retirer', requireLogin, async (req,res)=>{
   res.json({message:`💰 Retrait effectué via ${mode}`, recoveryAmount: user.amount - user.fees});
 });
 
+
+function requireListAccess(req,res,next){
+  if(req.session.listAccess) return next();
+  res.redirect('/users/all');
+}
+
+
+
 /* ================= LISTE /users/all ================= */
-app.get('/users/all', requireLogin, async (req,res)=>{
+app.get('/users/all', requireLogin, requireListAccess, async (req,res)=>{
   if(!req.session.listAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔒 Accès liste</h2>
@@ -338,6 +368,14 @@ app.get('/users/all', requireLogin, async (req,res)=>{
 <button>Valider</button>
 </form></body></html>`);
   }
+
+
+
+
+
+
+
+
 
   const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
   const grouped = {};
