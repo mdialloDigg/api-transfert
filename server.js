@@ -13,8 +13,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+/* ================= MONGODB ================= */
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+  .then(() => console.log('✅ MongoDB connecté'))
+  .catch(console.error);
+
+/* ================= SESSIONS ================= */
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'transfert-secret',
+  secret: 'transfert-secret',
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({
@@ -23,11 +33,6 @@ app.use(session({
   }),
   cookie: { maxAge: 1000 * 60 * 60 * 12 } // 12h
 }));
-
-/* ================= MONGODB ================= */
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/test')
-  .then(() => console.log('✅ MongoDB connecté'))
-  .catch(console.error);
 
 /* ================= SCHEMAS ================= */
 const userSchema = new mongoose.Schema({
@@ -65,7 +70,7 @@ function requireLogin(req, res, next){
   res.redirect('/login');
 }
 
-/* ================= AUTH ROUTES ================= */
+/* ================= AUTH ================= */
 app.get('/login', (req,res) => {
   res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
 <h2>🔑 Connexion</h2>
@@ -116,7 +121,7 @@ app.get('/logout', (req,res) => {
   res.redirect('/login');
 });
 
-/* ================= USERS CHOICE ================= */
+/* ================= FORMULAIRE /users ================= */
 app.get('/users', requireLogin, (req,res)=>{
   if(!req.session.formAccess){
     return res.send(`<html><body style="font-family:Arial;text-align:center;padding-top:60px">
@@ -134,7 +139,7 @@ app.post('/auth/form',(req,res)=>{
   res.redirect('/users/choice');
 });
 
-/* ================= USERS PAGE ================= */
+/* ================= PAGE CHOIX ================= */
 app.get('/users/choice', requireLogin, (req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   res.send(`<html>
@@ -153,7 +158,7 @@ button{padding:12px 25px;margin:8px;font-size:16px;border:none;color:white;borde
 </body></html>`);
 });
 
-/* ================= USERS LOOKUP ================= */
+/* ================= LOOKUP ================= */
 app.get('/users/lookup', requireLogin, (req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const mode = req.query.mode || 'edit';
@@ -191,7 +196,7 @@ Aucun transfert trouvé pour ce numéro<br><br><a href="/users/choice">🔙 Reto
   res.redirect('/users/form');
 });
 
-/* ================= USERS FORM ================= */
+/* ================= FORMULAIRE /users/form ================= */
 app.get('/users/form', requireLogin, (req,res)=>{
   if(!req.session.formAccess) return res.redirect('/users');
   const u = req.session.prefill || {};
@@ -288,8 +293,8 @@ function cancelTransfer(){
 
 /* ================= CRUD ================= */
 app.post('/users', requireLogin, async (req,res)=>{
-  const code=Math.floor(100000+Math.random()*900000).toString();
-  await new User({...req.body, code,status:'actif'}).save();
+  const code = Math.floor(100000 + Math.random()*900000).toString();
+  await new User({...req.body, code, status:'actif'}).save();
   res.json({message:'✅ Transfert enregistré | Code '+code});
 });
 
@@ -310,7 +315,8 @@ app.post('/users/delete', requireLogin, async (req,res)=>{
 /* ================= RETRAIT ================= */
 app.post('/users/retirer', requireLogin, async (req,res)=>{
   const {id,mode} = req.body;
-  if(!["Espèces","Orange Money","Produit","Service"].includes(mode)) return res.status(400).json({message:"Mode invalide"});
+  if(!["Espèces","Orange Money","Produit","Service"].includes(mode))
+    return res.status(400).json({message:"Mode invalide"});
   const user = await User.findById(id);
   if(!user) return res.status(404).json({message:"Transfert introuvable"});
   user.recoveryMode = mode;
@@ -385,54 +391,45 @@ for(let dest in grouped){
 <td>${u.destinationLocation}</td>
 <td>${u.recoveryAmount||0}</td>
 <td>${u.code}</td>
-<td>${new Date(u.createdAt).toLocaleString()}</td>
-<td>${!isRetired?`<button class="retirer" onclick="retirer('${u._id}')">💰 Retirer</button>`:''}</td>
+<td>${u.createdAt.toLocaleString()}</td>
+<td>${isRetired?'✅ Retiré':`<button class="retirer" onclick="retirer('${u._id}')">💰 Retirer</button>`}</td>
 </tr>`;
   });
-  html += `<tr class="sub"><td colspan="3">Sous-total</td><td>${subAmount}</td><td>${subFees}</td><td colspan="3"></td><td>${subRecovery}</td><td colspan="3"></td></tr></table>`;
+  html += `<tr class="sub"><td colspan="3">Sous-total</td><td>${subAmount}</td><td>${subFees}</td><td colspan="2"></td><td></td><td>${subRecovery}</td><td colspan="3"></td></tr></table>`;
 }
-html += `<h3 style="text-align:center">Total: Montant: ${totalAmount} | Frais: ${totalFees} | Reçu: ${totalRecovery}</h3>
+
+html += `<h3 style="text-align:center">Total général - Montant: ${totalAmount} | Frais: ${totalFees} | Reçu: ${totalRecovery}</h3>
 <script>
 async function retirer(id){
-  const mode = prompt('Mode de retrait: Espèces, Orange Money, Wave, Produit, Service');
-  if(!mode) return;
+  const mode = prompt("Mode de retrait (Espèces, Orange Money, Wave, Produit, Service)");
+  if(!mode)return;
   await fetch('/users/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});
   location.reload();
 }
-</script>
-</body></html>`;
+</script></body></html>`;
 res.send(html);
 });
 
-/* ================= AUTH LIST ================= */
-app.post('/auth/list', (req,res)=>{
+app.post('/auth/list',(req,res)=>{
   if(req.body.code==='147') req.session.listAccess=true;
   res.redirect('/users/all');
 });
 
 /* ================= EXPORT PDF ================= */
 app.get('/users/export/pdf', requireLogin, async (req,res)=>{
-  const users = await User.find({}).sort({destinationLocation:1, createdAt:1});
+  const users = await User.find({}).sort({destinationLocation:1});
   const doc = new PDFDocument({margin:30, size:'A4'});
-  res.setHeader('Content-Disposition', 'attachment; filename="liste_transferts.pdf"');
-  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','attachment; filename="transferts.pdf"');
   doc.pipe(res);
-  doc.fontSize(18).text('📋 Liste des transferts', {align:'center'}).moveDown();
-  let dest = '';
+
+  doc.fontSize(18).text('📋 Liste des transferts', {align:'center'});
   users.forEach(u=>{
-    if(u.destinationLocation !== dest){
-      dest = u.destinationLocation;
-      doc.moveDown().fontSize(14).text(`Destination: ${dest}`, {underline:true});
-    }
-    doc.fontSize(12).text(
-      `Exp: ${u.senderFirstName} ${u.senderLastName} (${u.senderPhone}) | `+
-      `Dest: ${u.receiverFirstName} ${u.receiverLastName} (${u.receiverPhone}) | `+
-      `Montant: ${u.amount} | Frais: ${u.fees} | Reçu: ${u.recoveryAmount} | Code: ${u.code}`
-    );
+    doc.fontSize(12).text(`${u.senderFirstName} -> ${u.receiverFirstName} | Montant: ${u.amount} | Frais: ${u.fees} | Dest: ${u.destinationLocation} | Code: ${u.code}`);
   });
   doc.end();
 });
 
-/* ================= SERVER ================= */
+/* ================= SERVEUR ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=>console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`));
+app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur port ${PORT}`));
