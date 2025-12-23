@@ -1,11 +1,14 @@
 // server.js
 
-import express from "express";
-import session from "express-session";
-import MongoStore from "connect-mongo";
-import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
-import dotenv from "dotenv";
+const express = require("express");
+const session = require("express-session");
+const MongoStore = require("connect-mongo");
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const dotenv = require("dotenv");
+const path = require("path");
+const pdf = require("pdfkit");
+const fs = require("fs");
 
 dotenv.config();
 
@@ -17,8 +20,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // MongoDB connection
-mongoose.connect(process.env.MONGODB_URI || "mongodb://localhost:27017/test")
-  .then(() => console.log("✅ MongoDB connected"))
+mongoose.connect(process.env.MONGODB_URI || "mongodb://localhost:27017/transferts", {
+  // options modernes
+}).then(() => console.log("✅ MongoDB connected"))
   .catch(err => console.error("❌ MongoDB connection error:", err));
 
 // Session configuration
@@ -27,12 +31,12 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI || "mongodb://localhost:27017/test",
+    mongoUrl: process.env.MONGODB_URI || "mongodb://localhost:27017/transferts",
     ttl: 14 * 24 * 60 * 60 // 14 days
   })
 }));
 
-// Models
+// User schema & model
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true }
@@ -40,28 +44,32 @@ const userSchema = new mongoose.Schema({
 
 const AuthUser = mongoose.model("AuthUser", userSchema);
 
+// Transfert schema & model
+const transfertSchema = new mongoose.Schema({
+  sender: String,
+  receiver: String,
+  amount: Number,
+  date: { type: Date, default: Date.now },
+  description: String
+});
+
+const Transfert = mongoose.model("Transfert", transfertSchema);
+
 // Middleware pour vérifier si utilisateur connecté
 function requireLogin(req, res, next) {
   if (!req.session.userId) return res.redirect("/login");
   next();
 }
 
-// ROUTES
+// -------------------- ROUTES --------------------
 
-// Formulaire login
+// LOGIN / SIGNUP
+
 app.get("/login", (req, res) => {
-  res.send(`
-    <form action="/login" method="post">
-      <input name="username" placeholder="Username" required/>
-      <input name="password" type="password" placeholder="Password" required/>
-      <button>Login</button>
-    </form>
-  `);
+  res.sendFile(path.join(__dirname, "views/login.html"));
 });
 
-// Login POST
 app.post("/login", async (req, res) => {
-  console.log("LOGIN BODY:", req.body);
   try {
     const { username, password } = req.body;
     const user = await AuthUser.findOne({ username });
@@ -70,64 +78,147 @@ app.post("/login", async (req, res) => {
     if (!match) return res.status(401).send("Mot de passe incorrect");
 
     req.session.userId = user._id;
-    res.redirect("/users/choice");
+    res.redirect("/transferts");
   } catch (err) {
     console.error(err);
     res.status(500).send("Erreur serveur");
   }
 });
 
-// Formulaire pour créer un utilisateur (signup)
 app.get("/signup", (req, res) => {
-  res.send(`
-    <form action="/signup" method="post">
-      <input name="username" placeholder="Username" required/>
-      <input name="password" type="password" placeholder="Password" required/>
-      <button>Sign Up</button>
-    </form>
-  `);
+  res.sendFile(path.join(__dirname, "views/signup.html"));
 });
 
-// Signup POST
 app.post("/signup", async (req, res) => {
   try {
     const { username, password } = req.body;
     const hash = await bcrypt.hash(password, 10);
     const newUser = await AuthUser.create({ username, password: hash });
     req.session.userId = newUser._id;
-    res.redirect("/users/choice");
+    res.redirect("/transferts");
   } catch (err) {
     console.error(err);
     res.status(500).send("Erreur serveur signup");
   }
 });
 
-// Liste des utilisateurs (CRUD Read)
-app.get("/users/all", requireLogin, async (req, res) => {
-  try {
-    const users = await AuthUser.find({}, "-password");
-    res.json(users);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Erreur serveur /users/all");
-  }
-});
-
-// Page choix après login
-app.get("/users/choice", requireLogin, (req, res) => {
-  res.send(`
-    <h1>Bienvenue!</h1>
-    <a href="/users/all">Voir tous les utilisateurs</a>
-    <form action="/logout" method="post"><button>Logout</button></form>
-  `);
-});
-
-// Logout
 app.post("/logout", (req, res) => {
   req.session.destroy(err => {
     if (err) return res.status(500).send("Erreur logout");
     res.redirect("/login");
   });
+});
+
+// -------------------- TRANSFERT CRUD --------------------
+
+// Liste transferts
+app.get("/transferts", requireLogin, async (req, res) => {
+  try {
+    const transferts = await Transfert.find().sort({ date: -1 });
+    let list = transferts.map(t => `
+      <li>
+        ${t.sender} -> ${t.receiver} : ${t.amount} € (${t.date.toLocaleDateString()})
+        <a href="/transferts/edit/${t._id}">Edit</a>
+        <form style="display:inline" method="post" action="/transferts/delete/${t._id}">
+          <button>Delete</button>
+        </form>
+      </li>
+    `).join("");
+    res.send(`
+      <h1>Liste des transferts</h1>
+      <ul>${list}</ul>
+      <a href="/transferts/new">Ajouter un transfert</a>
+      <form method="post" action="/logout"><button>Logout</button></form>
+      <form method="get" action="/transferts/export/pdf"><button>Exporter PDF</button></form>
+    `);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Erreur serveur /transferts");
+  }
+});
+
+// Nouveau transfert form
+app.get("/transferts/new", requireLogin, (req, res) => {
+  res.sendFile(path.join(__dirname, "views/new_transfert.html"));
+});
+
+// Nouveau transfert POST
+app.post("/transferts/new", requireLogin, async (req, res) => {
+  try {
+    const { sender, receiver, amount, description } = req.body;
+    await Transfert.create({ sender, receiver, amount, description });
+    res.redirect("/transferts");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Erreur création transfert");
+  }
+});
+
+// Edit transfert form
+app.get("/transferts/edit/:id", requireLogin, async (req, res) => {
+  try {
+    const transfert = await Transfert.findById(req.params.id);
+    if (!transfert) return res.status(404).send("Transfert non trouvé");
+    res.send(`
+      <h1>Edit Transfert</h1>
+      <form method="post" action="/transferts/edit/${transfert._id}">
+        <input name="sender" value="${transfert.sender}" required/>
+        <input name="receiver" value="${transfert.receiver}" required/>
+        <input name="amount" value="${transfert.amount}" type="number" required/>
+        <input name="description" value="${transfert.description || ""}" placeholder="Description"/>
+        <button>Update</button>
+      </form>
+      <a href="/transferts">Back</a>
+    `);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Erreur édition transfert");
+  }
+});
+
+// Edit transfert POST
+app.post("/transferts/edit/:id", requireLogin, async (req, res) => {
+  try {
+    const { sender, receiver, amount, description } = req.body;
+    await Transfert.findByIdAndUpdate(req.params.id, { sender, receiver, amount, description });
+    res.redirect("/transferts");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Erreur update transfert");
+  }
+});
+
+// Delete transfert
+app.post("/transferts/delete/:id", requireLogin, async (req, res) => {
+  try {
+    await Transfert.findByIdAndDelete(req.params.id);
+    res.redirect("/transferts");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Erreur suppression transfert");
+  }
+});
+
+// Export PDF
+app.get("/transferts/export/pdf", requireLogin, async (req, res) => {
+  try {
+    const transferts = await Transfert.find().sort({ date: -1 });
+    const doc = new pdf();
+    const filePath = path.join(__dirname, "transferts.pdf");
+    doc.pipe(fs.createWriteStream(filePath));
+    doc.fontSize(18).text("Liste des transferts", { align: "center" });
+    doc.moveDown();
+    transferts.forEach(t => {
+      doc.fontSize(12).text(`${t.sender} -> ${t.receiver} : ${t.amount} € (${t.date.toLocaleDateString()}) - ${t.description || ""}`);
+    });
+    doc.end();
+    doc.on("finish", () => {
+      res.download(filePath, "transferts.pdf");
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Erreur export PDF");
+  }
 });
 
 // Serveur
