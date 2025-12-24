@@ -1,5 +1,5 @@
 /******************************************************************
- * APPLICATION DE TRANSFERT – VERSION FINALE (AVEC HISTORIQUE)
+ * APPLICATION DE TRANSFERT – VERSION FINALE (RENDER READY)
  ******************************************************************/
 
 const express = require('express');
@@ -20,12 +20,12 @@ app.use(session({
 }));
 
 // ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert', {
+mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+.catch(err => { console.error('Erreur MongoDB:', err); });
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -88,7 +88,7 @@ app.post('/login', async (req,res)=>{
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
     req.session.user = user.username;
     res.redirect('/menu');
-  }catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
+  }catch(err){ console.error('Erreur login:', err); res.status(500).send('Erreur serveur'); }
 });
 
 // ================= MENU =================
@@ -196,6 +196,7 @@ th{background:#007bff;color:white}
 .retired{background:#ffe0a3}
 .total{background:#222;color:white;font-weight:bold}
 button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer}
+select{padding:3px}
 </style></head><body>
 <h2 style="text-align:center">📋 Liste des transferts</h2>
 <a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
@@ -256,7 +257,8 @@ for(let dest in grouped){
 html+=`<table style="width:95%;margin:auto">
 <tr class="total">
 <td colspan="4">TOTAL GLOBAL</td>
-<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td><td colspan="5"></td>
+<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
+<td colspan="5"></td>
 </tr></table>
 </body></html>`;
 
@@ -315,8 +317,9 @@ doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | 
 doc.end();
 });
 
-/* ================= LOGOUT ================= */
+// ================= LOGOUT =================
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-/* ================= SERVER ================= */
-app.listen(3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
+// ================= SERVER =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur le port ${PORT}`));
