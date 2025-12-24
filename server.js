@@ -1,5 +1,5 @@
 /******************************************************************
- * APPLICATION DE TRANSFERT – VERSION FINALE PRODUCTION
+ * APPLICATION DE TRANSFERT – VERSION FINALE (AVEC HISTORIQUE)
  ******************************************************************/
 
 const express = require('express');
@@ -10,21 +10,24 @@ const PDFDocument = require('pdfkit');
 
 const app = express();
 
-/* ================= CONFIG ================= */
+// ================= CONFIG =================
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
-  secret: 'transfert-secret-final',
+  secret: 'transfert-secret-final-history',
   resave: false,
   saveUninitialized: true
 }));
 
-/* ================= DATABASE ================= */
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
-  .then(()=>console.log('✅ MongoDB connecté'))
-  .catch(console.error);
+// ================= DATABASE =================
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(()=>console.log('✅ MongoDB connecté'))
+.catch(console.error);
 
-/* ================= SCHEMAS ================= */
+// ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
   userType: { type: String, enum: ['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
   senderFirstName: String,
@@ -39,6 +42,7 @@ const transfertSchema = new mongoose.Schema({
   fees: Number,
   recoveryAmount: Number,
   recoveryMode: String,
+  retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
   code: String,
   createdAt: { type: Date, default: Date.now }
@@ -48,13 +52,13 @@ const Transfert = mongoose.model('Transfert', transfertSchema);
 const authSchema = new mongoose.Schema({ username:String, password:String });
 const Auth = mongoose.model('Auth', authSchema);
 
-/* ================= AUTH ================= */
+// ================= AUTH =================
 const requireLogin = (req,res,next)=>{
   if(req.session.user) return next();
   res.redirect('/login');
 };
 
-/* ================= LOGIN ================= */
+// ================= LOGIN =================
 app.get('/login',(req,res)=>{
 res.send(`
 <html><head><style>
@@ -87,7 +91,7 @@ app.post('/login', async (req,res)=>{
   }catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
 });
 
-/* ================= MENU ================= */
+// ================= MENU =================
 app.get('/menu', requireLogin,(req,res)=>{
 res.send(`
 <html><head><style>
@@ -100,13 +104,13 @@ button{width:300px;padding:15px;margin:10px;font-size:16px;border:none;border-ra
 <body>
 <h2>📲 Gestion des transferts</h2>
 <a href="/transferts/new"><button class="send">➕ Envoyer de l'argent</button></a><br>
-<a href="/transferts/list"><button class="list">📋 Liste / Retrait / Modification</button></a><br>
+<a href="/transferts/list"><button class="list">📋 Liste / Historique</button></a><br>
 <a href="/logout"><button class="logout">🚪 Déconnexion</button></a>
 </body></html>
 `);
 });
 
-/* ================= FORMULAIRE ================= */
+// ================= FORMULAIRE =================
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 
 app.get('/transferts/new', requireLogin,(req,res)=>{
@@ -170,19 +174,17 @@ await new Transfert({
   amount,
   fees,
   recoveryAmount: amount - fees,
+  retraitHistory: [],
   code: Math.floor(100000+Math.random()*900000)
 }).save();
 res.redirect('/transferts/list');
 });
 
-/* ================= LISTE ================= */
+// ================= LISTE =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
 const transferts = await Transfert.find().sort({destinationLocation:1});
 let grouped = {};
-transferts.forEach(t=>{
-  if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[];
-  grouped[t.destinationLocation].push(t);
-});
+transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
 
 let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
 let html = `
@@ -206,13 +208,15 @@ for(let dest in grouped){
   <table>
 <tr>
 <th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
-<th>Montant</th><th>Frais</th><th>Reçu</th>
+<th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
 <th>Destinataire</th><th>Tél</th><th>Statut</th><th>Action</th>
 </tr>`;
-
   grouped[dest].forEach(t=>{
     ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
     totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+
+    // HISTORIQUE HTML
+    let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
 
     html+=`
 <tr class="${t.retired?'retired':''}">
@@ -223,6 +227,7 @@ for(let dest in grouped){
 <td>${t.amount}</td>
 <td>${t.fees}</td>
 <td>${t.recoveryAmount}</td>
+<td>${histHtml}</td>
 <td>${t.receiverFirstName} ${t.receiverLastName}</td>
 <td>${t.receiverPhone}</td>
 <td>${t.retired?'Retiré':'Non retiré'}</td>
@@ -237,114 +242,38 @@ for(let dest in grouped){
 <option>Service</option>
 </select>
 <button>Retirer</button>
-</form>
-<form method="get" action="/transferts/edit/${t._id}" style="margin-top:5px">
-<button>✏️ Modifier</button>
-</form>
-<form method="post" action="/transferts/delete/${t._id}" style="margin-top:5px">
-<button style="background:#dc3545">❌ Supprimer</button>
-</form>
-`}</td>
+</form>`}</td>
 </tr>`;
   });
 
   html+=`<tr class="total">
 <td colspan="4">TOTAL ${dest}</td>
 <td>${ta}</td><td>${tf}</td><td>${tr}</td>
-<td colspan="4"></td>
+<td colspan="5"></td>
 </tr></table><br>`;
 }
 
 html+=`<table style="width:95%;margin:auto">
 <tr class="total">
-<td colspan="4">TOTAL GENERAL</td>
-<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
-<td colspan="4"></td>
+<td colspan="4">TOTAL GLOBAL</td>
+<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td><td colspan="5"></td>
 </tr></table>
 </body></html>`;
 
 res.send(html);
 });
 
-/* ================= RETRAIT ================= */
+// ================= RETRAIT =================
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-await Transfert.findByIdAndUpdate(req.body.id,{retired:true,recoveryMode:req.body.mode});
+await Transfert.findByIdAndUpdate(req.body.id,{
+  retired:true,
+  recoveryMode:req.body.mode,
+  $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
+});
 res.redirect('/transferts/list');
 });
 
-/* ================= EDITION ================= */
-app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
-const t = await Transfert.findById(req.params.id);
-if(!t) return res.redirect('/transferts/list');
-
-res.send(`
-<html><head><style>
-body{font-family:Arial;background:#dde5f0}
-form{background:#fff;width:950px;margin:20px auto;padding:20px;border-radius:8px}
-h3{background:#007bff;color:white;padding:8px;margin-top:10px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-input,select,button{padding:8px;width:100%}
-button{background:#28a745;color:white;border:none;margin-top:10px}
-</style></head>
-<body>
-<form method="post" action="/transferts/edit/${t._id}">
-<h3>Type de personne</h3>
-<select name="userType">
-<option ${t.userType==='Client'?'selected':''}>Client</option>
-<option ${t.userType==='Distributeur'?'selected':''}>Distributeur</option>
-<option ${t.userType==='Administrateur'?'selected':''}>Administrateur</option>
-<option ${t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
-</select>
-
-<h3>Expéditeur</h3>
-<div class="grid">
-<input name="senderFirstName" value="${t.senderFirstName}">
-<input name="senderLastName" value="${t.senderLastName}">
-<input name="senderPhone" value="${t.senderPhone}">
-<select name="originLocation">
-${locations.map(v=>`<option ${v===t.originLocation?'selected':''}>${v}</option>`).join('')}
-</select>
-</div>
-
-<h3>Destinataire</h3>
-<div class="grid">
-<input name="receiverFirstName" value="${t.receiverFirstName}">
-<input name="receiverLastName" value="${t.receiverLastName}">
-<input name="receiverPhone" value="${t.receiverPhone}">
-<select name="destinationLocation">
-${locations.map(v=>`<option ${v===t.destinationLocation?'selected':''}>${v}</option>`).join('')}
-</select>
-</div>
-
-<h3>Montants</h3>
-<div class="grid">
-<input name="amount" type="number" value="${t.amount}">
-<input name="fees" type="number" value="${t.fees}">
-</div>
-
-<button>Mettre à jour</button>
-</form>
-<center><a href="/transferts/list">⬅ Retour liste</a></center>
-</body></html>
-`);
-});
-
-app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
-const t = await Transfert.findById(req.params.id);
-if(!t) return res.redirect('/transferts/list');
-const amount = Number(req.body.amount||0);
-const fees = Number(req.body.fees||0);
-await Transfert.findByIdAndUpdate(req.params.id,{...req.body, amount, fees, recoveryAmount: amount-fees});
-res.redirect('/transferts/list');
-});
-
-/* ================= SUPPRESSION ================= */
-app.post('/transferts/delete/:id', requireLogin, async(req,res)=>{
-await Transfert.findByIdAndDelete(req.params.id);
-res.redirect('/transferts/list');
-});
-
-/* ================= PDF ================= */
+// ================= PDF =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
 const list = await Transfert.find().sort({destinationLocation:1});
 const doc = new PDFDocument({margin:30, size:'A4'});
@@ -352,28 +281,37 @@ res.setHeader('Content-Type','application/pdf');
 res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
 doc.pipe(res);
 
-doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'}); doc.moveDown();
+doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
+doc.moveDown();
 
-let grouped = {};
-list.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
+let groupedPDF = {};
+list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
 
-let totalAmountAll=0,totalFeesAll=0,totalReceivedAll=0;
+let totalA=0, totalF=0, totalR=0;
 
-for(let dest in grouped){
-  let ta=0,tf=0,tr=0;
-  doc.fontSize(14).text(`Destination: ${dest}`,{underline:true});
-  grouped[dest].forEach(t=>{
-    ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
-    totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+for(let dest in groupedPDF){
+  let subA=0, subF=0, subR=0;
+  doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
+  groupedPDF[dest].forEach(t=>{
+    subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
+    totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
 
-    doc.fontSize(10)
-    .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
-    .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
-    .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Mode: ${t.recoveryMode||'-'} | Code: ${t.code}`).moveDown(0.5);
+    doc.fontSize(10).fillColor('black')
+      .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
+      .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+      .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+    // HISTORIQUE PDF
+    if(t.retraitHistory && t.retraitHistory.length){
+      t.retraitHistory.forEach(h=>{
+        doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
+      });
+    }
+    doc.moveDown(0.5);
   });
-  doc.fontSize(12).text(`Total ${dest} → Montant: ${ta} | Frais: ${tf} | Reçu: ${tr}`).moveDown();
+  doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
 }
-doc.fontSize(14).text(`TOTAL GENERAL → Montant: ${totalAmountAll} | Frais: ${totalFeesAll} | Reçu: ${totalReceivedAll}`,{underline:true});
+
+doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
 doc.end();
 });
 
