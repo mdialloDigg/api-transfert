@@ -1,5 +1,5 @@
 /******************************************************************
- * APPLICATION DE TRANSFERT – RENDER READY AVEC DEBUG
+ * APP TRANSFERT – RENDER READY AVEC DEBUG MONGO
  ******************************************************************/
 
 const express = require('express');
@@ -14,20 +14,20 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
-  secret: 'transfert-secret-final-history',
+  secret: 'transfert-secret-final',
   resave: false,
   saveUninitialized: true
 }));
 
 // ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI, {
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert';
+
+mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(err => {
-  console.error('❌ Erreur MongoDB:', err);
-});
+.catch(err => console.error('❌ Erreur MongoDB:', err));
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -83,15 +83,19 @@ button{background:#007bff;color:white;border:none}
 app.post('/login', async (req,res)=>{
   try{
     const { username, password } = req.body;
-    let user = await Auth.findOne({ username });
+    const user = await Auth.findOne({ username }).exec();
     if(!user){
-      user = await new Auth({ username, password: bcrypt.hashSync(password,10) }).save();
+      // Création automatique pour test
+      const hashed = bcrypt.hashSync(password,10);
+      await new Auth({ username, password: hashed }).save();
+      req.session.user = username;
+      return res.redirect('/menu');
     }
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-    req.session.user = user.username;
+    req.session.user = username;
     res.redirect('/menu');
-  }catch(err){ 
-    console.error('Erreur login:', err); 
+  }catch(err){
+    console.error('Erreur login:', err);
     res.status(500).send('Erreur serveur: ' + err.message);
   }
 });
@@ -193,7 +197,7 @@ try{
 // ================= LISTE =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
 try{
-  const transferts = await Transfert.find().sort({destinationLocation:1});
+  const transferts = await Transfert.find().sort({destinationLocation:1}).exec();
   let grouped = {};
   transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
 
@@ -297,7 +301,7 @@ try{
 // ================= PDF =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
 try{
-  const list = await Transfert.find().sort({destinationLocation:1});
+  const list = await Transfert.find().sort({destinationLocation:1}).exec();
   const doc = new PDFDocument({margin:30, size:'A4'});
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
