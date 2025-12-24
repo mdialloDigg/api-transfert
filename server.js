@@ -6,7 +6,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
 
 const app = express();
 
@@ -239,84 +238,44 @@ try{
     code
   }).save();
 
-  res.send(`
-  <html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-  body{font-family:Arial;text-align:center;padding-top:50px;background:#dde5f0}
-  h2{color:#28a745}
-  p{font-size:20px;color:#007bff;font-weight:bold;margin:10px 0;}
-  a{margin:10px;display:inline-block;text-decoration:none;padding:12px 25px;background:#007bff;color:white;border-radius:8px;}
-  a:hover{background:#0056b3;}
-  </style></head>
-  <body>
-  <h2>✅ Transfert enregistré</h2>
-  <p>Code du transfert : ${code}</p>
-  <p>Montant à recevoir : ${recoveryAmount}</p>
-  <a href="/transferts/new">➕ Nouveau transfert</a>
-  <a href="/transferts/list">📋 Liste des transferts</a>
-  </body></html>
-  `);
+  res.redirect('/transferts/list');
 }catch(err){
   console.error('Erreur création transfert:', err);
   res.status(500).send('Erreur serveur: ' + err.message);
 }
-});
 
 // ================= LISTE TRANSFERTS =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
-try{
   const transferts = await Transfert.find().sort({destinationLocation:1}).exec();
-  let grouped = {};
-  transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
-
-  let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
   let html = `
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;background:#f4f6f9;margin:0;padding:0;}
-h2{text-align:center;color:#2c7be5;margin:20px 0;}
 table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:30px;border-radius:8px;overflow:hidden;}
 th,td{border:1px solid #ccc;padding:10px;font-size:13px;text-align:center;}
 th{background:#007bff;color:white;}
-tr:hover{background:#e8f0fe;}
-.retired{background:#ffe0a3;}
-.total{background:#222;color:white;font-weight:bold;}
-form{margin:0;display:inline-block;}
-button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;margin:2px;}
-button.print{background:#17a2b8;}
-button.delete{background:#dc3545;}
-select{padding:4px;}
-a{display:inline-block;margin:2px;text-decoration:none;color:#2c7be5;font-weight:bold;}
-a:hover{text-decoration:underline;}
+button{padding:5px 10px;border:none;border-radius:4px;margin:2px;cursor:pointer;}
+button.delete{background:#dc3545;color:white;}
+button.print{background:#17a2b8;color:white;}
+a{margin:2px;text-decoration:none;}
 </style>
+<script>
+function confirmDelete(){return confirm('❌ Voulez-vous vraiment supprimer ce transfert ?');}
+</script>
 </head>
 <body>
-<h2>📋 Liste des transferts</h2>
-<a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
-<hr>
-<script>
-function confirmDelete(){ return confirm('❌ Voulez-vous vraiment supprimer ce transfert ?'); }
-</script>
-`;
-
-for(let dest in grouped){
-  let ta=0,tf=0,tr=0;
-  html+=`<h3 style="text-align:center">Destination : ${dest}</h3>
-  <table>
+<h2>Liste des transferts</h2>
+<a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a><hr>
+<table>
 <tr>
 <th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
-<th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
-<th>Destinataire</th><th>Tél</th><th>Code</th><th>Statut</th><th>Action</th>
+<th>Montant</th><th>Frais</th><th>Reçu</th><th>Destinataire</th><th>Tél</th>
+<th>Code</th><th>Statut</th><th>Actions</th>
 </tr>`;
-  grouped[dest].forEach(t=>{
-    ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
-    totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
 
-    let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
-
-    html+=`
-<tr class="${t.retired?'retired':''}">
+transferts.forEach(t=>{
+  html+=`<tr>
 <td>${t.userType}</td>
 <td>${t.senderFirstName} ${t.senderLastName}</td>
 <td>${t.senderPhone}</td>
@@ -324,90 +283,94 @@ for(let dest in grouped){
 <td>${t.amount}</td>
 <td>${t.fees}</td>
 <td>${t.recoveryAmount}</td>
-<td>${histHtml}</td>
 <td>${t.receiverFirstName} ${t.receiverLastName}</td>
 <td>${t.receiverPhone}</td>
 <td>${t.code}</td>
 <td>${t.retired?'Retiré':'Non retiré'}</td>
-<td>${t.retired?'—':`
-<form method="post" action="/transferts/retirer" style="display:inline-block">
-<input type="hidden" name="id" value="${t._id}">
-<select name="mode">
-<option>Espèces</option>
-<option>Orange Money</option>
-<option>Wave</option>
-<option>Produit</option>
-<option>Service</option>
-</select>
-<button>Retirer</button>
-</form>
+<td>
 <a href="/transferts/edit/${t._id}"><button>Modifier</button></a>
-<form method="post" action="/transferts/delete/${t._id}" style="display:inline-block" onsubmit="return confirmDelete();">
+<form method="post" action="/transferts/delete/${t._id}" style="display:inline;" onsubmit="return confirmDelete();">
 <button class="delete">Supprimer</button>
 </form>
 <a href="/transferts/print/${t._id}" target="_blank"><button class="print">Imprimer</button></a>
-`}</td>
+</td>
 </tr>`;
-  });
-
-  html+=`<tr class="total">
-<td colspan="4">TOTAL ${dest}</td>
-<td>${ta}</td><td>${tf}</td><td>${tr}</td>
-<td colspan="6"></td>
-</tr></table>`;
-}
-
-html+=`<table style="width:95%;margin:auto">
-<tr class="total">
-<td colspan="4">TOTAL GLOBAL</td>
-<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
-<td colspan="6"></td>
-</tr></table>
-</body></html>`;
-
-res.send(html);
-}catch(err){
-  console.error('Erreur liste transferts:', err);
-  res.status(500).send('Erreur serveur: ' + err.message);
-}
 });
 
-// ================= RETRAIT =================
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-try{
-  await Transfert.findByIdAndUpdate(req.body.id,{
-    retired:true,
-    recoveryMode:req.body.mode,
-    $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
+html+=`</table></body></html>`;
+res.send(html);
+});
+
+// ================= MODIFIER =================
+app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id).exec();
+  if(!t) return res.send('Transfert introuvable');
+
+  res.send(`
+<html>
+<head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body>
+<h2>Modifier Transfert</h2>
+<form method="post" action="/transferts/edit/${t._id}">
+<label>Type</label>
+<select name="userType">
+<option ${t.userType==='Client'?'selected':''}>Client</option>
+<option ${t.userType==='Distributeur'?'selected':''}>Distributeur</option>
+<option ${t.userType==='Administrateur'?'selected':''}>Administrateur</option>
+<option ${t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
+</select><br>
+<label>Prénom expéditeur</label><input name="senderFirstName" value="${t.senderFirstName}" required><br>
+<label>Nom expéditeur</label><input name="senderLastName" value="${t.senderLastName}" required><br>
+<label>Téléphone expéditeur</label><input name="senderPhone" value="${t.senderPhone}" required><br>
+<label>Origine</label>
+<select name="originLocation">
+${locations.map(v=>`<option ${v===t.originLocation?'selected':''}>${v}</option>`).join('')}
+</select><br>
+<label>Prénom destinataire</label><input name="receiverFirstName" value="${t.receiverFirstName}" required><br>
+<label>Nom destinataire</label><input name="receiverLastName" value="${t.receiverLastName}" required><br>
+<label>Téléphone destinataire</label><input name="receiverPhone" value="${t.receiverPhone}" required><br>
+<label>Destination</label>
+<select name="destinationLocation">
+${locations.map(v=>`<option ${v===t.destinationLocation?'selected':''}>${v}</option>`).join('')}
+</select><br>
+<label>Montant</label><input type="number" name="amount" value="${t.amount}" required><br>
+<label>Frais</label><input type="number" name="fees" value="${t.fees}" required><br>
+<button>Enregistrer les modifications</button>
+</form>
+<a href="/transferts/list">⬅ Retour</a>
+</body>
+</html>
+  `);
+});
+
+app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id).exec();
+  if(!t) return res.send('Transfert introuvable');
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  const recoveryAmount = amount - fees;
+
+  await Transfert.findByIdAndUpdate(req.params.id,{
+    ...req.body,
+    amount,
+    fees,
+    recoveryAmount
   });
   res.redirect('/transferts/list');
-}catch(err){
-  console.error('Erreur retrait:', err);
-  res.status(500).send('Erreur serveur: ' + err.message);
-}
 });
 
-// ================= MODIFIER / SUPPRIMER / PRINT =================
-// Routes pour modifier et supprimer restent identiques
-app.get('/transferts/edit/:id', requireLogin, async (req, res) => { /* ... */ });
-app.post('/transferts/edit/:id', requireLogin, async (req, res) => { /* ... */ });
-app.post('/transferts/delete/:id', requireLogin, async(req,res)=>{ /* ... */ });
+// ================= SUPPRIMER =================
+app.post('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndDelete(req.params.id);
+  res.redirect('/transferts/list');
+});
 
 // ================= IMPRIMER TICKET =================
 app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
-  try{
-    const t = await Transfert.findById(req.params.id).exec();
-    if(!t) return res.send('Transfert introuvable');
-
-    res.send(`
+  const t = await Transfert.findById(req.params.id).exec();
+  if(!t) return res.send('Transfert introuvable');
+  res.send(`
 <html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:monospace;width:300px;padding:10px;}
-h3{text-align:center;}
-</style>
-</head>
 <body onload="window.print()">
 <h3>RECU TRANSFERT</h3>
 <p>Code: ${t.code}</p>
@@ -423,15 +386,8 @@ h3{text-align:center;}
 ${t.retraitHistory.map(h=>`<p>→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}</p>`).join('')}
 </body>
 </html>
-    `);
-  }catch(err){
-    console.error(err);
-    res.status(500).send('Erreur serveur');
-  }
+  `);
 });
-
-// ================= PDF GLOBAL =================
-app.get('/transferts/pdf', requireLogin, async(req,res)=>{ /* ... */ });
 
 // ================= LOGOUT =================
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
