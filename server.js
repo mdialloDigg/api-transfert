@@ -1,5 +1,5 @@
 /******************************************************************
- * APPLICATION DE TRANSFERT – VERSION FINALE (RENDER READY)
+ * APPLICATION DE TRANSFERT – RENDER READY AVEC DEBUG
  ******************************************************************/
 
 const express = require('express');
@@ -25,7 +25,9 @@ mongoose.connect(process.env.MONGODB_URI, {
   useUnifiedTopology: true
 })
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(err => { console.error('Erreur MongoDB:', err); });
+.catch(err => {
+  console.error('❌ Erreur MongoDB:', err);
+});
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -88,7 +90,10 @@ app.post('/login', async (req,res)=>{
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
     req.session.user = user.username;
     res.redirect('/menu');
-  }catch(err){ console.error('Erreur login:', err); res.status(500).send('Erreur serveur'); }
+  }catch(err){ 
+    console.error('Erreur login:', err); 
+    res.status(500).send('Erreur serveur: ' + err.message);
+  }
 });
 
 // ================= MENU =================
@@ -167,154 +172,172 @@ ${locations.map(v=>`<option>${v}</option>`).join('')}
 });
 
 app.post('/transferts/new', requireLogin, async(req,res)=>{
-const amount = Number(req.body.amount||0);
-const fees = Number(req.body.fees||0);
-await new Transfert({
-  ...req.body,
-  amount,
-  fees,
-  recoveryAmount: amount - fees,
-  retraitHistory: [],
-  code: Math.floor(100000+Math.random()*900000)
-}).save();
-res.redirect('/transferts/list');
+try{
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  await new Transfert({
+    ...req.body,
+    amount,
+    fees,
+    recoveryAmount: amount - fees,
+    retraitHistory: [],
+    code: Math.floor(100000+Math.random()*900000)
+  }).save();
+  res.redirect('/transferts/list');
+}catch(err){
+  console.error('Erreur création transfert:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
+}
 });
 
 // ================= LISTE =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
-const transferts = await Transfert.find().sort({destinationLocation:1});
-let grouped = {};
-transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
+try{
+  const transferts = await Transfert.find().sort({destinationLocation:1});
+  let grouped = {};
+  transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
 
-let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
-let html = `
-<html><head><style>
-body{font-family:Arial;background:#f4f6f9}
-table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:20px}
-th,td{border:1px solid #ccc;padding:6px;font-size:13px;text-align:center}
-th{background:#007bff;color:white}
-.retired{background:#ffe0a3}
-.total{background:#222;color:white;font-weight:bold}
-button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer}
-select{padding:3px}
-</style></head><body>
-<h2 style="text-align:center">📋 Liste des transferts</h2>
-<a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
-<hr>
-`;
+  let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
+  let html = `
+  <html><head><style>
+  body{font-family:Arial;background:#f4f6f9}
+  table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:20px}
+  th,td{border:1px solid #ccc;padding:6px;font-size:13px;text-align:center}
+  th{background:#007bff;color:white}
+  .retired{background:#ffe0a3}
+  .total{background:#222;color:white;font-weight:bold}
+  button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer}
+  select{padding:3px}
+  </style></head><body>
+  <h2 style="text-align:center">📋 Liste des transferts</h2>
+  <a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
+  <hr>
+  `;
 
-for(let dest in grouped){
-  let ta=0,tf=0,tr=0;
-  html+=`<h3 style="text-align:center">Destination : ${dest}</h3>
-  <table>
-<tr>
-<th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
-<th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
-<th>Destinataire</th><th>Tél</th><th>Statut</th><th>Action</th>
-</tr>`;
-  grouped[dest].forEach(t=>{
-    ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
-    totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+  for(let dest in grouped){
+    let ta=0,tf=0,tr=0;
+    html+=`<h3 style="text-align:center">Destination : ${dest}</h3>
+    <table>
+  <tr>
+  <th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
+  <th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
+  <th>Destinataire</th><th>Tél</th><th>Statut</th><th>Action</th>
+  </tr>`;
+    grouped[dest].forEach(t=>{
+      ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
+      totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
 
-    // HISTORIQUE HTML
-    let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
+      let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
 
-    html+=`
-<tr class="${t.retired?'retired':''}">
-<td>${t.userType}</td>
-<td>${t.senderFirstName} ${t.senderLastName}</td>
-<td>${t.senderPhone}</td>
-<td>${t.originLocation}</td>
-<td>${t.amount}</td>
-<td>${t.fees}</td>
-<td>${t.recoveryAmount}</td>
-<td>${histHtml}</td>
-<td>${t.receiverFirstName} ${t.receiverLastName}</td>
-<td>${t.receiverPhone}</td>
-<td>${t.retired?'Retiré':'Non retiré'}</td>
-<td>${t.retired?'—':`
-<form method="post" action="/transferts/retirer">
-<input type="hidden" name="id" value="${t._id}">
-<select name="mode">
-<option>Espèces</option>
-<option>Orange Money</option>
-<option>Wave</option>
-<option>Produit</option>
-<option>Service</option>
-</select>
-<button>Retirer</button>
-</form>`}</td>
-</tr>`;
-  });
+      html+=`
+  <tr class="${t.retired?'retired':''}">
+  <td>${t.userType}</td>
+  <td>${t.senderFirstName} ${t.senderLastName}</td>
+  <td>${t.senderPhone}</td>
+  <td>${t.originLocation}</td>
+  <td>${t.amount}</td>
+  <td>${t.fees}</td>
+  <td>${t.recoveryAmount}</td>
+  <td>${histHtml}</td>
+  <td>${t.receiverFirstName} ${t.receiverLastName}</td>
+  <td>${t.receiverPhone}</td>
+  <td>${t.retired?'Retiré':'Non retiré'}</td>
+  <td>${t.retired?'—':`
+  <form method="post" action="/transferts/retirer">
+  <input type="hidden" name="id" value="${t._id}">
+  <select name="mode">
+  <option>Espèces</option>
+  <option>Orange Money</option>
+  <option>Wave</option>
+  <option>Produit</option>
+  <option>Service</option>
+  </select>
+  <button>Retirer</button>
+  </form>`}</td>
+  </tr>`;
+    });
 
-  html+=`<tr class="total">
-<td colspan="4">TOTAL ${dest}</td>
-<td>${ta}</td><td>${tf}</td><td>${tr}</td>
-<td colspan="5"></td>
-</tr></table><br>`;
+    html+=`<tr class="total">
+  <td colspan="4">TOTAL ${dest}</td>
+  <td>${ta}</td><td>${tf}</td><td>${tr}</td>
+  <td colspan="5"></td>
+  </tr></table><br>`;
+  }
+
+  html+=`<table style="width:95%;margin:auto">
+  <tr class="total">
+  <td colspan="4">TOTAL GLOBAL</td>
+  <td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
+  <td colspan="5"></td>
+  </tr></table>
+  </body></html>`;
+
+  res.send(html);
+}catch(err){
+  console.error('Erreur liste transferts:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
 }
-
-html+=`<table style="width:95%;margin:auto">
-<tr class="total">
-<td colspan="4">TOTAL GLOBAL</td>
-<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
-<td colspan="5"></td>
-</tr></table>
-</body></html>`;
-
-res.send(html);
 });
 
 // ================= RETRAIT =================
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-await Transfert.findByIdAndUpdate(req.body.id,{
-  retired:true,
-  recoveryMode:req.body.mode,
-  $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
-});
-res.redirect('/transferts/list');
+try{
+  await Transfert.findByIdAndUpdate(req.body.id,{
+    retired:true,
+    recoveryMode:req.body.mode,
+    $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
+  });
+  res.redirect('/transferts/list');
+}catch(err){
+  console.error('Erreur retrait:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
+}
 });
 
 // ================= PDF =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
-const list = await Transfert.find().sort({destinationLocation:1});
-const doc = new PDFDocument({margin:30, size:'A4'});
-res.setHeader('Content-Type','application/pdf');
-res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
-doc.pipe(res);
+try{
+  const list = await Transfert.find().sort({destinationLocation:1});
+  const doc = new PDFDocument({margin:30, size:'A4'});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
+  doc.pipe(res);
 
-doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
-doc.moveDown();
+  doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
+  doc.moveDown();
 
-let groupedPDF = {};
-list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
+  let groupedPDF = {};
+  list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
 
-let totalA=0, totalF=0, totalR=0;
+  let totalA=0, totalF=0, totalR=0;
 
-for(let dest in groupedPDF){
-  let subA=0, subF=0, subR=0;
-  doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
-  groupedPDF[dest].forEach(t=>{
-    subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
-    totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
+  for(let dest in groupedPDF){
+    let subA=0, subF=0, subR=0;
+    doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
+    groupedPDF[dest].forEach(t=>{
+      subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
+      totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
 
-    doc.fontSize(10).fillColor('black')
-      .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
-      .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
-      .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
-    // HISTORIQUE PDF
-    if(t.retraitHistory && t.retraitHistory.length){
-      t.retraitHistory.forEach(h=>{
-        doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
-      });
-    }
-    doc.moveDown(0.5);
-  });
-  doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
+      doc.fontSize(10).fillColor('black')
+        .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
+        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+      if(t.retraitHistory && t.retraitHistory.length){
+        t.retraitHistory.forEach(h=>{
+          doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
+        });
+      }
+      doc.moveDown(0.5);
+    });
+    doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
+  }
+
+  doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
+  doc.end();
+}catch(err){
+  console.error('Erreur PDF:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
 }
-
-doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
-doc.end();
 });
 
 // ================= LOGOUT =================
