@@ -1,10 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE ULTIME
- * - Comptes utilisateurs
- * - Transferts
- * - Modifier / Supprimer
- * - Mode de retrait
- * - Impression code transfert
+ * APP TRANSFERT – VERSION FINALE PRODUCTION (RENDER READY)
  ******************************************************************/
 
 const express = require('express');
@@ -18,16 +13,22 @@ const app = express();
 // ================= CONFIG =================
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
 app.use(session({
   secret: 'transfert-secret-final',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: false
 }));
 
 // ================= DATABASE =================
-mongoose.connect('mongodb://127.0.0.1:27017/transfert_final')
+console.log('MONGODB_URI =', process.env.MONGODB_URI ? 'OK' : 'MANQUANT');
+
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+.catch(err=>console.error('❌ MongoDB error:', err));
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -52,7 +53,7 @@ const transfertSchema = new mongoose.Schema({
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
-  username: String,
+  username: { type: String, unique: true },
   password: String
 });
 const Auth = mongoose.model('Auth', authSchema);
@@ -61,8 +62,8 @@ const Auth = mongoose.model('Auth', authSchema);
 async function generateUniqueCode(){
   let code, exists=true;
   while(exists){
-    code = String.fromCharCode(65+Math.random()*26|0) + (100+Math.random()*900|0);
-    exists = await Transfert.findOne({code});
+    code = String.fromCharCode(65 + Math.random()*26|0) + (100 + Math.random()*900|0);
+    exists = await Transfert.findOne({ code });
   }
   return code;
 }
@@ -72,9 +73,7 @@ const requireLogin = (req,res,next)=>{
   res.redirect('/login');
 };
 
-const locations = ['France','Belgique','Conakry','Suisse','USA','Canada'];
-
-// ================= LOGIN / REGISTER =================
+// ================= AUTH =================
 app.get('/login',(req,res)=>res.send(`
 <h2>Connexion</h2>
 <form method="post">
@@ -85,12 +84,19 @@ app.get('/login',(req,res)=>res.send(`
 <a href="/register">Créer un compte</a>
 `));
 
-app.post('/login',async(req,res)=>{
-  const u = await Auth.findOne({username:req.body.username});
-  if(!u || !bcrypt.compareSync(req.body.password,u.password))
-    return res.send('Login incorrect');
-  req.session.user = u.username;
-  res.redirect('/menu');
+app.post('/login', async(req,res)=>{
+  try{
+    const { username, password } = req.body;
+    const user = await Auth.findOne({ username });
+    if(!user) return res.send('❌ Compte inexistant');
+    if(!bcrypt.compareSync(password,user.password))
+      return res.send('❌ Mot de passe incorrect');
+    req.session.user = user.username;
+    res.redirect('/menu');
+  }catch(err){
+    console.error('LOGIN ERROR:', err);
+    res.status(500).send('Erreur serveur login');
+  }
 });
 
 app.get('/register',(req,res)=>res.send(`
@@ -103,14 +109,18 @@ app.get('/register',(req,res)=>res.send(`
 `));
 
 app.post('/register',async(req,res)=>{
-  const hash = bcrypt.hashSync(req.body.password,10);
-  await new Auth({username:req.body.username,password:hash}).save();
-  res.redirect('/login');
+  try{
+    const hash = bcrypt.hashSync(req.body.password,10);
+    await new Auth({ username:req.body.username, password:hash }).save();
+    res.redirect('/login');
+  }catch(err){
+    res.send('❌ Utilisateur déjà existant');
+  }
 });
 
 // ================= MENU =================
 app.get('/menu',requireLogin,(req,res)=>res.send(`
-<h2>Menu</h2>
+<h2>📲 Menu</h2>
 <a href="/transferts/new">➕ Nouveau transfert</a><br>
 <a href="/transferts/list">📋 Liste des transferts</a><br>
 <a href="/logout">🚪 Déconnexion</a>
@@ -140,21 +150,22 @@ Mode de retrait
 </form>
 
 <script>
-const a=document.getElementById('amount'),
-f=document.getElementById('fees'),
-r=document.getElementById('recoveryAmount');
-function calc(){r.value=(a.value||0)-(f.value||0);}
+const a=document.getElementById('amount');
+const f=document.getElementById('fees');
+const r=document.getElementById('recoveryAmount');
+function calc(){ r.value=(a.value||0)-(f.value||0); }
 a.oninput=f.oninput=calc;
 </script>
 `);
 });
 
-// ================= SAVE =================
 app.post('/transferts/new',requireLogin,async(req,res)=>{
-  const amount=+req.body.amount, fees=+req.body.fees;
+  const amount = Number(req.body.amount);
+  const fees = Number(req.body.fees);
   await new Transfert({
     ...req.body,
-    amount, fees,
+    amount,
+    fees,
     recoveryAmount: amount-fees
   }).save();
   res.redirect('/transferts/list');
@@ -162,11 +173,12 @@ app.post('/transferts/new',requireLogin,async(req,res)=>{
 
 // ================= LISTE =================
 app.get('/transferts/list',requireLogin,async(req,res)=>{
-  const list = await Transfert.find();
-  let html=`<h2>Liste</h2><table border="1"><tr>
-  <th>Code</th><th>Montant</th><th>Reçu</th><th>Mode</th><th>Actions</th></tr>`;
+  const list = await Transfert.find().sort({createdAt:-1});
+  let html=`<h2>Liste des transferts</h2><table border="1">
+<tr><th>Code</th><th>Montant</th><th>Reçu</th><th>Mode</th><th>Actions</th></tr>`;
   list.forEach(t=>{
-    html+=`<tr>
+    html+=`
+<tr>
 <td>${t.code}</td>
 <td>${t.amount}</td>
 <td>${t.recoveryAmount}</td>
@@ -180,10 +192,10 @@ app.get('/transferts/list',requireLogin,async(req,res)=>{
 </td>
 </tr>`;
   });
-  res.send(html+'</table>');
+  res.send(html+'</table><a href="/menu">⬅ Menu</a>');
 });
 
-// ================= IMPRIMER CODE =================
+// ================= PRINT =================
 app.get('/transferts/print/:id',requireLogin,async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
 res.send(`
@@ -193,8 +205,6 @@ res.send(`
 <p>Montant: ${t.amount}</p>
 <p>Reçu: ${t.recoveryAmount}</p>
 <p>Mode: ${t.recoveryMode}</p>
-<p>Expéditeur: ${t.senderFirstName||''} ${t.senderLastName||''}</p>
-<p>Destinataire: ${t.receiverFirstName||''} ${t.receiverLastName||''}</p>
 `);
 });
 
@@ -210,4 +220,5 @@ app.get('/logout',(req,res)=>{
 });
 
 // ================= SERVER =================
-app.listen(3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur actif sur port ${PORT}`));
