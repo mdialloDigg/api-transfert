@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – RENDER READY AVEC DEBUG MONGO
+ * APP TRANSFERT – RENDER READY AVEC TEST MONGO
  ******************************************************************/
 
 const express = require('express');
@@ -24,10 +24,17 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transf
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000 // Timeout rapide pour Render
 })
 .then(()=>console.log('✅ MongoDB connecté'))
 .catch(err => console.error('❌ Erreur MongoDB:', err));
+
+// Éviter buffering timeout en vérifiant la connexion dès le départ
+mongoose.connection.on('error', err => {
+  console.error('❌ MongoDB connection error:', err);
+});
+mongoose.connection.on('connected', ()=>console.log('✅ MongoDB connection OK'));
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
