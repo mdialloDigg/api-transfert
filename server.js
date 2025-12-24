@@ -1,5 +1,6 @@
 /******************************************************************
  * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE
+ * Prêt pour Render avec vérification téléphone et création user par défaut
  ******************************************************************/
 
 const express = require('express');
@@ -20,9 +21,14 @@ app.use(session({
 }));
 
 // ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert';
+
+mongoose.connect(MONGO_URI)
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+.catch(err => {
+  console.error('❌ Erreur connexion MongoDB:', err);
+  process.exit(1);
+});
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -49,7 +55,6 @@ const Transfert = mongoose.model('Transfert', transfertSchema);
 const authSchema = new mongoose.Schema({ username:String, password:String });
 const Auth = mongoose.model('Auth', authSchema);
 
-// ================= USERS =================
 const userSchema = new mongoose.Schema({
   phone: { type: String, unique: true, required: true },
   name: String,
@@ -82,10 +87,17 @@ const requirePhoneAuth = (req,res,next)=>{
   res.redirect('/phone');
 };
 
-// ================= REDIRECT RACINE =================
-app.get('/', (req,res)=>{
-  res.redirect('/phone');
-});
+// ================= LOCATIONS =================
+const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+
+// ================= INIT DEFAULT USER =================
+(async()=>{
+  const count = await User.countDocuments();
+  if(count === 0){
+    console.log('⚡ Aucun utilisateur trouvé, création du premier utilisateur par défaut.');
+    await User.create({ phone: '770123456', name:'Utilisateur Test', role:'Client' });
+  }
+})();
 
 // ================= PHONE AUTH =================
 app.get('/phone',(req,res)=>{
@@ -115,29 +127,24 @@ button{background:#007bff;color:white;border:none;font-weight:bold;}
 app.post('/phone', async(req,res)=>{
   try{
     const { phone } = req.body;
-
     const user = await User.findOne({ phone }).exec();
 
-   // if(!user){
-   //   return res.send(`
-   //     <h3>❌ Numéro non autorisé</h3>
-   //     <a href="/phone">⬅ Retour</a>
-   //   `);
-  //  }
+    if(!user){
+      return res.send(`<h3>❌ Numéro non autorisé</h3><a href="/phone">⬅ Retour</a>`);
+    }
 
-    // OK → session
     req.session.phoneUser = phone;
     req.session.userRole = user.role;
 
-    res.redirect('/login'); // login EXISTANT
+    res.redirect('/login');
   }catch(err){
-    console.error(err);
+    console.error('Erreur /phone:', err);
     res.status(500).send('Erreur serveur');
   }
 });
 
 // ================= LOGIN =================
-app.get('/login',(req,res)=>{ 
+app.get('/login',(req,res)=>{
 res.send(`
 <html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{margin:0;font-family:Arial;background:#f0f4f8;text-align:center;padding-top:80px;}
@@ -198,13 +205,10 @@ button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-ra
 `);
 });
 
-// ================= LOCATIONS =================
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-
 // ================= FORMULAIRE TRANSFERT =================
 app.get('/transferts/new', requirePhoneAuth, requireLogin, async(req,res)=>{
   const code = await generateUniqueCode();
-res.send(`
+  res.send(`
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -287,7 +291,7 @@ updateRecovery();
 `);
 });
 
-// ================= ENREGISTRER / MODIFIER =================
+// ================= ENREGISTRER TRANSFERT =================
 app.post('/transferts/new', requirePhoneAuth, requireLogin, async(req,res)=>{
   try{
     const amount = Number(req.body.amount||0);
@@ -299,7 +303,7 @@ app.post('/transferts/new', requirePhoneAuth, requireLogin, async(req,res)=>{
   }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
-// ================= LISTE AVEC TOTAUX =================
+// ================= LISTE TRANSFERTS =================
 app.get('/transferts/list', requirePhoneAuth, requireLogin, async(req,res)=>{
   const transferts = await Transfert.find().sort({destinationLocation:1});
   let grouped = {};
@@ -399,10 +403,16 @@ app.get('/transferts/pdf', requirePhoneAuth, requireLogin, async(req,res)=>{
         totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
         doc.fontSize(10).fillColor('black')
         .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
-        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Code: ${t.code} | Statut: ${t.retired?'Retiré':'Non retiré'}`)
-        .moveDown(0.5);
+        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+        if(t.retraitHistory && t.retraitHistory.length){
+          t.retraitHistory.forEach(h=>{
+            doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
+          });
+        }
+        doc.moveDown(0.5);
       });
-      doc.fontSize(12).fillColor('black').text(`Sous-total ${dest}: Montant=${subA} | Frais=${subF} | Reçu=${subR}`).moveDown();
+      doc.fontSize(12).text(`Sous-total ${dest}: Montant=${subA} | Frais=${subF} | Reçu=${subR}`).moveDown();
     }
 
     doc.moveDown().fontSize(14).fillColor('black').text(`Total global: Montant=${totalA} | Frais=${totalF} | Reçu=${totalR}`);
@@ -415,36 +425,6 @@ app.get('/logout',(req,res)=>{
   req.session.destroy(()=>res.redirect('/phone'));
 });
 
-// ================= RETRAIT =================
-app.post('/transferts/retirer', requirePhoneAuth, requireLogin, async(req,res)=>{
-  try{
-    await Transfert.findByIdAndUpdate(req.body.id,{
-      retired:true,
-      recoveryMode:req.body.mode,
-      $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
-    });
-    res.redirect('/transferts/list');
-  }catch(err){
-    console.error('Erreur retrait:', err);
-    res.status(500).send('Erreur serveur: ' + err.message);
-  }
-});
-
-// ================= PRINT =================
-app.get('/transferts/print/:id', requirePhoneAuth, requireLogin, async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  res.send(`<html><body onload="window.print()">
-<h2>Transfert ${t.code}</h2>
-<p>Type: ${t.userType}</p>
-<p>Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
-<p>Origine: ${t.originLocation}</p>
-<p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
-<p>Destination: ${t.destinationLocation}</p>
-<p>Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount}</p>
-<p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
-</body></html>`);
-});
-
 // ================= SERVER =================
-app.listen(3000,()=>console.log('🚀 App Transfert démarrée sur http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,()=>console.log(`🚀 App Transfert démarrée sur le port ${PORT}`));
