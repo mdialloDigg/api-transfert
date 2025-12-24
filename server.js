@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – RENDER READY AVEC TEST MONGO
+ * APP TRANSFERT – AVEC CODE A LETTRE+CHIFFRES ET MONTANT REÇU
  ******************************************************************/
 
 const express = require('express');
@@ -20,16 +20,11 @@ app.use(session({
 }));
 
 // ================= DATABASE =================
-/* ================= MONGODB ================= */
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
 .then(()=>console.log('✅ MongoDB connecté'))
 .catch(console.error);
 
-
-// Éviter buffering timeout en vérifiant la connexion dès le départ
-mongoose.connection.on('error', err => {
-  console.error('❌ MongoDB connection error:', err);
-});
+mongoose.connection.on('error', err => console.error('❌ MongoDB connection error:', err));
 mongoose.connection.on('connected', ()=>console.log('✅ MongoDB connection OK'));
 
 // ================= SCHEMAS =================
@@ -56,6 +51,13 @@ const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({ username:String, password:String });
 const Auth = mongoose.model('Auth', authSchema);
+
+// ================= UTILITAIRE =================
+function generateCode() {
+  const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // A-Z
+  const number = Math.floor(100 + Math.random() * 900); // 100-999
+  return `${letter}${number}`;
+}
 
 // ================= AUTH =================
 const requireLogin = (req,res,next)=>{
@@ -88,7 +90,6 @@ app.post('/login', async (req,res)=>{
     const { username, password } = req.body;
     const user = await Auth.findOne({ username }).exec();
     if(!user){
-      // Création automatique pour test
       const hashed = bcrypt.hashSync(password,10);
       await new Auth({ username, password: hashed }).save();
       req.session.user = username;
@@ -131,7 +132,7 @@ res.send(`
 body{font-family:Arial;background:#dde5f0}
 form{background:#fff;width:950px;margin:20px auto;padding:20px;border-radius:8px}
 h3{background:#007bff;color:white;padding:8px;margin-top:10px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
 input,select,button{padding:8px;width:100%}
 button{background:#28a745;color:white;border:none;margin-top:10px}
 </style></head>
@@ -165,15 +166,41 @@ ${locations.map(v=>`<option>${v}</option>`).join('')}
 </select>
 </div>
 
-<h3>Montants</h3>
+<h3>Montants et Code</h3>
 <div class="grid">
-<input name="amount" type="number" placeholder="Montant">
-<input name="fees" type="number" placeholder="Frais">
+<input name="amount" type="number" id="amount" placeholder="Montant">
+<input name="fees" type="number" id="fees" placeholder="Frais">
+<input type="text" id="recoveryAmount" placeholder="Montant à recevoir" readonly>
+<input type="text" id="code" placeholder="Code transfert" readonly>
 </div>
 
 <button>Enregistrer</button>
 </form>
 <center><a href="/menu">⬅ Retour menu</a></center>
+
+<script>
+function generateCode() {
+  const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const number = Math.floor(100 + Math.random() * 900);
+  return letter + number;
+}
+
+const codeField = document.getElementById('code');
+const amountField = document.getElementById('amount');
+const feesField = document.getElementById('fees');
+const recoveryField = document.getElementById('recoveryAmount');
+
+codeField.value = generateCode();
+
+function updateRecovery() {
+  const amount = parseFloat(amountField.value) || 0;
+  const fees = parseFloat(feesField.value) || 0;
+  recoveryField.value = amount - fees;
+}
+
+amountField.addEventListener('input', updateRecovery);
+feesField.addEventListener('input', updateRecovery);
+</script>
 </body></html>
 `);
 });
@@ -182,15 +209,33 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
 try{
   const amount = Number(req.body.amount||0);
   const fees = Number(req.body.fees||0);
+  const code = generateCode(); // Génération côté serveur pour stockage
+
   await new Transfert({
     ...req.body,
     amount,
     fees,
     recoveryAmount: amount - fees,
     retraitHistory: [],
-    code: Math.floor(100000+Math.random()*900000)
+    code
   }).save();
-  res.redirect('/transferts/list');
+
+  // Affichage du code et montant à recevoir après enregistrement
+  res.send(`
+  <html><head><style>
+  body{font-family:Arial;text-align:center;padding-top:50px;background:#dde5f0}
+  h2{color:#28a745}
+  p{font-size:20px;color:#007bff;font-weight:bold}
+  a{margin:10px;display:inline-block;text-decoration:none;padding:10px 20px;background:#007bff;color:white;border-radius:6px}
+  </style></head>
+  <body>
+  <h2>✅ Transfert enregistré</h2>
+  <p>Code du transfert : ${code}</p>
+  <p>Montant à recevoir : ${amount - fees}</p>
+  <a href="/transferts/new">➕ Nouveau transfert</a>
+  <a href="/transferts/list">📋 Liste des transferts</a>
+  </body></html>
+  `);
 }catch(err){
   console.error('Erreur création transfert:', err);
   res.status(500).send('Erreur serveur: ' + err.message);
@@ -228,7 +273,7 @@ try{
   <tr>
   <th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
   <th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
-  <th>Destinataire</th><th>Tél</th><th>Statut</th><th>Action</th>
+  <th>Destinataire</th><th>Tél</th><th>Code</th><th>Statut</th><th>Action</th>
   </tr>`;
     grouped[dest].forEach(t=>{
       ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
@@ -248,6 +293,7 @@ try{
   <td>${histHtml}</td>
   <td>${t.receiverFirstName} ${t.receiverLastName}</td>
   <td>${t.receiverPhone}</td>
+  <td>${t.code}</td>
   <td>${t.retired?'Retiré':'Non retiré'}</td>
   <td>${t.retired?'—':`
   <form method="post" action="/transferts/retirer">
@@ -267,7 +313,7 @@ try{
     html+=`<tr class="total">
   <td colspan="4">TOTAL ${dest}</td>
   <td>${ta}</td><td>${tf}</td><td>${tr}</td>
-  <td colspan="5"></td>
+  <td colspan="6"></td>
   </tr></table><br>`;
   }
 
@@ -275,7 +321,7 @@ try{
   <tr class="total">
   <td colspan="4">TOTAL GLOBAL</td>
   <td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
-  <td colspan="5"></td>
+  <td colspan="6"></td>
   </tr></table>
   </body></html>`;
 
@@ -341,7 +387,7 @@ try{
 
   doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
   doc.end();
-}catch(err){ 
+}catch(err){
   console.error('Erreur PDF:', err);
   res.status(500).send('Erreur serveur: ' + err.message);
 }
@@ -350,7 +396,6 @@ try{
 // ================= LOGOUT =================
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-
-/* ================= SERVEUR ================= */
+// ================= SERVEUR =================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
