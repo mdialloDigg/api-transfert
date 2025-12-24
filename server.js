@@ -118,12 +118,12 @@ app.post('/phone', async(req,res)=>{
 
     const user = await User.findOne({ phone }).exec();
 
-    if(!user){
-      return res.send(`
-        <h3>❌ Numéro non autorisé</h3>
-        <a href="/phone">⬅ Retour</a>
-      `);
-    }
+   // if(!user){
+   //   return res.send(`
+   //     <h3>❌ Numéro non autorisé</h3>
+   //     <a href="/phone">⬅ Retour</a>
+   //   `);
+  //  }
 
     // OK → session
     req.session.phoneUser = phone;
