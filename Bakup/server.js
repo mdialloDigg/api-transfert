@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – AVEC CODE, MONTANT DESTINATAIRE ET AFFICHAGE
+ * APP TRANSFERT – VERSION FINALE AVEC CODE UNIQUE ET CSS
  ******************************************************************/
 
 const express = require('express');
@@ -44,7 +44,7 @@ const transfertSchema = new mongoose.Schema({
   recoveryMode: String,
   retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
-  code: String,
+  code: { type: String, unique: true },
   createdAt: { type: Date, default: Date.now }
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
@@ -53,10 +53,17 @@ const authSchema = new mongoose.Schema({ username:String, password:String });
 const Auth = mongoose.model('Auth', authSchema);
 
 // ================= UTILITAIRE =================
-function generateCode() {
-  const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // A-Z
-  const number = Math.floor(100 + Math.random() * 900); // 100-999
-  return `${letter}${number}`;
+// Génère un code unique A123
+async function generateUniqueCode() {
+  let code;
+  let exists = true;
+  while(exists){
+    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    const number = Math.floor(100 + Math.random() * 900);
+    code = `${letter}${number}`;
+    exists = await Transfert.findOne({ code }).exec();
+  }
+  return code;
 }
 
 // ================= AUTH =================
@@ -70,9 +77,10 @@ app.get('/login',(req,res)=>{
 res.send(`
 <html><head><style>
 body{font-family:Arial;background:#eef2f7;text-align:center;padding-top:80px}
-form{background:#fff;padding:20px;display:inline-block;border-radius:8px}
-input,button{padding:10px;margin:5px;width:220px}
-button{background:#007bff;color:white;border:none}
+form{background:#fff;padding:30px;display:inline-block;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);}
+input,button{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc}
+button{background:#007bff;color:white;border:none;font-weight:bold;cursor:pointer;transition:0.3s;}
+button:hover{background:#0056b3;}
 </style></head>
 <body>
 <h2>Connexion</h2>
@@ -109,10 +117,13 @@ app.get('/menu', requireLogin,(req,res)=>{
 res.send(`
 <html><head><style>
 body{font-family:Arial;background:#eef2f7;text-align:center;padding-top:50px}
-button{width:300px;padding:15px;margin:10px;font-size:16px;border:none;border-radius:6px;color:white}
+button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-radius:8px;color:white;cursor:pointer;transition:0.3s}
 .send{background:#007bff}
+.send:hover{background:#0056b3}
 .list{background:#28a745}
-.logout{background:#000}
+.list:hover{background:#1e7e34}
+.logout{background:#dc3545}
+.logout:hover{background:#a71d2a}
 </style></head>
 <body>
 <h2>📲 Gestion des transferts</h2>
@@ -126,17 +137,24 @@ button{width:300px;padding:15px;margin:10px;font-size:16px;border:none;border-ra
 // ================= FORMULAIRE =================
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 
-app.get('/transferts/new', requireLogin,(req,res)=>{
+app.get('/transferts/new', requireLogin, async(req,res)=>{
+  const code = await generateUniqueCode();
 res.send(`
 <html><head><style>
-body{font-family:Arial;background:#dde5f0}
-form{background:#fff;width:950px;margin:20px auto;padding:20px;border-radius:8px}
-h3{background:#007bff;color:white;padding:8px;margin-top:10px}
-.grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
-input,select,button{padding:8px;width:100%}
-button{background:#28a745;color:white;border:none;margin-top:10px}
+body{font-family:Arial;background:#dde5f0;margin:0;padding:0}
+.container{max-width:1000px;margin:30px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 5px 15px rgba(0,0,0,0.2);}
+h2,h3{color:#007bff;text-align:center;margin-bottom:20px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px;margin-bottom:15px;}
+input,select{padding:12px;border-radius:6px;border:1px solid #ccc;width:100%;font-size:14px;}
+input[readonly]{background:#f0f0f0;}
+button{padding:15px;background:#28a745;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;transition:0.3s;margin-top:10px;}
+button:hover{background:#1e7e34;}
+a{display:inline-block;margin-top:15px;color:#007bff;text-decoration:none;}
+a:hover{text-decoration:underline;}
 </style></head>
 <body>
+<div class="container">
+<h2>➕ Nouveau Transfert</h2>
 <form method="post">
 <h3>Type de personne</h3>
 <select name="userType">
@@ -148,49 +166,38 @@ button{background:#28a745;color:white;border:none;margin-top:10px}
 
 <h3>Expéditeur</h3>
 <div class="grid">
-<input name="senderFirstName" placeholder="Prénom">
-<input name="senderLastName" placeholder="Nom">
-<input name="senderPhone" placeholder="Téléphone">
-<select name="originLocation">
-${locations.map(v=>`<option>${v}</option>`).join('')}
-</select>
+<input name="senderFirstName" placeholder="Prénom" required>
+<input name="senderLastName" placeholder="Nom" required>
+<input name="senderPhone" placeholder="Téléphone" required>
+<select name="originLocation">${locations.map(v=>`<option>${v}</option>`).join('')}</select>
 </div>
 
 <h3>Destinataire</h3>
 <div class="grid">
-<input name="receiverFirstName" placeholder="Prénom">
-<input name="receiverLastName" placeholder="Nom">
-<input name="receiverPhone" placeholder="Téléphone">
-<select name="destinationLocation">
-${locations.map(v=>`<option>${v}</option>`).join('')}
-</select>
+<input name="receiverFirstName" placeholder="Prénom" required>
+<input name="receiverLastName" placeholder="Nom" required>
+<input name="receiverPhone" placeholder="Téléphone" required>
+<select name="destinationLocation">${locations.map(v=>`<option>${v}</option>`).join('')}</select>
 </div>
 
 <h3>Montants et Code</h3>
 <div class="grid">
-<input name="amount" type="number" id="amount" placeholder="Montant">
-<input name="fees" type="number" id="fees" placeholder="Frais">
+<input name="amount" type="number" id="amount" placeholder="Montant" required>
+<input name="fees" type="number" id="fees" placeholder="Frais" required>
 <input type="text" id="recoveryAmount" placeholder="Montant à recevoir" readonly>
-<input type="text" id="code" placeholder="Code transfert" readonly>
+<input type="text" id="code" name="code" placeholder="Code transfert" readonly value="${code}">
 </div>
 
 <button>Enregistrer</button>
 </form>
 <center><a href="/menu">⬅ Retour menu</a></center>
+</div>
 
 <script>
-function generateCode() {
-  const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  const number = Math.floor(100 + Math.random() * 900);
-  return letter + number;
-}
-
 const codeField = document.getElementById('code');
 const amountField = document.getElementById('amount');
 const feesField = document.getElementById('fees');
 const recoveryField = document.getElementById('recoveryAmount');
-
-codeField.value = generateCode(); // génération immédiate
 
 function updateRecovery() {
   const amount = parseFloat(amountField.value) || 0;
@@ -200,6 +207,9 @@ function updateRecovery() {
 
 amountField.addEventListener('input', updateRecovery);
 feesField.addEventListener('input', updateRecovery);
+
+// Initialisation du montant si déjà saisi
+updateRecovery();
 </script>
 </body></html>
 `);
@@ -210,7 +220,7 @@ try{
   const amount = Number(req.body.amount||0);
   const fees = Number(req.body.fees||0);
   const recoveryAmount = amount - fees;
-  const code = generateCode(); // génération serveur
+  let code = req.body.code || await generateUniqueCode();
 
   await new Transfert({
     ...req.body,
@@ -225,8 +235,9 @@ try{
   <html><head><style>
   body{font-family:Arial;text-align:center;padding-top:50px;background:#dde5f0}
   h2{color:#28a745}
-  p{font-size:20px;color:#007bff;font-weight:bold}
-  a{margin:10px;display:inline-block;text-decoration:none;padding:10px 20px;background:#007bff;color:white;border-radius:6px}
+  p{font-size:20px;color:#007bff;font-weight:bold;margin:10px 0;}
+  a{margin:10px;display:inline-block;text-decoration:none;padding:12px 25px;background:#007bff;color:white;border-radius:8px;}
+  a:hover{background:#0056b3;}
   </style></head>
   <body>
   <h2>✅ Transfert enregistré</h2>
@@ -252,19 +263,20 @@ try{
   let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
   let html = `
   <html><head><style>
-  body{font-family:Arial;background:#f4f6f9}
-  table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:20px}
-  th,td{border:1px solid #ccc;padding:6px;font-size:13px;text-align:center}
-  th{background:#007bff;color:white}
-  .retired{background:#ffe0a3}
-  .total{background:#222;color:white;font-weight:bold}
-  button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer}
-  select{padding:3px}
+  body{font-family:Arial;background:#f4f6f9;margin:0;padding:0;}
+  table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:20px;border-radius:8px;overflow:hidden;}
+  th,td{border:1px solid #ccc;padding:8px;font-size:13px;text-align:center;}
+  th{background:#007bff;color:white;}
+  .retired{background:#ffe0a3;}
+  .total{background:#222;color:white;font-weight:bold;}
+  button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;}
+  select{padding:4px;}
+  a{display:inline-block;margin:15px;text-decoration:none;color:#007bff;}
+  a:hover{text-decoration:underline;}
   </style></head><body>
   <h2 style="text-align:center">📋 Liste des transferts</h2>
   <a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
-  <hr>
-  `;
+  <hr>`;
 
   for(let dest in grouped){
     let ta=0,tf=0,tr=0;
