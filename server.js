@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE CORRIGÉE (RENDER READY)
+ * APP TRANSFERT – VERSION ULTIME COMPLÈTE
  ******************************************************************/
 
 const express = require('express');
@@ -58,7 +58,6 @@ const transfertSchema = new mongoose.Schema({
 
   createdAt: { type: Date, default: Date.now }
 });
-
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
@@ -97,9 +96,9 @@ background:#007bff;color:#fff;cursor:pointer}
 button.success{background:#28a745}
 button.danger{background:#dc3545}
 table{width:100%;border-collapse:collapse;margin-top:20px}
-th,td{border:1px solid #ccc;padding:8px}
+th,td{border:1px solid #ccc;padding:8px;text-align:center}
 th{background:#007bff;color:#fff}
-a{text-decoration:none}
+a{text-decoration:none;color:#007bff;margin:0 5px}
 h2,h3{margin:15px 0}
 `;
 
