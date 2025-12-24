@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – AVEC CODE A LETTRE+CHIFFRES ET MONTANT REÇU
+ * APP TRANSFERT – AVEC CODE, MONTANT DESTINATAIRE ET AFFICHAGE
  ******************************************************************/
 
 const express = require('express');
@@ -190,7 +190,7 @@ const amountField = document.getElementById('amount');
 const feesField = document.getElementById('fees');
 const recoveryField = document.getElementById('recoveryAmount');
 
-codeField.value = generateCode();
+codeField.value = generateCode(); // génération immédiate
 
 function updateRecovery() {
   const amount = parseFloat(amountField.value) || 0;
@@ -209,18 +209,18 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
 try{
   const amount = Number(req.body.amount||0);
   const fees = Number(req.body.fees||0);
-  const code = generateCode(); // Génération côté serveur pour stockage
+  const recoveryAmount = amount - fees;
+  const code = generateCode(); // génération serveur
 
   await new Transfert({
     ...req.body,
     amount,
     fees,
-    recoveryAmount: amount - fees,
+    recoveryAmount,
     retraitHistory: [],
     code
   }).save();
 
-  // Affichage du code et montant à recevoir après enregistrement
   res.send(`
   <html><head><style>
   body{font-family:Arial;text-align:center;padding-top:50px;background:#dde5f0}
@@ -231,7 +231,7 @@ try{
   <body>
   <h2>✅ Transfert enregistré</h2>
   <p>Code du transfert : ${code}</p>
-  <p>Montant à recevoir : ${amount - fees}</p>
+  <p>Montant à recevoir : ${recoveryAmount}</p>
   <a href="/transferts/new">➕ Nouveau transfert</a>
   <a href="/transferts/list">📋 Liste des transferts</a>
   </body></html>
