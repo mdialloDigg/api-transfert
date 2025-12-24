@@ -416,7 +416,7 @@ app.get('/users/export/pdf', requireLogin, async(req,res)=>{
   res.setHeader('Content-Disposition','attachment;filename=transferts.pdf');
   doc.pipe(res);
 
-  doc.fontSize(18).text('Liste des transferts', {align:'center'});
+  doc.fontSize(18).fillColor('#000').text('Liste des transferts', {align:'center'});
   doc.moveDown();
 
   const grouped = {};
