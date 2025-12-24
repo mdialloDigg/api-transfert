@@ -1,55 +1,63 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE PRODUCTION (RENDER READY)
+ * APP TRANSFERT – VERSION COMPLÈTE FINALE (RENDER READY)
  ******************************************************************/
 
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
 
 const app = express();
 
-// ================= CONFIG =================
+/* ================= CONFIG ================= */
+app.set('trust proxy', 1);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(session({
+  name: 'transfert.sid',
   secret: 'transfert-secret-final',
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    sameSite: 'none'
+  }
 }));
 
-// ================= DATABASE =================
+/* ================= DATABASE ================= */
 console.log('MONGODB_URI =', process.env.MONGODB_URI ? 'OK' : 'MANQUANT');
 
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(()=>console.log('✅ MongoDB connecté'))
 .catch(err=>console.error('❌ MongoDB error:', err));
 
-// ================= SCHEMAS =================
+/* ================= SCHEMAS ================= */
 const transfertSchema = new mongoose.Schema({
   userType: String,
+
   senderFirstName: String,
   senderLastName: String,
   senderPhone: String,
   originLocation: String,
+
   receiverFirstName: String,
   receiverLastName: String,
   receiverPhone: String,
   destinationLocation: String,
+
   amount: Number,
   fees: Number,
   recoveryAmount: Number,
+
   recoveryMode: String,
   retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
+
   code: { type: String, unique: true },
   createdAt: { type: Date, default: Date.now }
 });
+
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
@@ -58,11 +66,12 @@ const authSchema = new mongoose.Schema({
 });
 const Auth = mongoose.model('Auth', authSchema);
 
-// ================= UTILS =================
+/* ================= UTILS ================= */
 async function generateUniqueCode(){
-  let code, exists=true;
+  let code, exists = true;
   while(exists){
-    code = String.fromCharCode(65 + Math.random()*26|0) + (100 + Math.random()*900|0);
+    code = String.fromCharCode(65 + Math.random()*26|0) +
+           (100 + Math.random()*900|0);
     exists = await Transfert.findOne({ code });
   }
   return code;
@@ -73,7 +82,9 @@ const requireLogin = (req,res,next)=>{
   res.redirect('/login');
 };
 
-// ================= AUTH =================
+const locations = ['France','Belgique','Conakry','Suisse','USA','Canada'];
+
+/* ================= AUTH ================= */
 app.get('/login',(req,res)=>res.send(`
 <h2>Connexion</h2>
 <form method="post">
@@ -86,16 +97,16 @@ app.get('/login',(req,res)=>res.send(`
 
 app.post('/login', async(req,res)=>{
   try{
-    const { username, password } = req.body;
-    const user = await Auth.findOne({ username });
+    const user = await Auth.findOne({ username:req.body.username });
     if(!user) return res.send('❌ Compte inexistant');
-    if(!bcrypt.compareSync(password,user.password))
+    if(!bcrypt.compareSync(req.body.password,user.password))
       return res.send('❌ Mot de passe incorrect');
+
     req.session.user = user.username;
     res.redirect('/menu');
   }catch(err){
-    console.error('LOGIN ERROR:', err);
-    res.status(500).send('Erreur serveur login');
+    console.error(err);
+    res.status(500).send('Erreur login');
   }
 });
 
@@ -109,16 +120,12 @@ app.get('/register',(req,res)=>res.send(`
 `));
 
 app.post('/register',async(req,res)=>{
-  try{
-    const hash = bcrypt.hashSync(req.body.password,10);
-    await new Auth({ username:req.body.username, password:hash }).save();
-    res.redirect('/login');
-  }catch(err){
-    res.send('❌ Utilisateur déjà existant');
-  }
+  const hash = bcrypt.hashSync(req.body.password,10);
+  await new Auth({ username:req.body.username, password:hash }).save();
+  res.redirect('/login');
 });
 
-// ================= MENU =================
+/* ================= MENU ================= */
 app.get('/menu',requireLogin,(req,res)=>res.send(`
 <h2>📲 Menu</h2>
 <a href="/transferts/new">➕ Nouveau transfert</a><br>
@@ -126,12 +133,38 @@ app.get('/menu',requireLogin,(req,res)=>res.send(`
 <a href="/logout">🚪 Déconnexion</a>
 `));
 
-// ================= NOUVEAU TRANSFERT =================
+/* ================= NOUVEAU TRANSFERT ================= */
 app.get('/transferts/new',requireLogin,async(req,res)=>{
   const code = await generateUniqueCode();
 res.send(`
 <h2>Nouveau transfert</h2>
 <form method="post">
+
+<h3>Type</h3>
+<select name="userType">
+<option>Client</option>
+<option>Distributeur</option>
+<option>Administrateur</option>
+<option>Agence</option>
+</select>
+
+<h3>Expéditeur</h3>
+<input name="senderFirstName" placeholder="Prénom" required>
+<input name="senderLastName" placeholder="Nom" required>
+<input name="senderPhone" placeholder="Téléphone" required>
+<select name="originLocation">
+${locations.map(l=>`<option>${l}</option>`).join('')}
+</select>
+
+<h3>Destinataire</h3>
+<input name="receiverFirstName" placeholder="Prénom" required>
+<input name="receiverLastName" placeholder="Nom" required>
+<input name="receiverPhone" placeholder="Téléphone" required>
+<select name="destinationLocation">
+${locations.map(l=>`<option>${l}</option>`).join('')}
+</select>
+
+<h3>Montants</h3>
 Montant <input type="number" id="amount" name="amount" required><br>
 Frais <input type="number" id="fees" name="fees" required><br>
 Montant reçu <input id="recoveryAmount" readonly><br>
@@ -160,8 +193,7 @@ a.oninput=f.oninput=calc;
 });
 
 app.post('/transferts/new',requireLogin,async(req,res)=>{
-  const amount = Number(req.body.amount);
-  const fees = Number(req.body.fees);
+  const amount=+req.body.amount, fees=+req.body.fees;
   await new Transfert({
     ...req.body,
     amount,
@@ -171,15 +203,20 @@ app.post('/transferts/new',requireLogin,async(req,res)=>{
   res.redirect('/transferts/list');
 });
 
-// ================= LISTE =================
+/* ================= LISTE ================= */
 app.get('/transferts/list',requireLogin,async(req,res)=>{
   const list = await Transfert.find().sort({createdAt:-1});
   let html=`<h2>Liste des transferts</h2><table border="1">
-<tr><th>Code</th><th>Montant</th><th>Reçu</th><th>Mode</th><th>Actions</th></tr>`;
+<tr>
+<th>Code</th><th>Expéditeur</th><th>Destinataire</th>
+<th>Montant</th><th>Reçu</th><th>Mode</th><th>Actions</th>
+</tr>`;
   list.forEach(t=>{
     html+=`
 <tr>
 <td>${t.code}</td>
+<td>${t.senderFirstName} ${t.senderLastName}</td>
+<td>${t.receiverFirstName} ${t.receiverLastName}</td>
 <td>${t.amount}</td>
 <td>${t.recoveryAmount}</td>
 <td>${t.recoveryMode}</td>
@@ -195,30 +232,32 @@ app.get('/transferts/list',requireLogin,async(req,res)=>{
   res.send(html+'</table><a href="/menu">⬅ Menu</a>');
 });
 
-// ================= PRINT =================
+/* ================= PRINT ================= */
 app.get('/transferts/print/:id',requireLogin,async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
 res.send(`
 <script>window.print()</script>
 <h2>CODE DE TRANSFERT</h2>
 <h1>${t.code}</h1>
+<p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
+<p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
 <p>Montant: ${t.amount}</p>
 <p>Reçu: ${t.recoveryAmount}</p>
 <p>Mode: ${t.recoveryMode}</p>
 `);
 });
 
-// ================= DELETE =================
+/* ================= DELETE ================= */
 app.post('/transferts/delete',requireLogin,async(req,res)=>{
   await Transfert.findByIdAndDelete(req.body.id);
   res.redirect('/transferts/list');
 });
 
-// ================= LOGOUT =================
+/* ================= LOGOUT ================= */
 app.get('/logout',(req,res)=>{
   req.session.destroy(()=>res.redirect('/login'));
 });
 
-// ================= SERVER =================
+/* ================= SERVER ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur actif sur port ${PORT}`));
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur prêt sur ${PORT}`));
