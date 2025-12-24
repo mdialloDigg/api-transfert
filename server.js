@@ -1,5 +1,5 @@
 /******************************************************************
- * APPLICATION DE TRANSFERT – VERSION FINALE PRODUCTION
+ * APPLICATION DE TRANSFERT – VERSION PRODUCTION FINALE
  ******************************************************************/
 
 const express = require('express');
@@ -16,13 +16,13 @@ app.use(express.json());
 app.use(session({
   secret: 'transfert-secret-final',
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: true
 }));
 
 /* ================= DATABASE ================= */
-mongoose.connect('mongodb://127.0.0.1:27017/transfert_final_prod')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+mongoose.connect(process.env.MONGODB_URI)
+  .then(()=>console.log('✅ MongoDB connecté'))
+  .catch(console.error);
 
 /* ================= SCHEMAS ================= */
 const transfertSchema = new mongoose.Schema({
@@ -31,28 +31,22 @@ const transfertSchema = new mongoose.Schema({
     enum: ['Client','Distributeur','Administrateur','Agence de transfert'],
     required: true
   },
-
   senderFirstName: String,
   senderLastName: String,
   senderPhone: String,
   originLocation: String,
-
   receiverFirstName: String,
   receiverLastName: String,
   receiverPhone: String,
   destinationLocation: String,
-
   amount: Number,
   fees: Number,
   recoveryAmount: Number,
-
   recoveryMode: String,
   retired: { type: Boolean, default: false },
-
   code: String,
   createdAt: { type: Date, default: Date.now }
 });
-
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
@@ -87,17 +81,25 @@ button{background:#007bff;color:white;border:none}
 `);
 });
 
-app.post('/login',async(req,res)=>{
-let u = await Auth.findOne({username:req.body.username});
-if(!u){
-  u = await new Auth({
-    username:req.body.username,
-    password:bcrypt.hashSync(req.body.password,10)
-  }).save();
-}
-if(!bcrypt.compareSync(req.body.password,u.password)) return res.send('Mot de passe incorrect');
-req.session.user = u.username;
-res.redirect('/menu');
+app.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    let user = await Auth.findOne({ username });
+    if(!user){
+      user = await new Auth({
+        username,
+        password: bcrypt.hashSync(password,10)
+      }).save();
+    }
+    if(!bcrypt.compareSync(password,user.password)){
+      return res.send('Mot de passe incorrect');
+    }
+    req.session.user = user.username;
+    res.redirect('/menu');
+  } catch(err){
+    console.error('LOGIN ERROR:',err);
+    res.status(500).send('Erreur serveur – connexion impossible');
+  }
 });
 
 /* ================= MENU ================= */
@@ -113,7 +115,7 @@ button{width:300px;padding:15px;margin:10px;font-size:16px;border:none;border-ra
 <body>
 <h2>📲 Gestion des transferts</h2>
 <a href="/transferts/new"><button class="send">➕ Envoyer de l'argent</button></a><br>
-<a href="/transferts/list"><button class="list">📋 Liste / Retrait</button></a><br>
+<a href="/transferts/list"><button class="list">📋 Liste / Retrait / Modification</button></a><br>
 <a href="/logout"><button class="logout">🚪 Déconnexion</button></a>
 </body></html>
 `);
@@ -124,14 +126,13 @@ app.get('/transferts/new', requireLogin,(req,res)=>{
 res.send(`
 <html><head><style>
 body{font-family:Arial;background:#dde5f0}
-form{background:#fff;width:900px;margin:20px auto;padding:20px;border-radius:8px}
-h3{background:#007bff;color:white;padding:8px}
+form{background:#fff;width:950px;margin:20px auto;padding:20px;border-radius:8px}
+h3{background:#007bff;color:white;padding:8px;margin-top:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-input,select,button{padding:8px}
-button{background:#28a745;color:white;border:none}
+input,select,button{padding:8px;width:100%}
+button{background:#28a745;color:white;border:none;margin-top:10px}
 </style></head>
 <body>
-
 <form method="post">
 <h3>Type de personne</h3>
 <select name="userType">
@@ -163,10 +164,8 @@ button{background:#28a745;color:white;border:none}
 <input name="fees" type="number" placeholder="Frais">
 </div>
 
-<br>
 <button>Enregistrer</button>
 </form>
-
 <center><a href="/menu">⬅ Retour menu</a></center>
 </body></html>
 `);
@@ -175,7 +174,6 @@ button{background:#28a745;color:white;border:none}
 app.post('/transferts/new', requireLogin, async(req,res)=>{
 const amount = Number(req.body.amount||0);
 const fees = Number(req.body.fees||0);
-
 await new Transfert({
   ...req.body,
   amount,
@@ -183,28 +181,29 @@ await new Transfert({
   recoveryAmount: amount - fees,
   code: Math.floor(100000+Math.random()*900000)
 }).save();
-
 res.redirect('/transferts/list');
 });
 
 /* ================= LISTE ================= */
 app.get('/transferts/list', requireLogin, async(req,res)=>{
 const transferts = await Transfert.find().sort({destinationLocation:1});
-
 let grouped = {};
 transferts.forEach(t=>{
   if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[];
   grouped[t.destinationLocation].push(t);
 });
 
+let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
+
 let html = `
 <html><head><style>
 body{font-family:Arial;background:#f4f6f9}
-table{width:95%;margin:auto;border-collapse:collapse;background:#fff}
+table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:20px}
 th,td{border:1px solid #ccc;padding:6px;font-size:13px;text-align:center}
 th{background:#007bff;color:white}
 .retired{background:#ffe0a3}
 .total{background:#222;color:white;font-weight:bold}
+button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer}
 </style></head><body>
 <h2 style="text-align:center">📋 Liste des transferts</h2>
 <a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
@@ -213,8 +212,8 @@ th{background:#007bff;color:white}
 
 for(let dest in grouped){
   let ta=0,tf=0,tr=0;
-
-  html+=`<h3 style="text-align:center">Destination : ${dest}</h3><table>
+  html+=`<h3 style="text-align:center">Destination : ${dest}</h3>
+  <table>
 <tr>
 <th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th><th>Reçu</th>
@@ -223,6 +222,7 @@ for(let dest in grouped){
 
   grouped[dest].forEach(t=>{
     ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
+    totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
 
     html+=`
 <tr class="${t.retired?'retired':''}">
@@ -243,9 +243,18 @@ for(let dest in grouped){
 <option>Espèces</option>
 <option>Orange Money</option>
 <option>Wave</option>
+<option>Produit</option>
+<option>Service</option>
 </select>
 <button>Retirer</button>
-</form>`}</td>
+</form>
+<form method="get" action="/transferts/edit/${t._id}" style="margin-top:5px">
+<button>✏️ Modifier</button>
+</form>
+<form method="post" action="/transferts/delete/${t._id}" style="margin-top:5px">
+<button style="background:#dc3545">❌ Supprimer</button>
+</form>
+`}</td>
 </tr>`;
   });
 
@@ -256,7 +265,14 @@ for(let dest in grouped){
 </tr></table><br>`;
 }
 
-html+=`</body></html>`;
+html+=`<table style="width:95%;margin:auto">
+<tr class="total">
+<td colspan="4">TOTAL GENERAL</td>
+<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
+<td colspan="4"></td>
+</tr></table>
+</body></html>`;
+
 res.send(html);
 });
 
@@ -269,10 +285,83 @@ await Transfert.findByIdAndUpdate(req.body.id,{
 res.redirect('/transferts/list');
 });
 
+/* ================= EDITION ================= */
+app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
+const t = await Transfert.findById(req.params.id);
+if(!t) return res.redirect('/transferts/list');
+
+res.send(`
+<html><head><style>
+body{font-family:Arial;background:#dde5f0}
+form{background:#fff;width:950px;margin:20px auto;padding:20px;border-radius:8px}
+h3{background:#007bff;color:white;padding:8px;margin-top:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+input,select,button{padding:8px;width:100%}
+button{background:#28a745;color:white;border:none;margin-top:10px}
+</style></head>
+<body>
+<form method="post" action="/transferts/edit/${t._id}">
+<h3>Type de personne</h3>
+<select name="userType">
+<option ${t.userType==='Client'?'selected':''}>Client</option>
+<option ${t.userType==='Distributeur'?'selected':''}>Distributeur</option>
+<option ${t.userType==='Administrateur'?'selected':''}>Administrateur</option>
+<option ${t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
+</select>
+
+<h3>Expéditeur</h3>
+<div class="grid">
+<input name="senderFirstName" value="${t.senderFirstName}">
+<input name="senderLastName" value="${t.senderLastName}">
+<input name="senderPhone" value="${t.senderPhone}">
+<input name="originLocation" value="${t.originLocation}">
+</div>
+
+<h3>Destinataire</h3>
+<div class="grid">
+<input name="receiverFirstName" value="${t.receiverFirstName}">
+<input name="receiverLastName" value="${t.receiverLastName}">
+<input name="receiverPhone" value="${t.receiverPhone}">
+<input name="destinationLocation" value="${t.destinationLocation}">
+</div>
+
+<h3>Montants</h3>
+<div class="grid">
+<input name="amount" type="number" value="${t.amount}">
+<input name="fees" type="number" value="${t.fees}">
+</div>
+
+<button>Mettre à jour</button>
+</form>
+<center><a href="/transferts/list">⬅ Retour liste</a></center>
+</body></html>
+`);
+});
+
+app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
+const t = await Transfert.findById(req.params.id);
+if(!t) return res.redirect('/transferts/list');
+const amount = Number(req.body.amount||0);
+const fees = Number(req.body.fees||0);
+await Transfert.findByIdAndUpdate(req.params.id,{
+  ...req.body,
+  amount,
+  fees,
+  recoveryAmount: amount - fees
+});
+res.redirect('/transferts/list');
+});
+
+/* ================= SUPPRESSION ================= */
+app.post('/transferts/delete/:id', requireLogin, async(req,res)=>{
+await Transfert.findByIdAndDelete(req.params.id);
+res.redirect('/transferts/list');
+});
+
 /* ================= PDF ================= */
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
 const list = await Transfert.find().sort({destinationLocation:1});
-const doc = new PDFDocument({margin:30});
+const doc = new PDFDocument({margin:30, size:'A4'});
 res.setHeader('Content-Type','application/pdf');
 res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
 doc.pipe(res);
@@ -280,16 +369,30 @@ doc.pipe(res);
 doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
 doc.moveDown();
 
+let grouped = {};
 list.forEach(t=>{
-doc.fontSize(10)
-.text(`Type: ${t.userType}`)
-.text(`Origine: ${t.originLocation} → ${t.destinationLocation}`)
-.text(`Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`)
-.text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`)
-.text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount}`)
-.text(`Statut: ${t.retired?'Retiré':'Non retiré'} | Mode: ${t.recoveryMode||'-'} | Code: ${t.code}`);
-doc.moveDown();
+  if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[];
+  grouped[t.destinationLocation].push(t);
 });
+
+let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
+
+for(let dest in grouped){
+  let ta=0,tf=0,tr=0;
+  doc.fontSize(14).text(`Destination: ${dest}`,{underline:true});
+  grouped[dest].forEach(t=>{
+    ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
+    totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+
+    doc.fontSize(10)
+    .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
+    .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+    .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Mode: ${t.recoveryMode||'-'} | Code: ${t.code}`)
+    .moveDown(0.5);
+  });
+  doc.fontSize(12).text(`Total ${dest} → Montant: ${ta} | Frais: ${tf} | Reçu: ${tr}`).moveDown();
+}
+doc.fontSize(14).text(`TOTAL GENERAL → Montant: ${totalAmountAll} | Frais: ${totalFeesAll} | Reçu: ${totalReceivedAll}`,{underline:true});
 
 doc.end();
 });
