@@ -283,7 +283,9 @@ tr:hover{background:#e8f0fe;}
 .retired{background:#ffe0a3;}
 .total{background:#222;color:white;font-weight:bold;}
 form{margin:0;}
-button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;}
+button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;margin:2px;}
+button.print{background:#17a2b8;}
+button.delete{background:#dc3545;}
 select{padding:4px;}
 a{display:inline-block;margin:15px;text-decoration:none;color:#2c7be5;font-weight:bold;}
 a:hover{text-decoration:underline;}
@@ -325,7 +327,7 @@ for(let dest in grouped){
 <td>${t.code}</td>
 <td>${t.retired?'Retiré':'Non retiré'}</td>
 <td>${t.retired?'—':`
-<form method="post" action="/transferts/retirer">
+<form method="post" action="/transferts/retirer" style="display:inline-block">
 <input type="hidden" name="id" value="${t._id}">
 <select name="mode">
 <option>Espèces</option>
@@ -335,7 +337,13 @@ for(let dest in grouped){
 <option>Service</option>
 </select>
 <button>Retirer</button>
-</form>`}</td>
+</form>
+<a href="/transferts/edit/${t._id}"><button>Modifier</button></a>
+<form method="post" action="/transferts/delete/${t._id}" style="display:inline-block">
+<button class="delete">Supprimer</button>
+</form>
+<a href="/transferts/print/${t._id}" target="_blank"><button class="print">Imprimer</button></a>
+`}</td>
 </tr>`;
   });
 
