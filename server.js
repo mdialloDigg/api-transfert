@@ -1,5 +1,5 @@
 /******************************************************************
- * APPLICATION DE TRANSFERT – VERSION PRODUCTION FINALE
+ * APPLICATION DE TRANSFERT – VERSION FINALE PRODUCTION
  ******************************************************************/
 
 const express = require('express');
@@ -20,17 +20,13 @@ app.use(session({
 }));
 
 /* ================= DATABASE ================= */
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
   .then(()=>console.log('✅ MongoDB connecté'))
   .catch(console.error);
 
 /* ================= SCHEMAS ================= */
 const transfertSchema = new mongoose.Schema({
-  userType: {
-    type: String,
-    enum: ['Client','Distributeur','Administrateur','Agence de transfert'],
-    required: true
-  },
+  userType: { type: String, enum: ['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
   senderFirstName: String,
   senderLastName: String,
   senderPhone: String,
@@ -49,10 +45,7 @@ const transfertSchema = new mongoose.Schema({
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const authSchema = new mongoose.Schema({
-  username: String,
-  password: String
-});
+const authSchema = new mongoose.Schema({ username:String, password:String });
 const Auth = mongoose.model('Auth', authSchema);
 
 /* ================= AUTH ================= */
@@ -81,25 +74,17 @@ button{background:#007bff;color:white;border:none}
 `);
 });
 
-app.post('/login', async (req, res) => {
-  try {
+app.post('/login', async (req,res)=>{
+  try{
     const { username, password } = req.body;
     let user = await Auth.findOne({ username });
     if(!user){
-      user = await new Auth({
-        username,
-        password: bcrypt.hashSync(password,10)
-      }).save();
+      user = await new Auth({ username, password: bcrypt.hashSync(password,10) }).save();
     }
-    if(!bcrypt.compareSync(password,user.password)){
-      return res.send('Mot de passe incorrect');
-    }
+    if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
     req.session.user = user.username;
     res.redirect('/menu');
-  } catch(err){
-    console.error('LOGIN ERROR:',err);
-    res.status(500).send('Erreur serveur – connexion impossible');
-  }
+  }catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
 });
 
 /* ================= MENU ================= */
@@ -122,6 +107,8 @@ button{width:300px;padding:15px;margin:10px;font-size:16px;border:none;border-ra
 });
 
 /* ================= FORMULAIRE ================= */
+const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+
 app.get('/transferts/new', requireLogin,(req,res)=>{
 res.send(`
 <html><head><style>
@@ -147,7 +134,9 @@ button{background:#28a745;color:white;border:none;margin-top:10px}
 <input name="senderFirstName" placeholder="Prénom">
 <input name="senderLastName" placeholder="Nom">
 <input name="senderPhone" placeholder="Téléphone">
-<input name="originLocation" placeholder="Origine">
+<select name="originLocation">
+${locations.map(v=>`<option>${v}</option>`).join('')}
+</select>
 </div>
 
 <h3>Destinataire</h3>
@@ -155,7 +144,9 @@ button{background:#28a745;color:white;border:none;margin-top:10px}
 <input name="receiverFirstName" placeholder="Prénom">
 <input name="receiverLastName" placeholder="Nom">
 <input name="receiverPhone" placeholder="Téléphone">
-<input name="destinationLocation" placeholder="Destination">
+<select name="destinationLocation">
+${locations.map(v=>`<option>${v}</option>`).join('')}
+</select>
 </div>
 
 <h3>Montants</h3>
@@ -194,7 +185,6 @@ transferts.forEach(t=>{
 });
 
 let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
-
 let html = `
 <html><head><style>
 body{font-family:Arial;background:#f4f6f9}
@@ -278,10 +268,7 @@ res.send(html);
 
 /* ================= RETRAIT ================= */
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-await Transfert.findByIdAndUpdate(req.body.id,{
-  retired:true,
-  recoveryMode:req.body.mode
-});
+await Transfert.findByIdAndUpdate(req.body.id,{retired:true,recoveryMode:req.body.mode});
 res.redirect('/transferts/list');
 });
 
@@ -314,7 +301,9 @@ button{background:#28a745;color:white;border:none;margin-top:10px}
 <input name="senderFirstName" value="${t.senderFirstName}">
 <input name="senderLastName" value="${t.senderLastName}">
 <input name="senderPhone" value="${t.senderPhone}">
-<input name="originLocation" value="${t.originLocation}">
+<select name="originLocation">
+${locations.map(v=>`<option ${v===t.originLocation?'selected':''}>${v}</option>`).join('')}
+</select>
 </div>
 
 <h3>Destinataire</h3>
@@ -322,7 +311,9 @@ button{background:#28a745;color:white;border:none;margin-top:10px}
 <input name="receiverFirstName" value="${t.receiverFirstName}">
 <input name="receiverLastName" value="${t.receiverLastName}">
 <input name="receiverPhone" value="${t.receiverPhone}">
-<input name="destinationLocation" value="${t.destinationLocation}">
+<select name="destinationLocation">
+${locations.map(v=>`<option ${v===t.destinationLocation?'selected':''}>${v}</option>`).join('')}
+</select>
 </div>
 
 <h3>Montants</h3>
@@ -343,12 +334,7 @@ const t = await Transfert.findById(req.params.id);
 if(!t) return res.redirect('/transferts/list');
 const amount = Number(req.body.amount||0);
 const fees = Number(req.body.fees||0);
-await Transfert.findByIdAndUpdate(req.params.id,{
-  ...req.body,
-  amount,
-  fees,
-  recoveryAmount: amount - fees
-});
+await Transfert.findByIdAndUpdate(req.params.id,{...req.body, amount, fees, recoveryAmount: amount-fees});
 res.redirect('/transferts/list');
 });
 
@@ -366,16 +352,12 @@ res.setHeader('Content-Type','application/pdf');
 res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
 doc.pipe(res);
 
-doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
-doc.moveDown();
+doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'}); doc.moveDown();
 
 let grouped = {};
-list.forEach(t=>{
-  if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[];
-  grouped[t.destinationLocation].push(t);
-});
+list.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
 
-let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
+let totalAmountAll=0,totalFeesAll=0,totalReceivedAll=0;
 
 for(let dest in grouped){
   let ta=0,tf=0,tr=0;
@@ -387,20 +369,16 @@ for(let dest in grouped){
     doc.fontSize(10)
     .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
     .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
-    .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Mode: ${t.recoveryMode||'-'} | Code: ${t.code}`)
-    .moveDown(0.5);
+    .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Mode: ${t.recoveryMode||'-'} | Code: ${t.code}`).moveDown(0.5);
   });
   doc.fontSize(12).text(`Total ${dest} → Montant: ${ta} | Frais: ${tf} | Reçu: ${tr}`).moveDown();
 }
 doc.fontSize(14).text(`TOTAL GENERAL → Montant: ${totalAmountAll} | Frais: ${totalFeesAll} | Reçu: ${totalReceivedAll}`,{underline:true});
-
 doc.end();
 });
 
 /* ================= LOGOUT ================= */
-app.get('/logout',(req,res)=>{
-req.session.destroy(()=>res.redirect('/login'));
-});
+app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
 /* ================= SERVER ================= */
 app.listen(3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
