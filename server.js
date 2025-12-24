@@ -282,12 +282,12 @@ th{background:#007bff;color:white;}
 tr:hover{background:#e8f0fe;}
 .retired{background:#ffe0a3;}
 .total{background:#222;color:white;font-weight:bold;}
-form{margin:0;}
+form{margin:0;display:inline-block;}
 button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;margin:2px;}
 button.print{background:#17a2b8;}
 button.delete{background:#dc3545;}
 select{padding:4px;}
-a{display:inline-block;margin:15px;text-decoration:none;color:#2c7be5;font-weight:bold;}
+a{display:inline-block;margin:2px;text-decoration:none;color:#2c7be5;font-weight:bold;}
 a:hover{text-decoration:underline;}
 </style>
 </head>
@@ -382,6 +382,134 @@ try{
   console.error('Erreur retrait:', err);
   res.status(500).send('Erreur serveur: ' + err.message);
 }
+});
+
+// ================= MODIFIER TRANSFERT =================
+app.get('/transferts/edit/:id', requireLogin, async (req, res) => {
+  try {
+    const t = await Transfert.findById(req.params.id).exec();
+    if (!t) return res.send('Transfert introuvable');
+
+    res.send(`
+<html>
+<head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#f0f4f8;}
+.container{max-width:900px;margin:40px auto;background:#fff;padding:30px;border-radius:12px;}
+label{display:block;margin:6px 0;font-weight:bold;}
+input,select{width:100%;padding:10px;margin-bottom:12px;border-radius:6px;border:1px solid #ccc;}
+button{padding:12px;background:#2eb85c;color:white;border:none;border-radius:6px;cursor:pointer;}
+button:hover{background:#218838;}
+a{display:inline-block;margin-top:15px;color:#007bff;text-decoration:none;}
+a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="container">
+<h2>✏ Modifier Transfert</h2>
+<form method="post">
+<label>Type de personne</label>
+<select name="userType">
+<option ${t.userType==='Client'?'selected':''}>Client</option>
+<option ${t.userType==='Distributeur'?'selected':''}>Distributeur</option>
+<option ${t.userType==='Administrateur'?'selected':''}>Administrateur</option>
+<option ${t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
+</select>
+
+<label>Prénom expéditeur</label><input name="senderFirstName" value="${t.senderFirstName}" required>
+<label>Nom expéditeur</label><input name="senderLastName" value="${t.senderLastName}" required>
+<label>Téléphone expéditeur</label><input name="senderPhone" value="${t.senderPhone}" required>
+<label>Origine</label>
+<select name="originLocation">
+${locations.map(v=>`<option ${v===t.originLocation?'selected':''}>${v}</option>`).join('')}
+</select>
+
+<label>Prénom destinataire</label><input name="receiverFirstName" value="${t.receiverFirstName}" required>
+<label>Nom destinataire</label><input name="receiverLastName" value="${t.receiverLastName}" required>
+<label>Téléphone destinataire</label><input name="receiverPhone" value="${t.receiverPhone}" required>
+<label>Destination</label>
+<select name="destinationLocation">
+${locations.map(v=>`<option ${v===t.destinationLocation?'selected':''}>${v}</option>`).join('')}
+</select>
+
+<label>Montant</label><input type="number" name="amount" value="${t.amount}" required>
+<label>Frais</label><input type="number" name="fees" value="${t.fees}" required>
+<label>Code transfert</label><input name="code" value="${t.code}" readonly>
+
+<button>Enregistrer les modifications</button>
+</form>
+<a href="/transferts/list">⬅ Retour à la liste</a>
+</div>
+</body>
+</html>
+    `);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+app.post('/transferts/edit/:id', requireLogin, async (req, res) => {
+  try {
+    const amount = Number(req.body.amount||0);
+    const fees = Number(req.body.fees||0);
+    const recoveryAmount = amount - fees;
+
+    await Transfert.findByIdAndUpdate(req.params.id, {
+      ...req.body,
+      amount,
+      fees,
+      recoveryAmount
+    });
+
+    res.redirect('/transferts/list');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+// ================= SUPPRIMER TRANSFERT =================
+app.post('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  try{
+    await Transfert.findByIdAndDelete(req.params.id);
+    res.redirect('/transferts/list');
+  }catch(err){
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+// ================= IMPRIMER TRANSFERT =================
+app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
+  try{
+    const t = await Transfert.findById(req.params.id).exec();
+    if(!t) return res.send('Transfert introuvable');
+
+    const doc = new PDFDocument({margin:30, size:'A4'});
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename=transfert_${t.code}.pdf`);
+    doc.pipe(res);
+
+    doc.fontSize(18).text(`TRANSFERT ${t.code}`,{align:'center'});
+    doc.moveDown();
+    doc.fontSize(12).text(`Type: ${t.userType}`);
+    doc.text(`Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`);
+    doc.text(`Origine: ${t.originLocation}`);
+    doc.text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`);
+    doc.text(`Destination: ${t.destinationLocation}`);
+    doc.text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount}`);
+    doc.text(`Statut: ${t.retired?'Retiré':'Non retiré'}`);
+    if(t.retraitHistory.length){
+      t.retraitHistory.forEach(h=>{
+        doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
+      });
+    }
+    doc.end();
+  }catch(err){
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
 });
 
 // ================= PDF =================
