@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION ULTIME COMPLÈTE (RENDER READY)
+ * APP TRANSFERT – VERSION FINALE CORRIGÉE (RENDER READY)
  ******************************************************************/
 
 const express = require('express');
@@ -21,13 +21,16 @@ app.use(session({
   secret: 'transfert-secret-final',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: true, sameSite: 'none' }
+  cookie: {
+    secure: true,
+    sameSite: 'none'
+  }
 }));
 
 /* ================= DATABASE ================= */
 mongoose.connect(process.env.MONGODB_URI)
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(err=>console.error('❌ MongoDB:', err));
+  .then(() => console.log('✅ MongoDB connecté'))
+  .catch(err => console.error('❌ MongoDB error:', err));
 
 /* ================= SCHEMAS ================= */
 const transfertSchema = new mongoose.Schema({
@@ -55,6 +58,7 @@ const transfertSchema = new mongoose.Schema({
 
   createdAt: { type: Date, default: Date.now }
 });
+
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
@@ -64,32 +68,34 @@ const authSchema = new mongoose.Schema({
 const Auth = mongoose.model('Auth', authSchema);
 
 /* ================= UTILS ================= */
-async function generateCode(){
-  let code, ok=false;
-  while(!ok){
-    code = String.fromCharCode(65+Math.random()*26|0) + (100000+Math.random()*900000|0);
-    ok = !(await Transfert.findOne({ code }));
+async function generateCode() {
+  let code, exists = true;
+  while (exists) {
+    code =
+      String.fromCharCode(65 + Math.random() * 26 | 0) +
+      (100000 + Math.random() * 900000 | 0);
+    exists = await Transfert.findOne({ code });
   }
   return code;
 }
 
-const requireLogin = (req,res,next)=>{
-  if(req.session.user) return next();
+const requireLogin = (req, res, next) => {
+  if (req.session.user) return next();
   res.redirect('/login');
 };
 
-const countries = ['Guinée','France','Belgique','Sénégal','USA','Canada'];
+const countries = ['Guinée', 'France', 'Belgique', 'Sénégal', 'USA', 'Canada'];
 
 /* ================= CSS ================= */
 const css = `
 body{font-family:Arial;background:#eef2f7}
-.container{max-width:900px;margin:40px auto;background:#fff;padding:30px;
+.container{max-width:950px;margin:40px auto;background:#fff;padding:30px;
 border-radius:12px;box-shadow:0 5px 15px rgba(0,0,0,.1);text-align:center}
 input,select{width:90%;padding:10px;margin:6px;border-radius:6px;border:1px solid #ccc}
 button{padding:10px 25px;margin:10px;border:none;border-radius:6px;
 background:#007bff;color:#fff;cursor:pointer}
-button.danger{background:#dc3545}
 button.success{background:#28a745}
+button.danger{background:#dc3545}
 table{width:100%;border-collapse:collapse;margin-top:20px}
 th,td{border:1px solid #ccc;padding:8px}
 th{background:#007bff;color:#fff}
@@ -98,7 +104,7 @@ h2,h3{margin:15px 0}
 `;
 
 /* ================= AUTH ================= */
-app.get('/login',(req,res)=>res.send(`
+app.get('/login', (req, res) => res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Connexion</h2>
@@ -111,15 +117,15 @@ app.get('/login',(req,res)=>res.send(`
 </div>
 `));
 
-app.post('/login',async(req,res)=>{
-  const u = await Auth.findOne({ username:req.body.username });
-  if(!u || !bcrypt.compareSync(req.body.password,u.password))
+app.post('/login', async (req, res) => {
+  const user = await Auth.findOne({ username: req.body.username });
+  if (!user || !bcrypt.compareSync(req.body.password, user.password))
     return res.send('❌ Identifiants incorrects');
-  req.session.user=u.username;
+  req.session.user = user.username;
   res.redirect('/menu');
 });
 
-app.get('/register',(req,res)=>res.send(`
+app.get('/register', (req, res) => res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Créer un compte</h2>
@@ -131,16 +137,16 @@ app.get('/register',(req,res)=>res.send(`
 </div>
 `));
 
-app.post('/register',async(req,res)=>{
+app.post('/register', async (req, res) => {
   await new Auth({
-    username:req.body.username,
-    password:bcrypt.hashSync(req.body.password,10)
+    username: req.body.username,
+    password: bcrypt.hashSync(req.body.password, 10)
   }).save();
   res.redirect('/login');
 });
 
 /* ================= MENU ================= */
-app.get('/menu',requireLogin,(req,res)=>res.send(`
+app.get('/menu', requireLogin, (req, res) => res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Menu principal</h2>
@@ -151,9 +157,9 @@ app.get('/menu',requireLogin,(req,res)=>res.send(`
 `));
 
 /* ================= NOUVEAU TRANSFERT ================= */
-app.get('/transferts/new',requireLogin,async(req,res)=>{
+app.get('/transferts/new', requireLogin, async (req, res) => {
   const code = await generateCode();
-res.send(`
+  res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Nouveau transfert</h2>
@@ -163,13 +169,13 @@ res.send(`
 <input name="senderFirstName" placeholder="Prénom" required>
 <input name="senderLastName" placeholder="Nom" required>
 <input name="senderPhone" placeholder="Téléphone" required>
-<select name="originCountry">${countries.map(c=>`<option>${c}</option>`).join('')}</select>
+<select name="originCountry">${countries.map(c => `<option>${c}</option>`).join('')}</select>
 
 <h3>Destinataire</h3>
 <input name="receiverFirstName" placeholder="Prénom" required>
 <input name="receiverLastName" placeholder="Nom" required>
 <input name="receiverPhone" placeholder="Téléphone" required>
-<select name="destinationCountry">${countries.map(c=>`<option>${c}</option>`).join('')}</select>
+<select name="destinationCountry">${countries.map(c => `<option>${c}</option>`).join('')}</select>
 
 <h3>Montants</h3>
 <input id="amount" name="amount" type="number" placeholder="Montant" required>
@@ -199,26 +205,32 @@ a.oninput=f.oninput=calc;
 `);
 });
 
-app.post('/transferts/new',requireLogin,async(req,res)=>{
-  const a=+req.body.amount,f=+req.body.fees;
-  await new Transfert({...req.body,amount:a,fees:f,recoveryAmount:a-f}).save();
+app.post('/transferts/new', requireLogin, async (req, res) => {
+  const amount = Number(req.body.amount);
+  const fees = Number(req.body.fees);
+  await new Transfert({
+    ...req.body,
+    amount,
+    fees,
+    recoveryAmount: amount - fees
+  }).save();
   res.redirect('/transferts/list');
 });
 
 /* ================= LISTE ================= */
-app.get('/transferts/list',requireLogin,async(req,res)=>{
-  const list = await Transfert.find().sort({createdAt:-1});
+app.get('/transferts/list', requireLogin, async (req, res) => {
+  const list = await Transfert.find().sort({ createdAt: -1 });
 
-let rows = '';
-for(const t of list){
-  const qr = await QRCode.toDataURL(t.code);
-  rows += `
+  let rows = '';
+  for (const t of list) {
+    const qr = await QRCode.toDataURL(t.code);
+    rows += `
 <tr>
 <td>${t.code}<br><img src="${qr}" width="80"></td>
 <td>${t.senderFirstName} → ${t.receiverFirstName}</td>
 <td>${t.recoveryAmount}</td>
 <td>${t.recoveryMode}</td>
-<td>${t.retired?'✅ Retiré':'⏳ En attente'}</td>
+<td>${t.retired ? '✅ Retiré' : '⏳ En attente'}</td>
 <td>
 <a href="/transferts/edit/${t._id}">✏️</a>
 <a href="/transferts/retirer/${t._id}">💳</a>
@@ -229,14 +241,16 @@ for(const t of list){
 </form>
 </td>
 </tr>`;
-}
+  }
 
-res.send(`
+  res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Liste des transferts</h2>
 <table>
-<tr><th>Code</th><th>Clients</th><th>Reçu</th><th>Mode</th><th>Statut</th><th>Actions</th></tr>
+<tr>
+<th>Code</th><th>Clients</th><th>Reçu</th><th>Mode</th><th>Statut</th><th>Actions</th>
+</tr>
 ${rows}
 </table>
 <a href="/menu">⬅ Menu</a>
@@ -245,11 +259,11 @@ ${rows}
 });
 
 /* ================= RETRAIT ================= */
-app.get('/transferts/retirer/:id',requireLogin,async(req,res)=>{
+app.get('/transferts/retirer/:id', requireLogin, async (req, res) => {
   const t = await Transfert.findById(req.params.id);
-  if(t.retired) return res.send('Déjà retiré');
+  if (t.retired) return res.send('Déjà retiré');
 
-res.send(`
+  res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Retrait - Code ${t.code}</h2>
@@ -267,19 +281,19 @@ res.send(`
 `);
 });
 
-app.post('/transferts/retirer/:id',requireLogin,async(req,res)=>{
-  await Transfert.findByIdAndUpdate(req.params.id,{
-    retired:true,
-    retraitDate:new Date(),
-    recoveryMode:req.body.recoveryMode
+app.post('/transferts/retirer/:id', requireLogin, async (req, res) => {
+  await Transfert.findByIdAndUpdate(req.params.id, {
+    retired: true,
+    recoveryMode: req.body.recoveryMode,
+    retraitDate: new Date()
   });
   res.redirect('/transferts/list');
 });
 
 /* ================= MODIFIER ================= */
-app.get('/transferts/edit/:id',requireLogin,async(req,res)=>{
+app.get('/transferts/edit/:id', requireLogin, async (req, res) => {
   const t = await Transfert.findById(req.params.id);
-res.send(`
+  res.send(`
 <style>${css}</style>
 <div class="container">
 <h2>Modifier transfert</h2>
@@ -292,42 +306,50 @@ res.send(`
 `);
 });
 
-app.post('/transferts/edit/:id',requireLogin,async(req,res)=>{
-  const a=+req.body.amount,f=+req.body.fees;
-  await Transfert.findByIdAndUpdate(req.params.id,{
-    amount:a,fees:f,recoveryAmount:a-f
+app.post('/transferts/edit/:id', requireLogin, async (req, res) => {
+  const amount = Number(req.body.amount);
+  const fees = Number(req.body.fees);
+  await Transfert.findByIdAndUpdate(req.params.id, {
+    amount,
+    fees,
+    recoveryAmount: amount - fees
   });
   res.redirect('/transferts/list');
 });
 
 /* ================= PDF ================= */
-app.get('/transferts/pdf/:id',requireLogin,async(req,res)=>{
+app.get('/transferts/pdf/:id', requireLogin, async (req, res) => {
   const t = await Transfert.findById(req.params.id);
   const qr = await QRCode.toDataURL(t.code);
 
-  const doc = new PDFDocument();
-  res.setHeader('Content-Type','application/pdf');
-  res.setHeader('Content-Disposition','inline');
+  const doc = new PDFDocument({ margin: 30 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename=transfert.pdf');
   doc.pipe(res);
 
-  doc.fontSize(18).text('REÇU DE TRANSFERT',{align:'center'});
+  doc.fontSize(18).text('REÇU DE TRANSFERT', { align: 'center' });
   doc.moveDown();
-  doc.text(`Code : ${t.code}`);
+  doc.fontSize(12).text(`Code : ${t.code}`);
   doc.text(`Montant reçu : ${t.recoveryAmount}`);
-  doc.text(`Mode : ${t.recoveryMode}`);
-  doc.image(qr, { width:120 });
+  doc.text(`Mode de retrait : ${t.recoveryMode}`);
+  doc.text(`Date : ${t.createdAt.toLocaleString()}`);
+  doc.moveDown();
+  doc.image(qr, { width: 120, align: 'center' });
+
   doc.end();
 });
 
 /* ================= DELETE ================= */
-app.post('/transferts/delete',requireLogin,async(req,res)=>{
+app.post('/transferts/delete', requireLogin, async (req, res) => {
   await Transfert.findByIdAndDelete(req.body.id);
   res.redirect('/transferts/list');
 });
 
 /* ================= LOGOUT ================= */
-app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/login'));
+});
 
 /* ================= SERVER ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log('🚀 Serveur prêt'));
+app.listen(PORT, () => console.log(`🚀 Serveur actif sur ${PORT}`));
