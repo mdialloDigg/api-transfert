@@ -341,7 +341,7 @@ try{
 
   doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
   doc.end();
-}catch(err){
+}catch(err){ 
   console.error('Erreur PDF:', err);
   res.status(500).send('Erreur serveur: ' + err.message);
 }
