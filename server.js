@@ -20,15 +20,11 @@ app.use(session({
 }));
 
 // ================= DATABASE =================
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert';
-
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000 // Timeout rapide pour Render
-})
+/* ================= MONGODB ================= */
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(err => console.error('❌ Erreur MongoDB:', err));
+.catch(console.error);
+
 
 // Éviter buffering timeout en vérifiant la connexion dès le départ
 mongoose.connection.on('error', err => {
@@ -354,6 +350,7 @@ try{
 // ================= LOGOUT =================
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= SERVER =================
+
+/* ================= SERVEUR ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur le port ${PORT}`));
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
