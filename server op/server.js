@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE AVEC CODE UNIQUE ET CSS
+ * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE
  ******************************************************************/
 
 const express = require('express');
@@ -53,7 +53,6 @@ const authSchema = new mongoose.Schema({ username:String, password:String });
 const Auth = mongoose.model('Auth', authSchema);
 
 // ================= UTILITAIRE =================
-// Génère un code unique A123
 async function generateUniqueCode() {
   let code;
   let exists = true;
@@ -75,10 +74,10 @@ const requireLogin = (req,res,next)=>{
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
 res.send(`
-<html><head><style>
-body{font-family:Arial;background:#eef2f7;text-align:center;padding-top:80px}
-form{background:#fff;padding:30px;display:inline-block;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);}
-input,button{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc}
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{margin:0;font-family:Arial;background:#f0f4f8;text-align:center;padding-top:80px;}
+form{background:#fff;padding:30px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);display:inline-block;}
+input,button{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc;}
 button{background:#007bff;color:white;border:none;font-weight:bold;cursor:pointer;transition:0.3s;}
 button:hover{background:#0056b3;}
 </style></head>
@@ -115,8 +114,8 @@ app.post('/login', async (req,res)=>{
 // ================= MENU =================
 app.get('/menu', requireLogin,(req,res)=>{
 res.send(`
-<html><head><style>
-body{font-family:Arial;background:#eef2f7;text-align:center;padding-top:50px}
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{font-family:Arial;background:#eef2f7;text-align:center;padding-top:50px;}
 button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-radius:8px;color:white;cursor:pointer;transition:0.3s}
 .send{background:#007bff}
 .send:hover{background:#0056b3}
@@ -134,24 +133,30 @@ button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-ra
 `);
 });
 
-// ================= FORMULAIRE =================
+// ================= LOCATIONS =================
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 
+// ================= FORMULAIRE TRANSFERT =================
 app.get('/transferts/new', requireLogin, async(req,res)=>{
   const code = await generateUniqueCode();
 res.send(`
-<html><head><style>
-body{font-family:Arial;background:#dde5f0;margin:0;padding:0}
-.container{max-width:1000px;margin:30px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 5px 15px rgba(0,0,0,0.2);}
-h2,h3{color:#007bff;text-align:center;margin-bottom:20px;}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px;margin-bottom:15px;}
-input,select{padding:12px;border-radius:6px;border:1px solid #ccc;width:100%;font-size:14px;}
-input[readonly]{background:#f0f0f0;}
-button{padding:15px;background:#28a745;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;transition:0.3s;margin-top:10px;}
-button:hover{background:#1e7e34;}
-a{display:inline-block;margin-top:15px;color:#007bff;text-decoration:none;}
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#f0f4f8}
+.container{max-width:900px;margin:40px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.15);}
+h2{color:#2c7be5;text-align:center;margin-bottom:30px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:20px;}
+label{display:block;margin-bottom:6px;font-weight:bold;color:#555;}
+input,select{width:100%;padding:12px;border-radius:6px;border:1px solid #ccc;font-size:14px;}
+input[readonly]{background:#e9ecef;}
+button{width:100%;padding:15px;background:#2eb85c;color:white;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;transition:0.3s;}
+button:hover{background:#218838;}
+a{display:inline-block;margin-top:20px;color:#2c7be5;text-decoration:none;font-weight:bold;}
 a:hover{text-decoration:underline;}
-</style></head>
+</style>
+</head>
 <body>
 <div class="container">
 <h2>➕ Nouveau Transfert</h2>
@@ -166,35 +171,39 @@ a:hover{text-decoration:underline;}
 
 <h3>Expéditeur</h3>
 <div class="grid">
-<input name="senderFirstName" placeholder="Prénom" required>
-<input name="senderLastName" placeholder="Nom" required>
-<input name="senderPhone" placeholder="Téléphone" required>
-<select name="originLocation">${locations.map(v=>`<option>${v}</option>`).join('')}</select>
+<div><label>Prénom</label><input name="senderFirstName" required></div>
+<div><label>Nom</label><input name="senderLastName" required></div>
+<div><label>Téléphone</label><input name="senderPhone" required></div>
+<div><label>Origine</label><select name="originLocation">
+${locations.map(v=>`<option>${v}</option>`).join('')}
+</select></div>
 </div>
 
 <h3>Destinataire</h3>
 <div class="grid">
-<input name="receiverFirstName" placeholder="Prénom" required>
-<input name="receiverLastName" placeholder="Nom" required>
-<input name="receiverPhone" placeholder="Téléphone" required>
-<select name="destinationLocation">${locations.map(v=>`<option>${v}</option>`).join('')}</select>
+<div><label>Prénom</label><input name="receiverFirstName" required></div>
+<div><label>Nom</label><input name="receiverLastName" required></div>
+<div><label>Téléphone</label><input name="receiverPhone" required></div>
+<div><label>Destination</label><select name="destinationLocation">
+${locations.map(v=>`<option>${v}</option>`).join('')}
+</select></div>
 </div>
 
-<h3>Montants et Code</h3>
+<h3>Montants & Code</h3>
 <div class="grid">
-<input name="amount" type="number" id="amount" placeholder="Montant" required>
-<input name="fees" type="number" id="fees" placeholder="Frais" required>
-<input type="text" id="recoveryAmount" placeholder="Montant à recevoir" readonly>
-<input type="text" id="code" name="code" placeholder="Code transfert" readonly value="${code}">
+<div><label>Montant</label><input type="number" id="amount" name="amount" required></div>
+<div><label>Frais</label><input type="number" id="fees" name="fees" required></div>
+<div><label>Montant à recevoir</label><input type="text" id="recoveryAmount" readonly></div>
+<div><label>Code transfert</label><input type="text" id="code" name="code" readonly value="${code}"></div>
 </div>
 
 <button>Enregistrer</button>
 </form>
+
 <center><a href="/menu">⬅ Retour menu</a></center>
 </div>
 
 <script>
-const codeField = document.getElementById('code');
 const amountField = document.getElementById('amount');
 const feesField = document.getElementById('fees');
 const recoveryField = document.getElementById('recoveryAmount');
@@ -204,17 +213,16 @@ function updateRecovery() {
   const fees = parseFloat(feesField.value) || 0;
   recoveryField.value = amount - fees;
 }
-
 amountField.addEventListener('input', updateRecovery);
 feesField.addEventListener('input', updateRecovery);
-
-// Initialisation du montant si déjà saisi
 updateRecovery();
 </script>
-</body></html>
+</body>
+</html>
 `);
 });
 
+// ================= ENREGISTRER TRANSFERT =================
 app.post('/transferts/new', requireLogin, async(req,res)=>{
 try{
   const amount = Number(req.body.amount||0);
@@ -232,7 +240,7 @@ try{
   }).save();
 
   res.send(`
-  <html><head><style>
+  <html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
   body{font-family:Arial;text-align:center;padding-top:50px;background:#dde5f0}
   h2{color:#28a745}
   p{font-size:20px;color:#007bff;font-weight:bold;margin:10px 0;}
@@ -253,7 +261,7 @@ try{
 }
 });
 
-// ================= LISTE =================
+// ================= LISTE TRANSFERTS =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
 try{
   const transferts = await Transfert.find().sort({destinationLocation:1}).exec();
@@ -262,82 +270,91 @@ try{
 
   let totalAmountAll=0, totalFeesAll=0, totalReceivedAll=0;
   let html = `
-  <html><head><style>
-  body{font-family:Arial;background:#f4f6f9;margin:0;padding:0;}
-  table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:20px;border-radius:8px;overflow:hidden;}
-  th,td{border:1px solid #ccc;padding:8px;font-size:13px;text-align:center;}
-  th{background:#007bff;color:white;}
-  .retired{background:#ffe0a3;}
-  .total{background:#222;color:white;font-weight:bold;}
-  button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;}
-  select{padding:4px;}
-  a{display:inline-block;margin:15px;text-decoration:none;color:#007bff;}
-  a:hover{text-decoration:underline;}
-  </style></head><body>
-  <h2 style="text-align:center">📋 Liste des transferts</h2>
-  <a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
-  <hr>`;
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;background:#f4f6f9;margin:0;padding:0;}
+h2{text-align:center;color:#2c7be5;margin:20px 0;}
+table{width:95%;margin:auto;border-collapse:collapse;background:#fff;margin-bottom:30px;border-radius:8px;overflow:hidden;}
+th,td{border:1px solid #ccc;padding:10px;font-size:13px;text-align:center;}
+th{background:#007bff;color:white;}
+tr:hover{background:#e8f0fe;}
+.retired{background:#ffe0a3;}
+.total{background:#222;color:white;font-weight:bold;}
+form{margin:0;}
+button{padding:5px 10px;border:none;border-radius:4px;background:#28a745;color:#fff;cursor:pointer;}
+select{padding:4px;}
+a{display:inline-block;margin:15px;text-decoration:none;color:#2c7be5;font-weight:bold;}
+a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<h2>📋 Liste des transferts</h2>
+<a href="/menu">⬅ Menu</a> | <a href="/transferts/pdf">📄 PDF</a>
+<hr>
+`;
 
-  for(let dest in grouped){
-    let ta=0,tf=0,tr=0;
-    html+=`<h3 style="text-align:center">Destination : ${dest}</h3>
-    <table>
-  <tr>
-  <th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
-  <th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
-  <th>Destinataire</th><th>Tél</th><th>Code</th><th>Statut</th><th>Action</th>
-  </tr>`;
-    grouped[dest].forEach(t=>{
-      ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
-      totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+for(let dest in grouped){
+  let ta=0,tf=0,tr=0;
+  html+=`<h3 style="text-align:center">Destination : ${dest}</h3>
+  <table>
+<tr>
+<th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
+<th>Montant</th><th>Frais</th><th>Reçu</th><th>Historique</th>
+<th>Destinataire</th><th>Tél</th><th>Code</th><th>Statut</th><th>Action</th>
+</tr>`;
+  grouped[dest].forEach(t=>{
+    ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
+    totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
 
-      let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
+    let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
 
-      html+=`
-  <tr class="${t.retired?'retired':''}">
-  <td>${t.userType}</td>
-  <td>${t.senderFirstName} ${t.senderLastName}</td>
-  <td>${t.senderPhone}</td>
-  <td>${t.originLocation}</td>
-  <td>${t.amount}</td>
-  <td>${t.fees}</td>
-  <td>${t.recoveryAmount}</td>
-  <td>${histHtml}</td>
-  <td>${t.receiverFirstName} ${t.receiverLastName}</td>
-  <td>${t.receiverPhone}</td>
-  <td>${t.code}</td>
-  <td>${t.retired?'Retiré':'Non retiré'}</td>
-  <td>${t.retired?'—':`
-  <form method="post" action="/transferts/retirer">
-  <input type="hidden" name="id" value="${t._id}">
-  <select name="mode">
-  <option>Espèces</option>
-  <option>Orange Money</option>
-  <option>Wave</option>
-  <option>Produit</option>
-  <option>Service</option>
-  </select>
-  <button>Retirer</button>
-  </form>`}</td>
-  </tr>`;
-    });
+    html+=`
+<tr class="${t.retired?'retired':''}">
+<td>${t.userType}</td>
+<td>${t.senderFirstName} ${t.senderLastName}</td>
+<td>${t.senderPhone}</td>
+<td>${t.originLocation}</td>
+<td>${t.amount}</td>
+<td>${t.fees}</td>
+<td>${t.recoveryAmount}</td>
+<td>${histHtml}</td>
+<td>${t.receiverFirstName} ${t.receiverLastName}</td>
+<td>${t.receiverPhone}</td>
+<td>${t.code}</td>
+<td>${t.retired?'Retiré':'Non retiré'}</td>
+<td>${t.retired?'—':`
+<form method="post" action="/transferts/retirer">
+<input type="hidden" name="id" value="${t._id}">
+<select name="mode">
+<option>Espèces</option>
+<option>Orange Money</option>
+<option>Wave</option>
+<option>Produit</option>
+<option>Service</option>
+</select>
+<button>Retirer</button>
+</form>`}</td>
+</tr>`;
+  });
 
-    html+=`<tr class="total">
-  <td colspan="4">TOTAL ${dest}</td>
-  <td>${ta}</td><td>${tf}</td><td>${tr}</td>
-  <td colspan="6"></td>
-  </tr></table><br>`;
-  }
+  html+=`<tr class="total">
+<td colspan="4">TOTAL ${dest}</td>
+<td>${ta}</td><td>${tf}</td><td>${tr}</td>
+<td colspan="6"></td>
+</tr></table>`;
+}
 
-  html+=`<table style="width:95%;margin:auto">
-  <tr class="total">
-  <td colspan="4">TOTAL GLOBAL</td>
-  <td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
-  <td colspan="6"></td>
-  </tr></table>
-  </body></html>`;
+html+=`<table style="width:95%;margin:auto">
+<tr class="total">
+<td colspan="4">TOTAL GLOBAL</td>
+<td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
+<td colspan="6"></td>
+</tr></table>
+</body></html>`;
 
-  res.send(html);
+res.send(html);
 }catch(err){
   console.error('Erreur liste transferts:', err);
   res.status(500).send('Erreur serveur: ' + err.message);
