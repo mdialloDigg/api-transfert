@@ -307,4 +307,107 @@ try{
   <td>${t.receiverPhone}</td>
   <td>${t.code}</td>
   <td>${t.retired?'Retiré':'Non retiré'}</td>
-  <td>${t.ret
+  <td>${t.retired?'—':`
+  <form method="post" action="/transferts/retirer">
+  <input type="hidden" name="id" value="${t._id}">
+  <select name="mode">
+  <option>Espèces</option>
+  <option>Orange Money</option>
+  <option>Wave</option>
+  <option>Produit</option>
+  <option>Service</option>
+  </select>
+  <button>Retirer</button>
+  </form>`}</td>
+  </tr>`;
+    });
+
+    html+=`<tr class="total">
+  <td colspan="4">TOTAL ${dest}</td>
+  <td>${ta}</td><td>${tf}</td><td>${tr}</td>
+  <td colspan="6"></td>
+  </tr></table><br>`;
+  }
+
+  html+=`<table style="width:95%;margin:auto">
+  <tr class="total">
+  <td colspan="4">TOTAL GLOBAL</td>
+  <td>${totalAmountAll}</td><td>${totalFeesAll}</td><td>${totalReceivedAll}</td>
+  <td colspan="6"></td>
+  </tr></table>
+  </body></html>`;
+
+  res.send(html);
+}catch(err){
+  console.error('Erreur liste transferts:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
+}
+});
+
+// ================= RETRAIT =================
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+try{
+  await Transfert.findByIdAndUpdate(req.body.id,{
+    retired:true,
+    recoveryMode:req.body.mode,
+    $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
+  });
+  res.redirect('/transferts/list');
+}catch(err){
+  console.error('Erreur retrait:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
+}
+});
+
+// ================= PDF =================
+app.get('/transferts/pdf', requireLogin, async(req,res)=>{
+try{
+  const list = await Transfert.find().sort({destinationLocation:1}).exec();
+  const doc = new PDFDocument({margin:30, size:'A4'});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
+  doc.pipe(res);
+
+  doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
+  doc.moveDown();
+
+  let groupedPDF = {};
+  list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
+
+  let totalA=0, totalF=0, totalR=0;
+
+  for(let dest in groupedPDF){
+    let subA=0, subF=0, subR=0;
+    doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
+    groupedPDF[dest].forEach(t=>{
+      subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
+      totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
+
+      doc.fontSize(10).fillColor('black')
+        .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
+        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+      if(t.retraitHistory && t.retraitHistory.length){
+        t.retraitHistory.forEach(h=>{
+          doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
+        });
+      }
+      doc.moveDown(0.5);
+    });
+    doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
+  }
+
+  doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
+  doc.end();
+}catch(err){
+  console.error('Erreur PDF:', err);
+  res.status(500).send('Erreur serveur: ' + err.message);
+}
+});
+
+// ================= LOGOUT =================
+app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+
+// ================= SERVEUR =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
