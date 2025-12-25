@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE
+ * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE (avec recherche côté serveur)
  ******************************************************************/
 
 const express = require('express');
@@ -294,14 +294,32 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   }
 });
 
-// ================= LISTE AVEC RECHERCHE =================
-app.get('/transferts/list', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find().sort({destinationLocation:1});
-  let grouped = {};
-  transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
+// ================= LISTE AVEC RECHERCHE SERVEUR =================
+app.get('/transferts/list', requireLogin, async (req, res) => {
+  const phoneFilter = req.query.phone || '';
 
-  let totalAmountAll=0,totalFeesAll=0,totalReceivedAll=0;
-  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  // Filtrer côté serveur sur senderPhone ou receiverPhone
+  const query = phoneFilter
+    ? {
+        $or: [
+          { senderPhone: { $regex: phoneFilter, $options: 'i' } },
+          { receiverPhone: { $regex: phoneFilter, $options: 'i' } }
+        ]
+      }
+    : {};
+
+  const transferts = await Transfert.find(query).sort({ destinationLocation: 1 });
+
+  // Regrouper par destination
+  let grouped = {};
+  transferts.forEach(t => {
+    if (!grouped[t.destinationLocation]) grouped[t.destinationLocation] = [];
+    grouped[t.destinationLocation].push(t);
+  });
+
+  let totalAmountAll = 0, totalFeesAll = 0, totalReceivedAll = 0;
+
+  let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 table{width:95%;margin:auto;border-collapse:collapse;}
 th,td{border:1px solid #ccc;padding:8px;text-align:center;}
@@ -312,59 +330,33 @@ button.print{background:#17a2b8;color:white;}
 a{margin:2px;text-decoration:none;}
 form{display:inline;}
 </style>
-<script>
-function confirmDelete(){return confirm('❌ Confirmer suppression?');}
-</script>
+<script>function confirmDelete(){return confirm('❌ Confirmer suppression?');}</script>
 </head><body>
 <h2>Liste des transferts</h2>
 <a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a> | <a href="/transferts/pdf">📄 PDF</a>
 
 <!-- Formulaire recherche phone -->
-<br><br>
-<label>Rechercher par téléphone :</label>
-<input type="text" id="searchPhone" placeholder="Ex: 770123456" style="padding:5px 8px;border-radius:4px;border:1px solid #ccc;">
-<button onclick="filterTable()">🔍 Rechercher</button>
-<button onclick="resetFilter()">❌ Réinitialiser</button>
+<form method="get" action="/transferts/list" style="margin-top:10px;">
+  <label>Rechercher par téléphone:</label>
+  <input type="text" name="phone" placeholder="Ex: 770123456" value="${phoneFilter}" style="padding:5px 8px;border-radius:4px;border:1px solid #ccc;">
+  <button type="submit">🔍 Rechercher</button>
+  <a href="/transferts/list"><button type="button">❌ Réinitialiser</button></a>
+</form>
+<hr>`;
 
-<hr>
-
-<script>
-function filterTable(){
-  const val = document.getElementById('searchPhone').value.toLowerCase();
-  const rows = document.querySelectorAll('table tr');
-  rows.forEach((row, idx)=>{
-    if(idx===0) return; // garder header
-    const tds = row.querySelectorAll('td');
-    const sender = tds[2].textContent.toLowerCase();
-    const receiver = tds[8].textContent.toLowerCase();
-    if(sender.includes(val) || receiver.includes(val)){
-      row.style.display='';
-    }else{
-      row.style.display='none';
-    }
-  });
-}
-function resetFilter(){
-  document.getElementById('searchPhone').value='';
-  const rows = document.querySelectorAll('table tr');
-  rows.forEach((row, idx)=>{ if(idx!==0) row.style.display=''; });
-}
-</script>
-`;
-
-  for(let dest in grouped){
-    let ta=0,tf=0,tr=0;
-    html+=`<h3>Destination: ${dest}</h3><table>
+  for (let dest in grouped) {
+    let ta = 0, tf = 0, tr = 0;
+    html += `<h3>Destination: ${dest}</h3><table>
 <tr><th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th><th>Reçu</th><th>Destinataire</th><th>Tél</th>
 <th>Code</th><th>Statut</th><th>Actions</th></tr>`;
-    grouped[dest].forEach(t=>{
-      ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
-      totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+    grouped[dest].forEach(t => {
+      ta += t.amount; tf += t.fees; tr += t.recoveryAmount;
+      totalAmountAll += t.amount; totalFeesAll += t.fees; totalReceivedAll += t.recoveryAmount;
 
-      let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
+      let histHtml = t.retraitHistory.map(h => `${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
 
-      html+=`<tr class="${t.retired?'retired':''}">
+      html += `<tr class="${t.retired ? 'retired' : ''}">
 <td>${t.userType}</td>
 <td>${t.senderFirstName} ${t.senderLastName}</td>
 <td>${t.senderPhone}</td>
@@ -375,12 +367,12 @@ function resetFilter(){
 <td>${t.receiverFirstName} ${t.receiverLastName}</td>
 <td>${t.receiverPhone}</td>
 <td>${t.code}</td>
-<td>${t.retired?'Retiré':'Non retiré'}<br>${histHtml}</td>
+<td>${t.retired ? 'Retiré' : 'Non retiré'}<br>${histHtml}</td>
 <td>
 <a href="/transferts/edit/${t._id}"><button>✏️ Modifier</button></a>
 <a href="/transferts/delete/${t._id}" onclick="return confirmDelete();"><button class="delete">❌ Supprimer</button></a>
 <a href="/transferts/print/${t._id}" target="_blank"><button class="print">🖨️ Imprimer</button></a>
-${t.retired?'':`<form method="post" action="/transferts/retirer">
+${t.retired ? '' : `<form method="post" action="/transferts/retirer">
 <input type="hidden" name="id" value="${t._id}">
 <select name="mode">
 <option>Espèces</option>
@@ -393,11 +385,13 @@ ${t.retired?'':`<form method="post" action="/transferts/retirer">
 </form>`}
 </td></tr>`;
     });
-    html+=`<tr style="font-weight:bold;"><td colspan="4">Total ${dest}</td><td>${ta}</td><td>${tf}</td><td>${tr}</td><td colspan="5"></td></tr></table>`;
+    html += `<tr style="font-weight:bold;"><td colspan="4">Total ${dest}</td><td>${ta}</td><td>${tf}</td><td>${tr}</td><td colspan="5"></td></tr></table>`;
   }
-  html+=`<h3>Total global</h3><table style="width:50%;margin:auto;"><tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
+
+  html += `<h3>Total global</h3><table style="width:50%;margin:auto;"><tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
 <tr style="font-weight:bold"><td>Total Frais</td><td>${totalFeesAll}</td></tr>
 <tr style="font-weight:bold"><td>Total Reçu</td><td>${totalReceivedAll}</td></tr></table></body></html>`;
+
   res.send(html);
 });
 
