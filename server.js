@@ -338,7 +338,7 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
     const recoveryAmount = amount - fees;
     const code = req.body.code || await generateUniqueCode();
     await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
-    res.redirect('/transferts/list');
+    res.redirect('/transferts/list'); 
   }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
