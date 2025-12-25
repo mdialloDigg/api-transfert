@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL COMPLET
+ * APP TRANSFERT – DASHBOARD FINAL
  ******************************************************************/
 
 const express = require('express');
@@ -15,7 +15,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'transfert-secret-final',
+  secret: 'transfert-secret-final',
   resave: false,
   saveUninitialized: true
 }));
@@ -48,7 +48,7 @@ const transfertSchema = new mongoose.Schema({
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const authSchema = new mongoose.Schema({ username:String, password:String, role:{type:String, enum:['admin','agent'], default:'agent'} });
+const authSchema = new mongoose.Schema({ username:String, password:String, role: {type:String, default:'agent'} });
 const Auth = mongoose.model('Auth', authSchema);
 
 // ================= UTILITAIRE =================
@@ -74,7 +74,7 @@ app.get('/login',(req,res)=>{
 res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{margin:0;font-family:Arial;background:#f0f4f8;text-align:center;padding-top:80px;}
 form{background:#fff;padding:30px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);display:inline-block;}
-input,button,select{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc;}
+input,button{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc;}
 button{background:#007bff;color:white;border:none;font-weight:bold;cursor:pointer;transition:0.3s;}
 button:hover{background:#0056b3;}
 </style></head><body>
@@ -82,26 +82,22 @@ button:hover{background:#0056b3;}
 <form method="post">
 <input name="username" placeholder="Utilisateur" required><br>
 <input type="password" name="password" placeholder="Mot de passe" required><br>
-<select name="role">
-<option value="agent">Agent</option>
-<option value="admin">Administrateur</option>
-</select><br>
 <button>Connexion</button>
 </form></body></html>`);
 });
 
 app.post('/login', async (req,res)=>{
   try{
-    const { username, password, role } = req.body;
-    const user = await Auth.findOne({ username }).exec();
+    const { username, password } = req.body;
+    let user = await Auth.findOne({ username }).exec();
     if(!user){
       const hashed = bcrypt.hashSync(password,10);
-      await new Auth({ username, password: hashed, role }).save();
-      req.session.user = { username, role };
+      user = await new Auth({ username, password: hashed }).save();
+      req.session.user = { username:user.username, role:user.role };
       return res.redirect('/menu');
     }
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-    req.session.user = { username, role: user.role };
+    req.session.user = { username:user.username, role:user.role };
     res.redirect('/menu');
   }catch(err){ console.error(err); res.status(500).send('Erreur serveur: '+err.message);}
 });
@@ -122,15 +118,16 @@ button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-ra
 </body></html>`);
 });
 
-// ================= LOCATIONS & CURRENCIES =================
+// ================= LOCATIONS =================
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 const currencies = ['GNF','EUR','USD','XOF'];
 
 // ================= FORMULAIRE =================
 app.get('/transferts/form', requireLogin, async(req,res)=>{
-  let t=null;
-  if(req.query.code) t = await Transfert.findOne({code:req.query.code});
-  const code = t? t.code : await generateUniqueCode();
+  try{
+    let t=null;
+    if(req.query.code) t = await Transfert.findOne({code:req.query.code});
+    const code = t? t.code : await generateUniqueCode();
 res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{margin:0;font-family:Arial,sans-serif;background:#f0f4f8}
 .container{max-width:900px;margin:40px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.15);}
@@ -191,6 +188,7 @@ feesField.addEventListener('input',updateRecovery);
 updateRecovery();
 </script>
 </body></html>`);
+  }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
 app.post('/transferts/form', requireLogin, async(req,res)=>{
@@ -205,100 +203,91 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
     }else{
       await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
     }
-    // Rediriger vers liste avec préremplissage
-    const query = `?searchCode=${code}`;
-    res.redirect('/transferts/list'+query);
+
+    // Rediriger vers la liste avec pré-remplissage du formulaire de recherche
+    res.redirect(`/transferts/list?searchCode=${code}&destination=${req.body.destinationLocation}`);
   }catch(err){console.error(err);res.status(500).send(err.message);}
 });
 
-// ================= LA LISTE FINALE + TOUT =================
-app.get('/transferts/list', requireLogin, async (req,res) => {
+// ================= LISTE =================
+app.get('/transferts/list', requireLogin, async(req,res)=>{
   try{
     const page = parseInt(req.query.page) || 1;
     const perPage = 10;
-    const transferts = await Transfert.find().sort({ destinationLocation: 1, createdAt:-1 });
-    
+    let transferts = await Transfert.find().sort({destinationLocation:1, createdAt:-1});
+
     // Filtrage
     let filtered = transferts;
     const { searchPhone, searchCode, searchName, destination, status } = req.query;
-    if(searchPhone) filtered = filtered.filter(t => t.senderPhone.includes(searchPhone) || t.receiverPhone.includes(searchPhone));
-    if(searchCode) filtered = filtered.filter(t => t.code.includes(searchCode));
-    if(searchName) filtered = filtered.filter(t => t.receiverFirstName.toLowerCase().includes(searchName.toLowerCase()) || t.receiverLastName.toLowerCase().includes(searchName.toLowerCase()));
-    if(destination && destination!=='all') filtered = filtered.filter(t => t.destinationLocation === destination);
-    if(status==='retired') filtered = filtered.filter(t => t.retired);
-    if(status==='not') filtered = filtered.filter(t => !t.retired);
-    
+    if(searchPhone) filtered = filtered.filter(t=>t.senderPhone.includes(searchPhone) || t.receiverPhone.includes(searchPhone));
+    if(searchCode) filtered = filtered.filter(t=>t.code.includes(searchCode));
+    if(searchName) filtered = filtered.filter(t=>t.receiverFirstName.toLowerCase().includes(searchName.toLowerCase()) || t.receiverLastName.toLowerCase().includes(searchName.toLowerCase()));
+    if(destination && destination!=='all') filtered = filtered.filter(t=>t.destinationLocation===destination);
+    if(status==='retired') filtered = filtered.filter(t=>t.retired);
+    if(status==='not') filtered = filtered.filter(t=>!t.retired);
+
     const totalAmount = filtered.reduce((a,b)=>a+b.amount,0);
     const totalFees = filtered.reduce((a,b)=>a+b.fees,0);
     const totalReceived = filtered.reduce((a,b)=>a+b.recoveryAmount,0);
-    
+
     const destinations = [...new Set(filtered.map(t=>t.destinationLocation))];
-    
+
     // Pagination
     const paginated = filtered.slice((page-1)*perPage, page*perPage);
     const totalPages = Math.ceil(filtered.length/perPage);
-    
-    let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+
+    // Génération HTML (liste avec historique, retrait direct, pagination, export)
+    let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-h1{color:#2c7be5;text-align:center;margin-bottom:20px;}
+h1{text-align:center;color:#2c7be5;}
 .container{max-width:1200px;margin:auto;}
-.stats{display:flex;flex-wrap:wrap;gap:15px;justify-content:center;margin-bottom:25px;}
-.stat-card{flex:1 1 180px;background:white;border-radius:12px;padding:15px;box-shadow:0 4px 12px rgba(0,0,0,0.1);text-align:center;}
-.stat-card h3{margin:5px 0;color:#007bff;}
-.stat-card p{margin:5px 0;font-size:16px;color:#495057;font-weight:bold;}
-.search-bar{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:20px;}
-input, select{padding:8px;border-radius:6px;border:1px solid #ccc;}
-.card{background:white;border-radius:12px;padding:15px;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-bottom:20px;}
-.card h3{margin:0 0 10px 0;color:#007bff;}
-.card p{margin:4px 0;font-size:14px;color:#495057;}
-.card .status{font-weight:bold;padding:3px 6px;border-radius:6px;color:white;display:inline-block;margin-top:6px;}
-.status.retiré{background:#dc3545;}
-.status.non{background:#28a745;}
-.card .actions{margin-top:10px;display:flex;flex-wrap:wrap;gap:5px;}
-button{padding:6px 10px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:13px;}
+.card{background:white;border-radius:12px;padding:15px;margin-bottom:15px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+.status.retiré{background:#dc3545;color:white;padding:2px 6px;border-radius:6px;}
+.status.non{background:#28a745;color:white;padding:2px 6px;border-radius:6px;}
+.actions button{margin:3px;padding:6px 10px;border:none;border-radius:6px;color:white;cursor:pointer;}
 button.modify{background:#28a745;}
 button.delete{background:#dc3545;}
 button.print{background:#17a2b8;}
-button.retire{background:#007bff;}
-a{text-decoration:none;color:#007bff;}
-a:hover{text-decoration:underline;}
-.pagination{margin-top:20px;text-align:center;}
-.pagination a{margin:0 5px;text-decoration:none;color:#007bff;}
+button.retire{background:#ff8800;}
+.pagination a{margin:0 3px;text-decoration:none;padding:5px 10px;background:#007bff;color:white;border-radius:6px;}
+.search-bar{margin-bottom:20px;}
 </style></head><body>
 <div class="container">
-<h1>📋 Liste des transferts</h1>
-
-<div class="stats">
-<div class="stat-card"><h3>Total Montants</h3><p>${totalAmount}</p></div>
-<div class="stat-card"><h3>Total Frais</h3><p>${totalFees}</p></div>
-<div class="stat-card"><h3>Total Reçu</h3><p>${totalReceived}</p></div>
+<h1>Liste des transferts</h1>
+<div>
+<a href="/menu">⬅ Menu</a> | 
+<a href="/transferts/form">➕ Nouveau</a> | 
+<a href="/transferts/pdf">📄 PDF</a> | 
+<a href="/transferts/excel">📊 Excel</a>
 </div>
 
 <div class="search-bar">
 <form method="get" action="/transferts/list">
-<input type="text" name="searchPhone" placeholder="Téléphone" value="${searchPhone||''}">
-<input type="text" name="searchCode" placeholder="Code" value="${searchCode||''}">
-<input type="text" name="searchName" placeholder="Nom destinataire" value="${searchName||''}">
-<select name="destination"><option value="all">Toutes destinations</option>${destinations.map(d=>`<option ${destination===d?'selected':''}>${d}</option>`).join('')}</select>
+<input type="text" name="searchPhone" placeholder="Téléphone" value="${req.query.searchPhone||''}">
+<input type="text" name="searchCode" placeholder="Code" value="${req.query.searchCode||''}">
+<input type="text" name="searchName" placeholder="Nom destinataire" value="${req.query.searchName||''}">
+<select name="destination">
+<option value="all">Toutes destinations</option>
+${destinations.map(d=>`<option ${req.query.destination===d?'selected':''}>${d}</option>`).join('')}
+</select>
 <select name="status">
-<option value="all">Tous</option>
-<option value="retired" ${status==='retired'?'selected':''}>Retirés</option>
-<option value="not" ${status==='not'?'selected':''}>Non retirés</option>
+<option value="">Tous</option>
+<option value="retired" ${req.query.status==='retired'?'selected':''}>Retiré</option>
+<option value="not" ${req.query.status==='not'?'selected':''}>Non retiré</option>
 </select>
 <button type="submit">🔍 Rechercher</button>
 </form>
 </div>
 
-<a href="/transferts/pdf${req.url.split('?')[1]?'?'+req.url.split('?')[1]:''}">📄 Export PDF</a> |
-<a href="/transferts/excel${req.url.split('?')[1]?'?'+req.url.split('?')[1]:''}">📊 Export Excel</a>`;
+<div>Total Montants: ${totalAmount} | Total Frais: ${totalFees} | Total Reçu: ${totalReceived}</div>
+<hr>`;
 
 paginated.forEach(t=>{
   html+=`<div class="card">
-<h3>Code: ${t.code}</h3>
-<p><strong>Type:</strong> ${t.userType}</p>
+<p><strong>Code:</strong> ${t.code}</p>
 <p><strong>Expéditeur:</strong> ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
-<p><strong>Origine:</strong> ${t.originLocation}</p>
 <p><strong>Destinataire:</strong> ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
+<p><strong>Origine:</strong> ${t.originLocation}</p>
 <p><strong>Destination:</strong> ${t.destinationLocation}</p>
 <p><strong>Montant:</strong> ${t.amount} ${t.currency}</p>
 <p><strong>Frais:</strong> ${t.fees} ${t.currency}</p>
@@ -319,96 +308,132 @@ for(let i=1;i<=totalPages;i++){
   html+=`<a href="/transferts/list?page=${i}">${i}</a>`;
 }
 html+=`</div></div></body></html>`;
-
 res.send(html);
 
+  }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
-// ================= ACTIONS =================
+// ================= RETRAIT DIRECT =================
 app.post('/transferts/retire/:id', requireLogin, async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  t.retired = !t.retired;
-  t.retraitHistory.push({date: new Date(), mode: req.session.user.username});
-  await t.save();
-  res.redirect('/transferts/list');
+  try{
+    const t = await Transfert.findById(req.params.id);
+    if(!t) return res.redirect('/transferts/list');
+    if(!t.retired){
+      t.retired = true;
+      t.retraitHistory.push({ date:new Date(), mode:'Direct' });
+    }else{
+      t.retired = false;
+    }
+    await t.save();
+    res.redirect('/transferts/list');
+  }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
+// ================= SUPPRIMER =================
 app.post('/transferts/delete/:id', requireLogin, async(req,res)=>{
-  await Transfert.findByIdAndDelete(req.params.id);
-  res.redirect('/transferts/list');
+  try{
+    await Transfert.findByIdAndDelete(req.params.id);
+    res.redirect('/transferts/list');
+  }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
+// ================= TICKET =================
 app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  const doc = new PDFDocument({size:[250,400], margins:{top:10,left:10,right:10,bottom:10}});
-  res.setHeader('Content-Type','application/pdf');
-  res.setHeader('Content-Disposition',`inline; filename=ticket_${t.code}.pdf`);
-  doc.pipe(res);
-  doc.fontSize(16).text(`Transfert ${t.code}`,{align:'center'});
-  doc.moveDown();
-  doc.fontSize(12).text(`Expéditeur: ${t.senderFirstName} ${t.senderLastName}`);
-  doc.text(`Tel: ${t.senderPhone}`);
-  doc.text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName}`);
-  doc.text(`Tel: ${t.receiverPhone}`);
-  doc.text(`Destination: ${t.destinationLocation}`);
-  doc.text(`Montant: ${t.amount} ${t.currency}`);
-  doc.text(`Frais: ${t.fees} ${t.currency}`);
-  doc.text(`Reçu: ${t.recoveryAmount} ${t.currency}`);
-  doc.text(`Statut: ${t.retired?'Retiré':'Non retiré'}`);
-  doc.end();
+  try{
+    const t = await Transfert.findById(req.params.id);
+    if(!t) return res.send('Transfert introuvable');
+    res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{font-family:Arial;text-align:center;padding:20px;}
+.ticket{border:1px dashed #333;padding:15px;width:300px;margin:auto;}
+h3{margin:5px 0;}p{margin:3px 0;font-size:14px;}
+button{margin-top:10px;padding:8px 15px;}
+</style></head><body>
+<div class="ticket">
+<h3>💰 Transfert</h3>
+<p>Code: ${t.code}</p>
+<p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
+<p>Tél: ${t.senderPhone}</p>
+<p>Origine: ${t.originLocation}</p>
+<p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
+<p>Tél: ${t.receiverPhone}</p>
+<p>Destination: ${t.destinationLocation}</p>
+<p>Montant: ${t.amount} ${t.currency}</p>
+<p>Frais: ${t.fees} ${t.currency}</p>
+<p>À recevoir: ${t.recoveryAmount} ${t.currency}</p>
+<p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+<button onclick="window.print()">🖨 Imprimer</button>
+</div></body></html>`);
+  }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
+// ================= PDF =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find();
-  const doc = new PDFDocument();
-  res.setHeader('Content-Type','application/pdf');
-  res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
-  doc.pipe(res);
-  transferts.forEach(t=>{
-    doc.fontSize(12).text(`Code: ${t.code} | Dest: ${t.destinationLocation} | Montant: ${t.amount} | Retiré: ${t.retired}`);
-  });
-  doc.end();
-});
+  try{
+    const list = await Transfert.find().sort({destinationLocation:1});
+    const doc = new PDFDocument({margin:30, size:'A4'});
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
+    doc.pipe(res);
+    doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'}); doc.moveDown();
 
-app.get('/transferts/excel', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Transferts');
-  sheet.columns = [
-    {header:'Code', key:'code'},
-    {header:'Expéditeur', key:'sender'},
-    {header:'Destinataire', key:'receiver'},
-    {header:'Destination', key:'destination'},
-    {header:'Montant', key:'amount'},
-    {header:'Frais', key:'fees'},
-    {header:'Reçu', key:'recoveryAmount'},
-    {header:'Retiré', key:'retired'}
-  ];
-  transferts.forEach(t=>{
-    sheet.addRow({
-      code:t.code,
-      sender:`${t.senderFirstName} ${t.senderLastName}`,
-      receiver:`${t.receiverFirstName} ${t.receiverLastName}`,
-      destination:t.destinationLocation,
-      amount:t.amount,
-      fees:t.fees,
-      recoveryAmount:t.recoveryAmount,
-      retired:t.retired?'Oui':'Non'
+    list.forEach(t=>{
+      doc.fontSize(12).fillColor('black')
+      .text(`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation} | Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'}`);
+      if(t.retraitHistory && t.retraitHistory.length){
+        t.retraitHistory.forEach(h=>{ doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`); });
+      }
+      doc.moveDown(0.5);
     });
-  });
-  res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
-  await workbook.xlsx.write(res);
-  res.end();
+    doc.end();
+  }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
-app.get('/logout', (req,res)=>{
-  req.session.destroy();
-  res.redirect('/login');
+// ================= EXCEL =================
+app.get('/transferts/excel', requireLogin, async(req,res)=>{
+  try{
+    const list = await Transfert.find().sort({destinationLocation:1});
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Transferts');
+    sheet.columns = [
+      {header:'Code', key:'code', width:10},
+      {header:'Expéditeur', key:'sender', width:20},
+      {header:'Téléphone Expéditeur', key:'senderPhone', width:15},
+      {header:'Destinataire', key:'receiver', width:20},
+      {header:'Téléphone Destinataire', key:'receiverPhone', width:15},
+      {header:'Origine', key:'origin', width:15},
+      {header:'Destination', key:'destination', width:15},
+      {header:'Montant', key:'amount', width:10},
+      {header:'Frais', key:'fees', width:10},
+      {header:'Reçu', key:'recovery', width:10},
+      {header:'Statut', key:'status', width:10},
+      {header:'Historique', key:'history', width:30}
+    ];
+    list.forEach(t=>{
+      sheet.addRow({
+        code:t.code,
+        sender:`${t.senderFirstName} ${t.senderLastName}`,
+        senderPhone:t.senderPhone,
+        receiver:`${t.receiverFirstName} ${t.receiverLastName}`,
+        receiverPhone:t.receiverPhone,
+        origin:t.originLocation,
+        destination:t.destinationLocation,
+        amount:t.amount,
+        fees:t.fees,
+        recovery:t.recoveryAmount,
+        status:t.retired?'Retiré':'Non retiré',
+        history:t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('; ')
+      });
+    });
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
+  }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
-// ================= SERVER =================
+// ================= LOGOUT =================
+app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+
+// ================= SERVEUR =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=>console.log(`✅ Serveur lancé sur http://localhost:${PORT}`));
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
