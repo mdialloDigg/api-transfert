@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL COMPLET
+ * APP TRANSFERT – DASHBOARD COMPLET
  ******************************************************************/
 
 const express = require('express');
@@ -93,17 +93,17 @@ button:hover{background:#0056b3;}
 app.post('/login', async (req,res)=>{
   try{
     const { username, password } = req.body;
-    let user = await Auth.findOne({ username }).exec();
+    let user = await Auth.findOne({username}).exec();
     if(!user){
       const hashed = bcrypt.hashSync(password,10);
-      user = await new Auth({ username, password: hashed, role:'admin' }).save();
+      user = await new Auth({username,password:hashed,role:'admin'}).save();
       req.session.user = { username, role:'admin' };
       return res.redirect('/menu');
     }
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
     req.session.user = { username:user.username, role:user.role };
     res.redirect('/menu');
-  }catch(err){ console.error(err); res.status(500).send('Erreur serveur: '+err.message);}
+  }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
 // ================= MENU =================
@@ -198,14 +198,139 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
     }else{
       await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
     }
-    // Redirection vers la liste avec code pré-rempli
     res.redirect(`/transferts/list?searchCode=${code}`);
   }catch(err){console.error(err);res.status(500).send(err.message);}
 });
 
-// ================= LOGOUT ====================
-app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+// ================= LISTE TABLEAU MODERNE =================
+app.get(['/transferts/list','/transferts/list/'], requireLogin, async(req,res)=>{
+  try{
+    let { searchPhone, searchCode, searchName, destination, status, page } = req.query;
+    const perPage = 10;
+    page = parseInt(page)||1;
 
-// ================= SERVEUR ====================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
+    let query = {};
+    if(searchPhone) query.$or=[{senderPhone:new RegExp(searchPhone,'i')},{receiverPhone:new RegExp(searchPhone,'i')}];
+    if(searchCode) query.code = new RegExp(searchCode,'i');
+    if(searchName) query.$or=query.$or?[...query.$or,{receiverFirstName:new RegExp(searchName,'i')},{receiverLastName:new RegExp(searchName,'i')}]:[{receiverFirstName:new RegExp(searchName,'i')},{receiverLastName:new RegExp(searchName,'i')}];
+    if(destination && destination!=='all') query.destinationLocation = destination;
+    if(status==='retired') query.retired=true;
+    if(status==='not') query.retired=false;
+
+    const totalCount = await Transfert.countDocuments(query);
+    const transferts = await Transfert.find(query).sort({destinationLocation:1, createdAt:-1}).skip((page-1)*perPage).limit(perPage);
+
+    // Totaux
+    const totals = await Transfert.aggregate([
+      { $match: query },
+      { $group: { _id:null, totalAmount:{$sum:'$amount'}, totalFees:{$sum:'$fees'}, totalRecovery:{$sum:'$recoveryAmount'} } }
+    ]);
+    const totalAmount = totals[0]?.totalAmount||0;
+    const totalFees = totals[0]?.totalFees||0;
+    const totalRecovery = totals[0]?.totalRecovery||0;
+
+    const destinations = await Transfert.distinct('destinationLocation');
+
+    // HTML tableau
+    let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+.table-container{overflow-x:auto;background:white;padding:15px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left;font-size:14px;}
+th{background:#007bff;color:white;white-space:nowrap;}
+tr:hover{background:#f1f1f1;}
+a.button{padding:5px 10px;background:#28a745;color:white;border-radius:6px;text-decoration:none;margin-right:5px;font-size:13px;}
+a.delete{background:#dc3545;}
+form.inline{display:inline;}
+div.top{margin-bottom:15px;}
+select,input{padding:6px;margin-right:5px;border-radius:6px;border:1px solid #ccc;}
+.pagination{margin-top:15px;}
+.pagination a{padding:5px 10px;border:1px solid #ccc;margin-right:3px;text-decoration:none;color:#007bff;}
+.pagination a.active{background:#007bff;color:white;}
+</style></head><body>
+<h2>📋 Liste des transferts</h2>
+<div class="top">
+<a href="/menu">⬅ Menu</a>
+<a href="/transferts/form">➕ Nouveau</a>
+<a href="/transferts/pdf">📄 PDF</a>
+<a href="/transferts/excel">📊 Excel</a>
+<form method="get" style="display:inline;">
+<input name="searchPhone" placeholder="Téléphone" value="${searchPhone||''}">
+<input name="searchCode" placeholder="Code" value="${searchCode||''}">
+<input name="searchName" placeholder="Nom destinataire" value="${searchName||''}">
+<select name="destination">
+<option value="all">Toutes destinations</option>
+${destinations.map(d=>`<option value="${d}" ${d===destination?'selected':''}>${d}</option>`).join('')}
+</select>
+<select name="status">
+<option value="all">Tous</option>
+<option value="retired" ${status==='retired'?'selected':''}>Retiré</option>
+<option value="not" ${status==='not'?'selected':''}>Non retiré</option>
+</select>
+<button type="submit">🔍 Rechercher</button>
+</form>
+</div>
+<div class="table-container">
+<table>
+<tr>
+<th>Code</th><th>Expéditeur</th><th>Tél</th><th>Origine</th><th>Destinataire</th><th>Tél</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Statut & Historique</th><th>Actions</th>
+</tr>`;
+transferts.forEach(t=>{
+  let hist = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>')||'-';
+  html+=`<tr>
+<td>${t.code}</td>
+<td>${t.senderFirstName} ${t.senderLastName}</td>
+<td>${t.senderPhone}</td>
+<td>${t.originLocation}</td>
+<td>${t.receiverFirstName} ${t.receiverLastName}</td>
+<td>${t.receiverPhone}</td>
+<td>${t.destinationLocation}</td>
+<td>${t.amount}</td>
+<td>${t.fees}</td>
+<td>${t.recoveryAmount}</td>
+<td>${t.retired?'Retiré':'Non retiré'}<br>${hist}</td>
+<td>
+<a href="/transferts/form?code=${t.code}" class="button">✏️ Modifier</a>
+<a href="/transferts/delete/${t._id}" class="button delete" onclick="return confirm('❌ Confirmer suppression?')">❌ Supprimer</a>
+${!t.retired?`<form class="inline" method="post" action="/transferts/retirer"><input type="hidden" name="id" value="${t._id}"><select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option><option>Produit</option><option>Service</option></select><button type="submit" class="button">Retirer</button></form>`:''}
+</td>
+</tr>`;
+});
+html+=`</table>
+<p>Total Montant: ${totalAmount} | Total Frais: ${totalFees} | Total Reçu: ${totalRecovery}</p>
+<div class="pagination">`;
+for(let i=1;i<=Math.ceil(totalCount/perPage);i++){
+  html+=`<a href="?page=${i}" class="${i===page?'active':''}">${i}</a>`;
+}
+html+=`</div></div></body></html>`;
+res.send(html);
+});
+
+// ================= RETRAIT =================
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  try{
+    const t = await Transfert.findById(req.body.id);
+    if(t && !t.retired){
+      t.retired = true;
+      t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
+      await t.save();
+    }
+    res.redirect('/transferts/list');
+  }catch(err){res.status(500).send(err.message);}
+});
+
+// ================= DELETE =================
+app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndDelete(req.params.id);
+  res.redirect('/transferts/list');
+});
+
+// ================= LOGOUT =================
+app.get('/logout',(req,res)=>{
+  req.session.destroy();
+  res.redirect('/login');
+});
+
+// ================= SERVER =================
+const PORT = process.env.PORT||3000;
+app.listen(PORT,()=>console.log(`🚀 Server running on port ${PORT}`));
