@@ -10,11 +10,7 @@ const PDFDocument = require('pdfkit');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({
-  secret: 'transfert-secret-final',
-  resave: false,
-  saveUninitialized: true
-}));
+app.use(session({ secret: 'transfert-secret-final', resave: false, saveUninitialized: true }));
 
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
@@ -184,158 +180,19 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
   res.redirect('/transferts/list');
 });
 
-// ================= LISTE DYNAMIQUE AJAX =================
-app.get('/transferts/list', requireLogin, async(req,res)=>{
-  res.send(`<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
-    <style>
-      body{font-family:Arial;background:#fff3e0;padding:15px;}
-      .search-container input, .search-container select{padding:6px;margin:3px;}
-      .card{padding:10px;margin:5px;border-radius:6px;transition:0.3s;}
-      .nonRetired{background:#4caf50;color:white;}
-      .retired{background:#f44336;color:white;}
-      .destination{font-weight:bold;font-size:18px;margin-top:15px;}
-      .chart{width:300px;height:180px;position:fixed;bottom:10px;right:10px;background:white;padding:10px;border-radius:8px;}
-      .btn{padding:6px 10px;margin:2px;border:none;border-radius:6px;color:white;cursor:pointer;}
-      .btn-orange{background:#ff9800;}
-      .btn-green{background:#4caf50;}
-      .btn-red{background:#f44336;}
-    </style>
-  </head>
-  <body>
-    <h2>Liste des transferts</h2>
-    <div class="search-container">
-      <input id="searchPhone" placeholder="Téléphone">
-      <input id="searchCode" placeholder="Code">
-      <input id="searchName" placeholder="Nom / Prénom">
-      <input id="searchCountry" placeholder="Pays">
-      <select id="searchCurrency">
-        <option value="">Devise</option>
-        ${currencies.map(c=>`<option>${c}</option>`).join('')}
-      </select>
-      <button id="btnSearch" class="btn btn-orange">🔍 Rechercher</button>
-      <button id="btnPDF" class="btn btn-orange">📄 Export PDF</button>
-    </div>
-    <div id="listContainer"></div>
-    <canvas id="chart" class="chart"></canvas>
-    <script>
-      function renderList(data){
-        let html = '';
-        let grouped = {};
-        data.forEach(t=>{
-          if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]={retired:[], nonRetired:[]};
-          if(t.retired) grouped[t.destinationLocation].retired.push(t);
-          else grouped[t.destinationLocation].nonRetired.push(t);
-        });
-        const chartLabels = [];
-        const retiredTotals = [];
-        const nonRetiredTotals = [];
-        for(const dest in grouped){
-          html+='<div class="destination">Destination: '+dest+'</div>';
-          grouped[dest].nonRetired.forEach(t=>{
-            html+='<div class="card nonRetired">'+
-              '<strong>Code:</strong> '+t.code+' | '+
-              '<strong>Expéditeur:</strong> '+t.senderFirstName+' '+t.senderLastName+' | '+
-              '<strong>Montant:</strong> '+t.amount+' '+t.currency+' | '+
-              '<strong>Destinataire:</strong> '+t.receiverFirstName+' '+t.receiverLastName+
-              '<br><a href="/transferts/form?code='+t.code+'" class="btn btn-green">✏️ Modifier</a> '+
-              '<a href="/transferts/delete/'+t._id+'" class="btn btn-red" onclick="return confirm(\'Supprimer ?\')">❌ Supprimer</a> '+
-              '<a href="/transferts/print/'+t._id+'" target="_blank" class="btn btn-orange">🖨️ Imprimer</a>'+
-              '<form method="post" action="/transferts/retirer"><input type="hidden" name="id" value="'+t._id+'"><select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option><option>Produit</option><option>Service</option></select><button class="btn btn-orange">Retirer</button></form>'+
-              '</div>';
-          });
-          grouped[dest].retired.forEach(t=>{
-            html+='<div class="card retired">'+
-              '<strong>Code:</strong> '+t.code+' | '+
-              '<strong>Expéditeur:</strong> '+t.senderFirstName+' '+t.senderLastName+' | '+
-              '<strong>Montant:</strong> '+t.amount+' '+t.currency+' | '+
-              '<strong>Destinataire:</strong> '+t.receiverFirstName+' '+t.receiverLastName+
-              '<br><a href="/transferts/form?code='+t.code+'" class="btn btn-green">✏️ Modifier</a> '+
-              '<a href="/transferts/delete/'+t._id+'" class="btn btn-red" onclick="return confirm(\'Supprimer ?\')">❌ Supprimer</a> '+
-              '<a href="/transferts/print/'+t._id+'" target="_blank" class="btn btn-orange">🖨️ Imprimer</a>'+
-              '</div>';
-          });
-
-          // Graph data
-          const sumRetired = grouped[dest].retired.reduce((acc,v)=>acc+v.recoveryAmount,0);
-          const sumNonRetired = grouped[dest].nonRetired.reduce((acc,v)=>acc+v.recoveryAmount,0);
-          chartLabels.push(dest);
-          retiredTotals.push(sumRetired);
-          nonRetiredTotals.push(sumNonRetired);
-        }
-
-        $('#listContainer').html(html);
-
-        // Graph superposé
-        const ctx = document.getElementById('chart').getContext('2d');
-        if(window.transfertChart) window.transfertChart.destroy();
-        window.transfertChart = new Chart(ctx,{
-          type:'bar',
-          data:{
-            labels: chartLabels,
-            datasets:[
-              { label:'Non retiré', data: nonRetiredTotals, backgroundColor:'#4caf50' },
-              { label:'Retiré', data: retiredTotals, backgroundColor:'#f44336' }
-            ]
-          },
-          options:{
-            responsive:true,
-            plugins:{ legend:{ position:'top' } },
-            scales:{ x:{ stacked:true }, y:{ stacked:true } }
-          }
-        });
-      }
-
-      function fetchList(params={}){
-        $.get('/transferts/ajax', params, function(data){ renderList(data); });
-      }
-
-      $(document).ready(function(){
-        fetchList();
-        $('#btnSearch').click(function(){
-          fetchList({
-            phone: $('#searchPhone').val(),
-            code: $('#searchCode').val(),
-            name: $('#searchName').val(),
-            country: $('#searchCountry').val(),
-            currency: $('#searchCurrency').val()
-          });
-        });
-        $('#btnPDF').click(function(){ window.open('/transferts/pdf','_blank'); });
-      });
-    </script>
-  </body></html>`);
-});
-
-// ================= AJAX LIST =================
-app.get('/transferts/ajax', requireLogin, async(req,res)=>{
-  let list = await Transfert.find().sort({destinationLocation:1, retired:1, createdAt:-1});
-  const { phone, code, name, country, currency } = req.query;
-  if(phone) list = list.filter(t=>t.senderPhone.includes(phone) || t.receiverPhone.includes(phone));
-  if(code) list = list.filter(t=>t.code.includes(code));
-  if(name) list = list.filter(t=>t.senderFirstName.includes(name)||t.senderLastName.includes(name)||t.receiverFirstName.includes(name)||t.receiverLastName.includes(name));
-  if(country) list = list.filter(t=>t.originLocation.includes(country)||t.destinationLocation.includes(country));
-  if(currency) list = list.filter(t=>t.currency===currency);
-  res.json(list);
+// ================= SUPPRIMER =================
+app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndDelete(req.params.id);
+  res.redirect('/transferts/list');
 });
 
 // ================= RETRAIT =================
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  const { id, mode } = req.body;
-  await Transfert.findByIdAndUpdate(id,{
+  await Transfert.findByIdAndUpdate(req.body.id,{
     retired:true,
-    recoveryMode:mode,
-    $push:{ retraitHistory:{ date:new Date(), mode } }
+    recoveryMode:req.body.mode,
+    $push:{ retraitHistory:{ date:new Date(), mode:req.body.mode } }
   });
-  res.redirect('/transferts/list');
-});
-
-// ================= SUPPRIMER =================
-app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
-  await Transfert.findByIdAndDelete(req.params.id);
   res.redirect('/transferts/list');
 });
 
@@ -343,19 +200,24 @@ app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
 app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
   if(!t) return res.send('Transfert introuvable');
-  res.send(`<html>
-  <body style="font-family:Arial;text-align:center;padding:20px;background:#fff3e0;">
-    <h2>💰 Transfert</h2>
-    <p>Code: ${t.code}</p>
-    <p>Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
-    <p>Origine: ${t.originLocation}</p>
-    <p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
-    <p>Destination: ${t.destinationLocation}</p>
-    <p>Montant: ${t.amount} ${t.currency}</p>
-    <p>Frais: ${t.fees} ${t.currency}</p>
-    <p>À recevoir: ${t.recoveryAmount} ${t.currency}</p>
-    <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
-    <button onclick="window.print()">🖨️ Imprimer</button>
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+    body{font-family:Arial;text-align:center;padding:20px;}
+    .ticket{border:1px dashed #333;padding:15px;width:300px;margin:auto;}
+    button{margin-top:10px;padding:8px 15px;}
+  </style></head><body>
+    <div class="ticket">
+      <h3>💰 Transfert</h3>
+      <p>Code: ${t.code}</p>
+      <p>Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
+      <p>Origine: ${t.originLocation}</p>
+      <p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
+      <p>Destination: ${t.destinationLocation}</p>
+      <p>Montant: ${t.amount} ${t.currency}</p>
+      <p>Frais: ${t.fees} ${t.currency}</p>
+      <p>À recevoir: ${t.recoveryAmount} ${t.currency}</p>
+      <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+      <button onclick="window.print()">🖨️ Imprimer</button>
+    </div>
   </body></html>`);
 });
 
@@ -371,6 +233,22 @@ app.get('/transferts/pdf', requireLogin, async(req,res)=>{
     doc.fontSize(12).text(`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Montant: ${t.amount} ${t.currency} | Destinataire: ${t.receiverFirstName} ${t.receiverLastName} | Statut: ${t.retired?'Retiré':'Non retiré'}`);
   });
   doc.end();
+});
+
+// ================= LISTE AJAX + ANIMATIONS + GRAPH =================
+app.get('/transferts/list', requireLogin, async(req,res)=>{
+  res.sendFile(__dirname+'/list.html'); // on suppose que tu mets le HTML AJAX/Chart.js dans list.html
+});
+
+app.get('/transferts/ajax', requireLogin, async(req,res)=>{
+  let list = await Transfert.find().sort({destinationLocation:1, retired:1, createdAt:-1});
+  const { phone, code, name, country, currency } = req.query;
+  if(phone) list = list.filter(t=>t.senderPhone.includes(phone) || t.receiverPhone.includes(phone));
+  if(code) list = list.filter(t=>t.code.includes(code));
+  if(name) list = list.filter(t=>t.senderFirstName.includes(name)||t.senderLastName.includes(name)||t.receiverFirstName.includes(name)||t.receiverLastName.includes(name));
+  if(country) list = list.filter(t=>t.originLocation.includes(country)||t.destinationLocation.includes(country));
+  if(currency) list = list.filter(t=>t.currency===currency);
+  res.json(list);
 });
 
 // ================= LOGOUT =================
