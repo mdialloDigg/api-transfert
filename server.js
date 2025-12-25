@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL MODERNE
+ * APP TRANSFERT – DASHBOARD FINAL COMPLET
  ******************************************************************/
 
 const express = require('express');
@@ -69,6 +69,10 @@ const requireLogin = (req,res,next)=>{
   res.redirect('/login');
 };
 
+// ================= LOCATIONS =================
+const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+const currencies = ['GNF','EUR','USD','XOF'];
+
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
 res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
@@ -92,7 +96,7 @@ app.post('/login', async (req,res)=>{
     let user = await Auth.findOne({ username }).exec();
     if(!user){
       const hashed = bcrypt.hashSync(password,10);
-      user = await new Auth({ username, password: hashed }).save();
+      user = await new Auth({ username, password: hashed, role:'admin' }).save();
       req.session.user = { username, role:'admin' };
       return res.redirect('/menu');
     }
@@ -118,17 +122,12 @@ button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-ra
 </body></html>`);
 });
 
-// ================= LOCATIONS =================
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-
 // ================= FORMULAIRE =================
 app.get('/transferts/form', requireLogin, async(req,res)=>{
   let t=null;
   if(req.query.code) t = await Transfert.findOne({code:req.query.code});
   const code = t? t.code : await generateUniqueCode();
 res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-${/* Ici le CSS moderne pour formulaire et tableau */''}
 body{font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;background:#f4f6f9;margin:0;padding:20px;}
 .container{max-width:900px;margin:20px auto 40px;background:white;padding:25px 30px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.15);}
 h2{color:#2c7be5;text-align:center;margin-bottom:20px;}
@@ -151,21 +150,18 @@ a.back:hover{text-decoration:underline;}
 <option ${t&&t.userType==='Administrateur'?'selected':''}>Administrateur</option>
 <option ${t&&t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
 </select>
-
 <h3>Expéditeur</h3><div class="grid">
 <div><label>Prénom</label><input name="senderFirstName" required value="${t?t.senderFirstName:''}"></div>
 <div><label>Nom</label><input name="senderLastName" required value="${t?t.senderLastName:''}"></div>
 <div><label>Téléphone</label><input name="senderPhone" required value="${t?t.senderPhone:''}"></div>
 <div><label>Origine</label><select name="originLocation">${locations.map(v=>`<option ${t&&t.originLocation===v?'selected':''}>${v}</option>`).join('')}</select></div>
 </div>
-
 <h3>Destinataire</h3><div class="grid">
 <div><label>Prénom</label><input name="receiverFirstName" required value="${t?t.receiverFirstName:''}"></div>
 <div><label>Nom</label><input name="receiverLastName" required value="${t?t.receiverLastName:''}"></div>
 <div><label>Téléphone</label><input name="receiverPhone" required value="${t?t.receiverPhone:''}"></div>
 <div><label>Destination</label><select name="destinationLocation">${locations.map(v=>`<option ${t&&t.destinationLocation===v?'selected':''}>${v}</option>`).join('')}</select></div>
 </div>
-
 <h3>Montants & Devise & Code</h3><div class="grid">
 <div><label>Montant</label><input type="number" id="amount" name="amount" required value="${t?t.amount:''}"></div>
 <div><label>Frais</label><input type="number" id="fees" name="fees" required value="${t?t.fees:''}"></div>
@@ -173,7 +169,6 @@ a.back:hover{text-decoration:underline;}
 <div><label>Devise</label><select name="currency">${currencies.map(c=>`<option ${t&&t.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
 <div><label>Code transfert</label><input type="text" name="code" readonly value="${code}"></div>
 </div>
-
 <button class="save">${t?'Enregistrer Modifications':'Enregistrer'}</button>
 </form>
 <a href="/transferts/list" class="back">⬅ Retour liste</a>
@@ -203,18 +198,14 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
     }else{
       await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
     }
-    // Redirection vers la liste avec pré-remplissage recherche
+    // Redirection vers la liste avec code pré-rempli
     res.redirect(`/transferts/list?searchCode=${code}`);
   }catch(err){console.error(err);res.status(500).send(err.message);}
 });
 
-// ==================== RESTE DU CODE ====================
-// Ici tu peux coller les routes `/transferts/list`, `/transferts/retirer`, `/transferts/print`, `/transferts/pdf`, `/transferts/excel` comme je t’ai donné précédemment
-// avec pagination, recherche, export, retrait direct, affichage historique, totaux, etc.
-
-// ==================== LOGOUT ====================
+// ================= LOGOUT ====================
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ==================== SERVEUR ====================
+// ================= SERVEUR ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
