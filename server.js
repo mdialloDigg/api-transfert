@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE SANS GRAPH, REDIRECTION FORM
+ * APP TRANSFERT – VERSION FINALE CLÉ EN MAIN
  ******************************************************************/
 
 const express = require('express');
@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 
 const app = express();
 
@@ -86,7 +87,7 @@ res.send(`
 <html><style>
 body{font-family:Arial;background:#f0f4f8;text-align:center;padding-top:80px}
 form{background:#fff;padding:30px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,.2)}
-input,button{padding:12px;margin:6px;width:240px}
+input,button,select{padding:12px;margin:6px;width:240px}
 button{background:#007bff;color:white;border:none;border-radius:6px}
 </style>
 <form method="post">
@@ -150,6 +151,11 @@ button{width:100%;padding:14px;background:#2eb85c;color:white;border:none;border
 <div class="container">
 <h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
 <form method="post">
+
+<h3>Code transfert</h3>
+<input type="text" name="code" value="${code}" required>
+
+<h3>Type de personne</h3>
 <select name="userType">
 ${['Client','Distributeur','Administrateur','Agence de transfert']
 .map(v=>`<option ${t?.userType===v?'selected':''}>${v}</option>`).join('')}
@@ -181,7 +187,6 @@ ${['GNF','EUR','USD','XOF'].map(c=>`<option ${t?.currency===c?'selected':''}>${c
 </select>
 </div>
 
-<input type="hidden" name="code" value="${code}">
 <button>Enregistrer</button>
 </form>
 </div>
@@ -206,7 +211,7 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
   if(exist) await Transfert.updateOne({_id:exist._id},data);
   else await new Transfert(data).save();
 
-  // Redirection vers la liste avec préremplissage recherche
+  // Préremplissage recherche
   const params = new URLSearchParams({
     searchPhone: req.body.senderPhone,
     searchCode: req.body.code,
@@ -215,37 +220,18 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
   res.redirect('/transferts/list?' + params);
 });
 
-/* ================= RETRAIT DIRECT ================= */
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  const {id, mode} = req.body;
-  const t = await Transfert.findById(id);
-  if(!t) return res.send('Transfert introuvable');
-  if(!t.retired){
-    await Transfert.findByIdAndUpdate(id,{
-      retired:true,
-      recoveryMode:mode,
-      $push:{retraitHistory:{date:new Date(),mode}}
-    });
-  }
-  res.redirect('/transferts/list');
-});
-
-/* ================= LISTE ================= */
+/* ================= LISTE COMPACTE ================= */
 app.get('/transferts/list', requireLogin, async(req,res)=>{
   const perPage = 10;
   const page = Number(req.query.page) || 1;
 
   let list = await Transfert.find().sort({destinationLocation:1, createdAt:-1});
-
-  // Recherche
   if(req.query.searchPhone) list = list.filter(t=>t.senderPhone.includes(req.query.searchPhone));
   if(req.query.searchCode) list = list.filter(t=>t.code.includes(req.query.searchCode));
   if(req.query.searchName) list = list.filter(t=>t.receiverLastName.toLowerCase().includes(req.query.searchName.toLowerCase()));
 
   const totalPages = Math.ceil(list.length/perPage);
   const pageList = list.slice((page-1)*perPage,page*perPage);
-
-  const destinations=[...new Set(list.map(t=>t.destinationLocation))];
 
   const grouped = {};
   pageList.forEach(t=>{
@@ -254,16 +240,13 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   });
 
 res.send(`
-<html>
-<head><meta name="viewport" content="width=device-width, initial-scale=1">
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;background:#f4f6f9;padding:20px}
-.card{background:#fff;border-radius:12px;padding:15px;margin:10px;box-shadow:0 4px 12px rgba(0,0,0,.1)}
-.actions button{margin:4px;padding:6px 10px;border-radius:6px;border:none;color:white}
+body{font-family:Arial;background:#f4f6f9;padding:10px}
+.card{background:#fff;border-radius:10px;padding:10px;margin:5px;box-shadow:0 3px 8px rgba(0,0,0,.1);font-size:14px}
+.actions button{margin:2px;padding:5px 8px;border-radius:5px;border:none;color:white;font-size:12px}
 .modify{background:#28a745}.delete{background:#dc3545}.print{background:#17a2b8}.retirer{background:#007bff}
-</style>
-</head>
-<body>
+</style></head><body>
 <h1>📄 Liste des transferts</h1>
 
 <form method="get">
@@ -280,7 +263,7 @@ ${grouped[dest].map(t=>`
 <b>Code:</b> ${t.code}<br>
 <b>Expéditeur:</b> ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})<br>
 <b>Destinataire:</b> ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})<br>
-<b>Montant:</b> ${t.amount} ${t.currency} | Reçu ${t.recoveryAmount}<br>
+<b>Montant:</b> ${t.amount} ${t.currency} | <b>Reçu:</b> ${t.recoveryAmount}<br>
 <b>Statut:</b> ${t.retired?'Retiré':'Non retiré'}<br>
 <b>Historique:</b><br>
 ${t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-'}
@@ -293,85 +276,127 @@ ${!t.retired?`<form method="post" action="/transferts/retirer" style="display:in
 <select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option><option>Produit</option><option>Service</option></select>
 <button class="retirer">Retirer</button>
 </form>`:''}
-</div>
-</div>
-`).join('')}
+</div></div>`).join('')}
 `).join('')}
 
-<div style="text-align:center;margin-top:20px">
-${page>1?`<a href="?page=${page-1}">⬅ Précédent</a>`:''}
-Page ${page} / ${totalPages}
-${page<totalPages?`<a href="?page=${page+1}">Suivant ➡</a>`:''}
+<div style="text-align:center;margin-top:10px">
+${page>1?`<a href="?page=${page-1}">⬅ Précédent</a>`:''} Page ${page}/${totalPages} ${page<totalPages?`<a href="?page=${page+1}">Suivant ➡</a>`:''}
 </div>
 
-<a href="/transferts/pdf">📄 Export PDF</a>
-</body>
-</html>
+<a href="/transferts/pdf">📄 Export PDF</a> | <a href="/transferts/excel">📊 Export Excel</a>
+</body></html>
 `);
 });
 
+/* ================= RETRAIT ================= */
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.body.id);
+  if(!t) return res.send('Transfert introuvable');
+  t.retired=true;
+  t.recoveryMode=req.body.mode;
+  t.retraitHistory.push({date:new Date(),mode:req.body.mode});
+  await t.save();
+  res.redirect('back');
+});
+
 /* ================= SUPPRIMER ================= */
-app.get('/transferts/delete/:id', requireLogin, requireRole('Administrateur'), async(req,res)=>{
+app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
   await Transfert.findByIdAndDelete(req.params.id);
-  res.redirect('/transferts/list');
+  res.redirect('back');
 });
 
 /* ================= IMPRIMER TICKET ================= */
 app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
-res.send(`
-<html><body onload="window.print()" style="font-family:Arial;text-align:center;padding:10px">
-<h3>💰 TRANSFERT</h3>
-Code: ${t.code}<br>
-Expéditeur: ${t.senderFirstName} ${t.senderLastName}<br>
-Tél: ${t.senderPhone}<br>
-Origine: ${t.originLocation}<br>
-Destinataire: ${t.receiverFirstName} ${t.receiverLastName}<br>
-Tél: ${t.receiverPhone}<br>
-Destination: ${t.destinationLocation}<br>
-Montant: ${t.amount} ${t.currency}<br>
-Frais: ${t.fees}<br>
-À recevoir: ${t.recoveryAmount}<br>
-Statut: ${t.retired?'Retiré':'Non retiré'}<br>
-Historique:<br>${t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-'}
-</body></html>
+  if(!t) return res.send('Transfert introuvable');
+  res.send(`
+<html><style>
+body{font-family:Arial;text-align:center;padding:20px}
+.ticket{border:1px dashed #333;padding:15px;width:280px;margin:auto;font-size:14px}
+button{margin-top:10px;padding:8px 15px}
+</style>
+<div class="ticket">
+<h3>💰 Transfert</h3>
+<p>Code: ${t.code}</p>
+<p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
+<p>Tél: ${t.senderPhone}</p>
+<p>Origine: ${t.originLocation}</p>
+<p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
+<p>Tél: ${t.receiverPhone}</p>
+<p>Destination: ${t.destinationLocation}</p>
+<p>Montant: ${t.amount} ${t.currency}</p>
+<p>Frais: ${t.fees} ${t.currency}</p>
+<p>À recevoir: ${t.recoveryAmount} ${t.currency}</p>
+<p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+<button onclick="window.print()">🖨️ Imprimer</button>
+</div></html>
 `);
 });
 
-/* ================= PDF ================= */
+/* ================= EXPORT PDF ================= */
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
-  const list = await Transfert.find().sort({destinationLocation:1, createdAt:-1});
+  const list = await Transfert.find().sort({destinationLocation:1});
   const doc = new PDFDocument({margin:30, size:'A4'});
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
   doc.pipe(res);
   doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'}); doc.moveDown();
-
-  let groupedPDF = {};
   list.forEach(t=>{
-    if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[];
-    groupedPDF[t.destinationLocation].push(t);
+    doc.fontSize(12).text(`Code: ${t.code} | ${t.senderFirstName} -> ${t.receiverFirstName} | Montant: ${t.amount} | Statut: ${t.retired?'Retiré':'Non retiré'}`);
   });
-
-  for(let dest in groupedPDF){
-    doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
-    groupedPDF[dest].forEach(t=>{
-      doc.fontSize(10).fillColor('black')
-      .text(`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
-      .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'}`);
-      if(t.retraitHistory && t.retraitHistory.length){
-        t.retraitHistory.forEach(h=>{ doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`); });
-      }
-      doc.moveDown(0.5);
-    });
-    doc.moveDown();
-  }
   doc.end();
 });
 
-/* ================= LOGOUT ================= */
-app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
+/* ================= EXPORT EXCEL ================= */
+app.get('/transferts/excel', requireLogin, async(req,res)=>{
+  try{
+    const list = await Transfert.find();
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Transferts');
+    sheet.columns = [
+      {header:'Code', key:'code', width:10},
+      {header:'Expéditeur', key:'sender', width:20},
+      {header:'Téléphone', key:'senderPhone', width:15},
+      {header:'Destinataire', key:'receiver', width:20},
+      {header:'Téléphone Dest.', key:'receiverPhone', width:15},
+      {header:'Destination', key:'destination', width:15},
+      {header:'Montant', key:'amount', width:12},
+      {header:'Frais', key:'fees', width:10},
+      {header:'Reçu', key:'recovery', width:12},
+      {header:'Devise', key:'currency', width:8},
+      {header:'Statut', key:'status', width:12},
+      {header:'Historique Retrait', key:'history', width:30},
+      {header:'Date', key:'createdAt', width:20}
+    ];
+    list.forEach(t=>{
+      sheet.addRow({
+        code: t.code,
+        sender: `${t.senderFirstName} ${t.senderLastName}`,
+        senderPhone: t.senderPhone,
+        receiver: `${t.receiverFirstName} ${t.receiverLastName}`,
+        receiverPhone: t.receiverPhone,
+        destination: t.destinationLocation,
+        amount: t.amount,
+        fees: t.fees,
+        recovery: t.recoveryAmount,
+        currency: t.currency,
+        status: t.retired ? 'Retiré' : 'Non retiré',
+        history: t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('; '),
+        createdAt: t.createdAt.toLocaleString()
+      });
+    });
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
+  }catch(e){res.send('Erreur Excel '+e.message);}
+});
 
-/* ================= SERVER ================= */
+/* ================= LOGOUT ================= */
+app.get('/logout',(req,res)=>{
+  req.session.destroy(); res.redirect('/login');
+});
+
+/* ================= SERVEUR ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,'0.0.0.0',()=>console.log('🚀 Serveur prêt sur',PORT));
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
