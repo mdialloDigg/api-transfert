@@ -137,11 +137,11 @@ button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-ra
 `);
 });
 
-// ================= LOCATIONS =================
+// ================= LOCATIONS & DEVISES =================
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 const currencies = ['GNF','EUR','USD','XOF'];
 
-// ================= FORMULAIRE TRANSFERT =================
+// ================= FORMULAIRE AJOUT =================
 app.get('/transferts/new', requireLogin, async(req,res)=>{
   const code = await generateUniqueCode();
 res.send(`
@@ -230,7 +230,107 @@ updateRecovery();
 `);
 });
 
-// ================= ENREGISTRER / MODIFIER =================
+// ================= FORMULAIRE MODIFIER =================
+app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#f0f4f8}
+.container{max-width:900px;margin:40px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.15);}
+h2{color:#2c7be5;text-align:center;margin-bottom:30px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:20px;}
+label{display:block;margin-bottom:6px;font-weight:bold;color:#555;}
+input,select{width:100%;padding:12px;border-radius:6px;border:1px solid #ccc;font-size:14px;}
+input[readonly]{background:#e9ecef;}
+button{width:100%;padding:15px;background:#2eb85c;color:white;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;transition:0.3s;}
+button:hover{background:#218838;}
+a{display:inline-block;margin-top:20px;color:#2c7be5;text-decoration:none;font-weight:bold;}
+a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="container">
+<h2>✏️ Modifier Transfert</h2>
+<form method="post" action="/transferts/edit/${t._id}">
+<h3>Type de personne</h3>
+<select name="userType">
+<option ${t.userType==='Client'?'selected':''}>Client</option>
+<option ${t.userType==='Distributeur'?'selected':''}>Distributeur</option>
+<option ${t.userType==='Administrateur'?'selected':''}>Administrateur</option>
+<option ${t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
+</select>
+
+<h3>Expéditeur</h3>
+<div class="grid">
+<div><label>Prénom</label><input name="senderFirstName" value="${t.senderFirstName}" required></div>
+<div><label>Nom</label><input name="senderLastName" value="${t.senderLastName}" required></div>
+<div><label>Téléphone</label><input name="senderPhone" value="${t.senderPhone}" required></div>
+<div><label>Origine</label><select name="originLocation">
+${locations.map(v=>`<option ${v===t.originLocation?'selected':''}>${v}</option>`).join('')}
+</select></div>
+</div>
+
+<h3>Destinataire</h3>
+<div class="grid">
+<div><label>Prénom</label><input name="receiverFirstName" value="${t.receiverFirstName}" required></div>
+<div><label>Nom</label><input name="receiverLastName" value="${t.receiverLastName}" required></div>
+<div><label>Téléphone</label><input name="receiverPhone" value="${t.receiverPhone}" required></div>
+<div><label>Destination</label><select name="destinationLocation">
+${locations.map(v=>`<option ${v===t.destinationLocation?'selected':''}>${v}</option>`).join('')}
+</select></div>
+</div>
+
+<h3>Montants & Code</h3>
+<div class="grid">
+<div><label>Montant</label><input type="number" id="amount" name="amount" value="${t.amount}" required></div>
+<div><label>Frais</label><input type="number" id="fees" name="fees" value="${t.fees}" required></div>
+<div><label>Montant à recevoir</label><input type="text" id="recoveryAmount" readonly value="${t.recoveryAmount}"></div>
+<div><label>Devise</label><select name="currency">
+${currencies.map(c=>`<option ${c===t.currency?'selected':''}>${c}</option>`).join('')}
+</select></div>
+<div><label>Code transfert</label><input type="text" name="code" readonly value="${t.code}"></div>
+</div>
+
+<button>Enregistrer</button>
+</form>
+<center><a href="/transferts/list">⬅ Retour liste</a></center>
+</div>
+
+<script>
+const amountField = document.getElementById('amount');
+const feesField = document.getElementById('fees');
+const recoveryField = document.getElementById('recoveryAmount');
+
+function updateRecovery() {
+  const amount = parseFloat(amountField.value) || 0;
+  const fees = parseFloat(feesField.value) || 0;
+  recoveryField.value = amount - fees;
+}
+amountField.addEventListener('input', updateRecovery);
+feesField.addEventListener('input', updateRecovery);
+updateRecovery();
+</script>
+</body>
+</html>
+  `);
+});
+
+app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  const recoveryAmount = amount - fees;
+  await Transfert.findByIdAndUpdate(req.params.id,{...req.body, amount, fees, recoveryAmount});
+  res.redirect('/transferts/list');
+});
+
+// ================= ENREGISTRER =================
 app.post('/transferts/new', requireLogin, async(req,res)=>{
   try{
     const amount = Number(req.body.amount||0);
