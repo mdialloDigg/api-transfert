@@ -1,0 +1,36 @@
+{
+  "name": "monapi",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000d\u0000i\u0000a\u0000l\u0000l\u0000o\u0000\r\u0000 \u0000#\u0000 \u0000m\u0000o\u0000n\u0000a\u0000p\u0000i\u0000\r\u0000 \u0000#\u0000 \u0000m\u0000o\u0000n\u0000a\u0000p\u0000i\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "connect-mongo": "^6.0.0",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "pdfkit": "^0.17.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mdialloDigg/monapi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mdialloDigg/monapi/issues"
+  },
+  "homepage": "https://github.com/mdialloDigg/monapi#readme"
+}
