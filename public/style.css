@@ -1,0 +1,21 @@
+body {font-family: Arial, sans-serif; background:#f4f6f9; margin:0; padding:20px;}
+h2{text-align:center;color:#2c7be5;}
+.container{max-width:1200px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1);}
+table{width:100%;border-collapse:collapse;margin-bottom:20px;}
+th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+th{background:#007bff;color:white;}
+.status{padding:3px 6px;border-radius:6px;color:white;text-align:center;}
+.retire{background:#dc3545;}
+.non{background:#28a745;}
+button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+.modify{background:#28a745;}
+.delete{background:#dc3545;}
+.retirer{background:#ff9900;}
+.search-bar{margin-bottom:15px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
+.search-bar input, .search-bar select{padding:6px;border-radius:5px;border:1px solid #ccc;}
+.search-bar button{padding:6px 12px;background:#007bff;color:white;border:none;border-radius:5px;cursor:pointer;}
+a{margin-right:10px;text-decoration:none;color:#007bff;}
+a:hover{text-decoration:underline;}
+.pagination{text-align:center;margin-top:10px;}
+.pagination a{margin:0 3px;text-decoration:none;color:#007bff;font-weight:bold;}
+.pagination a.active{color:#fff;background:#007bff;padding:3px 6px;border-radius:4px;}

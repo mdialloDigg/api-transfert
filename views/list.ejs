@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liste Transferts</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="container">
+<h2>📋 Liste des transferts</h2>
+<div class="search-bar">
+<form method="get">
+<input type="text" name="search" placeholder="Rechercher..." value="<%= search %>">
+<select name="status">
+<option value="all" <%= status==='all'?'selected':'' %>>Tous</option>
+<option value="retire" <%= status==='retire'?'selected':'' %>>Retirés</option>
+<option value="non" <%= status==='non'?'selected':'' %>>Non retirés</option>
+</select>
+<button>🔍 Rechercher</button>
+</form>
+<div>
+<a href="/transferts/form">➕ Nouveau</a>
+<a href="/transferts/pdf">📄 Export PDF</a>
+<a href="/transferts/excel">📊 Export Excel</a>
+<a href="/logout">🚪 Déconnexion</a>
+</div>
+</div>
+<table>
+<tr>
+<th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th>
+<th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Status</th><th>Historique</th><th>Actions</th>
+</tr>
+<% transferts.forEach(t=>{ %>
+<tr>
+<td><%= t.code %></td>
+<td><%= t.userType %></td>
+<td><%= t.senderFirstName %> <%= t.senderLastName %> (<%= t.senderPhone %>)</td>
+<td><%= t.originLocation %></td>
+<td><%= t.receiverFirstName %> <%= t.receiverLastName %> (<%= t.receiverPhone %>)</td>
+<td><%= t.destinationLocation %></td>
+<td><%= t.amount %></td>
+<td><%= t.fees %></td>
+<td><%= t.recoveryAmount %></td>
+<td class="status <%= t.retired?'retire':'non' %>"><%= t.retired?'Retiré':'Non retiré' %></td>
+<td>
+<%= t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') %>
+</td>
+<td>
+<button class="modify" onclick="window.location.href='/transferts/form?code=<%= t.code %>'">✏️ Modifier</button>
+<button class="delete" onclick="confirmDelete('/transferts/delete/<%= t._id %>')">❌ Supprimer</button>
+<button class="retirer" onclick="retirer('<%= t._id %>')">💰 Retirer</button>
+</td>
+</tr>
+<% }) %>
+</table>
+<div class="pagination">
+<% pages.forEach(p=>{ %>
+<a href="?page=<%= p.num %>&search=<%= search %>&status=<%= status %>" class="<%= p.active?'active':'' %>"><%= p.num %></a>
+<% }) %>
+</div>
+<script src="/script.js"></script>
+</body>
+</html>
