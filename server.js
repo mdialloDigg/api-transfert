@@ -1,6 +1,7 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE COMPLÈTE
+ * APP TRANSFERT – VERSION FINALE STABLE (RENDER READY)
  ******************************************************************/
+
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -15,13 +16,21 @@ app.use(express.json());
 app.use(session({
   secret: 'transfert-secret',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: false
 }));
 
-// ================= DATABASE =================
-mongoose.connect('mongodb://127.0.0.1:27017/transfert')
+// ================= MONGODB (CORRIGÉ) =================
+mongoose.set('bufferCommands', false);
+
+mongoose.connect(process.env.MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000
+})
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+.catch(err=>{
+  console.error('❌ MongoDB connexion échouée');
+  console.error(err.message);
+  process.exit(1);
+});
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -37,29 +46,34 @@ const transfertSchema = new mongoose.Schema({
   amount:Number,
   fees:Number,
   recoveryAmount:Number,
-  currency:String,
+  currency:{type:String,default:'GNF'},
   recoveryMode:String,
   retraitHistory:[{date:Date,mode:String}],
   retired:{type:Boolean,default:false},
   code:{type:String,unique:true},
   createdAt:{type:Date,default:Date.now}
 });
-const Transfert = mongoose.model('Transfert',transfertSchema);
+const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const Auth = mongoose.model('Auth',new mongoose.Schema({
-  username:String,password:String
+const Auth = mongoose.model('Auth', new mongoose.Schema({
+  username:{type:String,unique:true},
+  password:String
 }));
 
 // ================= UTILS =================
 async function generateUniqueCode(){
-  let c,e=true;
-  while(e){
-    c=String.fromCharCode(65+Math.random()*26|0)+(100+Math.random()*900|0);
-    e=await Transfert.findOne({code:c});
+  let c, exists=true;
+  while(exists){
+    c = String.fromCharCode(65+Math.random()*26|0)+(100+Math.random()*900|0);
+    exists = await Transfert.findOne({code:c});
   }
   return c;
 }
-const requireLogin=(req,res,next)=>req.session.user?next():res.redirect('/login');
+
+const requireLogin=(req,res,next)=>{
+  if(req.session.user) return next();
+  res.redirect('/login');
+};
 
 // ================= LOGIN =================
 app.get('/login',(req,res)=>res.send(`
@@ -77,12 +91,15 @@ button{background:#007bff;color:white;border:none}
 </form></html>`));
 
 app.post('/login',async(req,res)=>{
-  let u=await Auth.findOne({username:req.body.username});
-  if(!u) u=await new Auth({
-    username:req.body.username,
-    password:bcrypt.hashSync(req.body.password,10)
-  }).save();
-  if(!bcrypt.compareSync(req.body.password,u.password)) return res.send('Mot de passe incorrect');
+  let u = await Auth.findOne({username:req.body.username});
+  if(!u){
+    u = await new Auth({
+      username:req.body.username,
+      password:bcrypt.hashSync(req.body.password,10)
+    }).save();
+  }
+  if(!bcrypt.compareSync(req.body.password,u.password))
+    return res.send('Mot de passe incorrect');
   req.session.user=u.username;
   res.redirect('/menu');
 });
@@ -165,7 +182,8 @@ app.post('/transferts/form',requireLogin,async(req,res)=>{
 // ================= RETRAIT =================
 app.post('/transferts/retirer',requireLogin,async(req,res)=>{
   await Transfert.findByIdAndUpdate(req.body.id,{
-    retired:true,recoveryMode:req.body.mode,
+    retired:true,
+    recoveryMode:req.body.mode,
     $push:{retraitHistory:{date:new Date(),mode:req.body.mode}}
   });
   res.redirect('/transferts/list');
@@ -181,6 +199,7 @@ app.get('/transferts/delete/:id',requireLogin,async(req,res)=>{
 app.get('/transferts/list',requireLogin,async(req,res)=>{
 const all=await Transfert.find().sort({destinationLocation:1});
 let f=all;
+
 if(req.query.searchPhone)f=f.filter(t=>t.senderPhone.includes(req.query.searchPhone)||t.receiverPhone.includes(req.query.searchPhone));
 if(req.query.searchCode)f=f.filter(t=>t.code.includes(req.query.searchCode));
 if(req.query.searchName)f=f.filter(t=>(t.receiverFirstName+t.receiverLastName).toLowerCase().includes(req.query.searchName.toLowerCase()));
@@ -252,7 +271,9 @@ app.get('/transferts/print/:id',requireLogin,async(req,res)=>{
 const t=await Transfert.findById(req.params.id);
 res.send(`<html><body onload="print()">
 <h3>💰 Transfert</h3>
-Code:${t.code}<br>Montant:${t.amount} ${t.currency}<br>Reçu:${t.recoveryAmount}
+Code:${t.code}<br>
+Montant:${t.amount} ${t.currency}<br>
+Reçu:${t.recoveryAmount}
 </body></html>`);
 });
 
@@ -260,4 +281,5 @@ Code:${t.code}<br>Montant:${t.amount} ${t.currency}<br>Reçu:${t.recoveryAmount}
 app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
 
 // ================= SERVER =================
-app.listen(3000,()=>console.log('🚀 Serveur prêt : http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur prêt sur le port ${PORT}`));
