@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL ÉVOLUÉ
+ * APP TRANSFERT – DASHBOARD FINAL ÉVOLUÉ AVEC DROITS ADMIN2
  ******************************************************************/
 
 const express = require('express');
@@ -68,9 +68,9 @@ const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.r
 
 // Permissions dynamiques
 function setPermissions(username){
-  let permissions = { lecture:true, ecriture:false, retrait:false };
-  if(username === 'a'){ permissions = { lecture:true, ecriture:false, retrait:true }; }
-  if(username === 'admin2'){ permissions = { lecture:true, ecriture:true, retrait:false }; }
+  let permissions = { lecture:true, ecriture:false, retrait:false, modification:true, suppression:true, imprimer:true };
+  if(username === 'a'){ permissions = { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true }; }
+  if(username === 'admin2'){ permissions = { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true }; }
   return permissions;
 }
 
@@ -207,7 +207,7 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
 
 // ================= SUPPRIMER =================
 app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
-  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
+  if(!req.session.user.permissions.suppression) return res.status(403).send('Accès refusé');
   await Transfert.findByIdAndDelete(req.params.id);
   res.redirect('back');
 });
@@ -216,8 +216,6 @@ app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
 app.get('/transferts/list', requireLogin, async(req,res)=>{
   const { search='', status='all', page=1 } = req.query;
   let transferts = await Transfert.find().sort({createdAt:-1});
-
-  // --- Filtrage multicritère ---
   const s = search.toLowerCase();
   transferts = transferts.filter(t=>{
     return t.code.toLowerCase().includes(s)
@@ -228,17 +226,12 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
       || t.receiverLastName.toLowerCase().includes(s)
       || t.receiverPhone.toLowerCase().includes(s);
   });
-
-  // Filtre statut
   if(status==='retire') transferts = transferts.filter(t=>t.retired);
   else if(status==='non') transferts = transferts.filter(t=>!t.retired);
 
-  // Pagination
   const limit=20;
   const totalPages = Math.ceil(transferts.length/limit);
   const paginated = transferts.slice((page-1)*limit, page*limit);
-
-  // Totaux
   const totalAmount = paginated.reduce((sum,t)=>sum+t.amount,0);
   const totalFees = paginated.reduce((sum,t)=>sum+t.fees,0);
   const totalRecovery = paginated.reduce((sum,t)=>sum+t.recoveryAmount,0);
@@ -270,15 +263,12 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   <a href="/transferts/pdf">📄 Export PDF</a>
   <a href="/transferts/excel">📊 Export Excel</a>
   <a href="/logout">🚪 Déconnexion</a>
-  <form id="printSelectedForm">
   <table><thead><tr>
-  <th>Sélection</th><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th>
-  <th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th>
-  <th>Status</th><th>Actions</th></tr></thead><tbody>`;
+  <th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th>
+  <th>Montant</th><th>Frais</th><th>Reçu</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
 
   paginated.forEach(t=>{
     html+=`<tr>
-    <td><input type="checkbox" name="select" value="${t._id}"></td>
     <td>${t.code}</td>
     <td>${t.userType}</td>
     <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
@@ -289,13 +279,13 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     <td>${t.recoveryAmount}</td>
     <td>${t.retired?'Retiré':'Non retiré'}</td>
     <td>
-      ${req.session.user.permissions.ecriture?`<a href="/transferts/form?code=${t.code}"><button class="modify">✏️ Modifier</button></a>`:''}
-      ${req.session.user.permissions.ecriture?`<a href="/transferts/delete/${t._id}" onclick="return confirm('Confirmer ?');"><button class="delete">❌ Supprimer</button></a>`:''}
+      ${req.session.user.permissions.modification?`<a href="/transferts/form?code=${t.code}"><button class="modify">✏️ Modifier</button></a>`:''}
+      ${req.session.user.permissions.suppression?`<a href="/transferts/delete/${t._id}" onclick="return confirm('Confirmer ?');"><button class="delete">❌ Supprimer</button></a>`:''}
       ${req.session.user.permissions.retrait && !t.retired?`<form method="post" action="/transferts/retirer" style="display:inline">
         <input type="hidden" name="id" value="${t._id}">
         <select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option></select>
         <button class="retirer">💰 Retirer</button></form>`:''}
-      <a href="/transferts/print/${t._id}" target="_blank"><button class="imprimer">🖨 Imprimer</button></a>
+      ${req.session.user.permissions.imprimer?`<a href="/transferts/print/${t._id}" target="_blank"><button class="imprimer">🖨 Imprimer</button></a>`:''}
     </td>
     </tr>`;
   });
@@ -303,14 +293,14 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   html+=`</tbody>
   <tfoot>
     <tr>
-      <td colspan="6" style="text-align:right;font-weight:bold;">Totaux:</td>
+      <td colspan="5" style="text-align:right;font-weight:bold;">Totaux:</td>
       <td>${totalAmount}</td>
       <td>${totalFees}</td>
       <td>${totalRecovery}</td>
       <td colspan="2"></td>
     </tr>
   </tfoot>
-  </table></form>
+  </table>
   <div>`;
   for(let i=1;i<=totalPages;i++){
     html+=`<a href="?page=${i}&search=${search}&status=${status}">${i}</a> `;
@@ -343,7 +333,7 @@ app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   </body></html>`);
 });
 
-// ================= EXPORT PDF =================
+// ================= EXPORT PDF / EXCEL =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
   const transferts = await Transfert.find().sort({createdAt:-1});
   const doc = new PDFDocument({margin:30, size:'A4'});
@@ -363,7 +353,6 @@ app.get('/transferts/pdf', requireLogin, async(req,res)=>{
   doc.end();
 });
 
-// ================= EXPORT EXCEL =================
 app.get('/transferts/excel', requireLogin, async(req,res)=>{
   const transferts = await Transfert.find().sort({createdAt:-1});
   const workbook = new ExcelJS.Workbook();
