@@ -338,8 +338,76 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
     const recoveryAmount = amount - fees;
     const code = req.body.code || await generateUniqueCode();
     await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
-    res.redirect('/transferts/list'); 
+    res.redirect('/transferts/list');
   }catch(err){ console.error(err); res.status(500).send(err.message);}
+});
+
+// ================= LISTE AVEC RECHERCHE =================
+app.get('/transferts/list', requireLogin, async(req,res)=>{
+  const searchPhone = req.query.phone || '';
+  let query = {};
+  if(searchPhone){
+    query = {
+      $or: [
+        { senderPhone: { $regex: searchPhone, $options: 'i' } },
+        { receiverPhone: { $regex: searchPhone, $options: 'i' } }
+      ]
+    };
+  }
+  const transferts = await Transfert.find(query).sort({destinationLocation:1});
+  let grouped = {};
+  transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
+
+  let totalAmountAll=0,totalFeesAll=0,totalReceivedAll=0;
+  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+table{width:95%;margin:auto;border-collapse:collapse;}
+th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+th{background:#007bff;color:white;}
+button{padding:4px 8px;margin:2px;cursor:pointer;}
+button.delete{background:#dc3545;color:white;}
+button.print{background:#17a2b8;color:white;}
+a{margin:2px;text-decoration:none;}
+form{display:inline;}
+input.search{padding:8px;width:200px;border-radius:6px;border:1px solid #ccc;}
+</style>
+<script>
+function confirmDelete(){return confirm('❌ Confirmer suppression?');}
+</script>
+</head><body>
+<h2>Liste des transferts</h2>
+<a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a> | <a href="/transferts/pdf">📄 PDF</a>
+<hr>
+<form method="get" action="/transferts/list">
+<input type="text" name="phone" placeholder="Rechercher téléphone..." value="${searchPhone}" class="search">
+<button>🔍 Rechercher</button>
+</form>
+<hr>
+`;
+
+  for(let dest in grouped){
+    let ta=0,tf=0,tr=0;
+    html+=`<h3>📍 ${dest}</h3><table><tr><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>À recevoir</th><th>Code</th><th>Actions</th></tr>`;
+    grouped[dest].forEach(t=>{
+      ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
+      totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+      html+=`<tr>
+      <td>${t.senderFirstName} ${t.senderLastName}<br>${t.senderPhone}</td>
+      <td>${t.receiverFirstName} ${t.receiverLastName}<br>${t.receiverPhone}</td>
+      <td>${t.amount} ${t.currency}</td>
+      <td>${t.fees} ${t.currency}</td>
+      <td>${t.recoveryAmount} ${t.currency}</td>
+      <td>${t.code}</td>
+      <td>
+      <a href="/transferts/edit/${t._id}"><button>✏️</button></a>
+      </td>
+      </tr>`;
+    });
+    html+=`<tr><th colspan="2">Sous-total</th><th>${ta}</th><th>${tf}</th><th>${tr}</th><th colspan="2"></th></tr></table><br>`;
+  }
+
+  html+=`<h3>Total général: Montant: ${totalAmountAll}, Frais: ${totalFeesAll}, À recevoir: ${totalReceivedAll}</h3></body></html>`;
+  res.send(html);
 });
 
 // ================= LOGOUT =================
