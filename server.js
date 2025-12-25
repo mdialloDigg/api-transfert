@@ -48,7 +48,11 @@ const transfertSchema = new mongoose.Schema({
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const authSchema = new mongoose.Schema({ username:String, password:String, role:{type:String, enum:['admin','agent'], default:'agent'} });
+const authSchema = new mongoose.Schema({
+  username:String,
+  password:String,
+  role:{type:String, enum:['admin','agent'], default:'agent'}
+});
 const Auth = mongoose.model('Auth', authSchema);
 
 // ================= UTILITAIRE =================
@@ -199,10 +203,10 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
       await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
     }
     res.redirect(`/transferts/list?searchCode=${code}`);
-  }catch(err){console.error(err);res.status(500).send(err.message);}
+  }catch(err){ console.error(err);res.status(500).send(err.message);}
 });
 
-// ================= LISTE TABLEAU MODERNE =================
+// ================= LISTE TRANSFERTS =================
 app.get(['/transferts/list','/transferts/list/'], requireLogin, async(req,res)=>{
   try{
     let { searchPhone, searchCode, searchName, destination, status, page } = req.query;
@@ -237,47 +241,21 @@ body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
 .table-container{overflow-x:auto;background:white;padding:15px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
 table{width:100%;border-collapse:collapse;}
 th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left;font-size:14px;}
-th{background:#007bff;color:white;white-space:nowrap;}
+th{background:#007bff;color:white;}
 tr:hover{background:#f1f1f1;}
 a.button{padding:5px 10px;background:#28a745;color:white;border-radius:6px;text-decoration:none;margin-right:5px;font-size:13px;}
 a.delete{background:#dc3545;}
 form.inline{display:inline;}
-div.top{margin-bottom:15px;}
-select,input{padding:6px;margin-right:5px;border-radius:6px;border:1px solid #ccc;}
-.pagination{margin-top:15px;}
-.pagination a{padding:5px 10px;border:1px solid #ccc;margin-right:3px;text-decoration:none;color:#007bff;}
-.pagination a.active{background:#007bff;color:white;}
 </style></head><body>
 <h2>📋 Liste des transferts</h2>
-<div class="top">
-<a href="/menu">⬅ Menu</a>
-<a href="/transferts/form">➕ Nouveau</a>
-<a href="/transferts/pdf">📄 PDF</a>
-<a href="/transferts/excel">📊 Excel</a>
-<form method="get" style="display:inline;">
-<input name="searchPhone" placeholder="Téléphone" value="${searchPhone||''}">
-<input name="searchCode" placeholder="Code" value="${searchCode||''}">
-<input name="searchName" placeholder="Nom destinataire" value="${searchName||''}">
-<select name="destination">
-<option value="all">Toutes destinations</option>
-${destinations.map(d=>`<option value="${d}" ${d===destination?'selected':''}>${d}</option>`).join('')}
-</select>
-<select name="status">
-<option value="all">Tous</option>
-<option value="retired" ${status==='retired'?'selected':''}>Retiré</option>
-<option value="not" ${status==='not'?'selected':''}>Non retiré</option>
-</select>
-<button type="submit">🔍 Rechercher</button>
-</form>
-</div>
 <div class="table-container">
 <table>
 <tr>
 <th>Code</th><th>Expéditeur</th><th>Tél</th><th>Origine</th><th>Destinataire</th><th>Tél</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Statut & Historique</th><th>Actions</th>
 </tr>`;
-transferts.forEach(t=>{
-  let hist = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>')||'-';
-  html+=`<tr>
+    transferts.forEach(t=>{
+      let hist = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>')||'-';
+      html+=`<tr>
 <td>${t.code}</td>
 <td>${t.senderFirstName} ${t.senderLastName}</td>
 <td>${t.senderPhone}</td>
@@ -295,42 +273,44 @@ transferts.forEach(t=>{
 ${!t.retired?`<form class="inline" method="post" action="/transferts/retirer"><input type="hidden" name="id" value="${t._id}"><select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option><option>Produit</option><option>Service</option></select><button type="submit" class="button">Retirer</button></form>`:''}
 </td>
 </tr>`;
-});
-html+=`</table>
+    });
+    html+=`</table>
 <p>Total Montant: ${totalAmount} | Total Frais: ${totalFees} | Total Reçu: ${totalRecovery}</p>
-<div class="pagination">`;
-for(let i=1;i<=Math.ceil(totalCount/perPage);i++){
-  html+=`<a href="?page=${i}" class="${i===page?'active':''}">${i}</a>`;
-}
-html+=`</div></div></body></html>`;
-res.send(html);
+<div>`;
+    for(let i=1;i<=Math.ceil(totalCount/perPage);i++){
+      html+=`<a href="?page=${i}" ${i===page?'style="font-weight:bold;"':''}>${i}</a>`;
+    }
+    html+=`</div></div></body></html>`;
+    res.send(html);
+  }catch(err){
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// ================= SUPPRIMER =================
+app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  try{
+    await Transfert.findByIdAndDelete(req.params.id);
+    res.redirect('/transferts/list');
+  }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
 // ================= RETRAIT =================
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   try{
-    const t = await Transfert.findById(req.body.id);
-    if(t && !t.retired){
-      t.retired = true;
-      t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
-      await t.save();
-    }
+    await Transfert.findByIdAndUpdate(req.body.id,{
+      retired:true,
+      recoveryMode:req.body.mode,
+      $push:{ retraitHistory:{ date:new Date(), mode:req.body.mode } }
+    });
     res.redirect('/transferts/list');
-  }catch(err){res.status(500).send(err.message);}
-});
-
-// ================= DELETE =================
-app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
-  await Transfert.findByIdAndDelete(req.params.id);
-  res.redirect('/transferts/list');
+  }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
 // ================= LOGOUT =================
-app.get('/logout',(req,res)=>{
-  req.session.destroy();
-  res.redirect('/login');
-});
+app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= SERVER =================
-const PORT = process.env.PORT||3000;
-app.listen(PORT,()=>console.log(`🚀 Server running on port ${PORT}`));
+// ================= SERVEUR =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
