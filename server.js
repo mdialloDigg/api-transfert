@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE AVEC RETRAIT, PDF, PAGINATION, RÔLES
+ * APP TRANSFERT – VERSION FINALE SANS GRAPH, REDIRECTION FORM
  ******************************************************************/
 
 const express = require('express');
@@ -51,7 +51,6 @@ const transfertSchema = new mongoose.Schema({
   code: { type: String, unique: true },
   createdAt: { type: Date, default: Date.now }
 });
-
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
@@ -206,7 +205,14 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
   const exist = await Transfert.findOne({code:req.body.code});
   if(exist) await Transfert.updateOne({_id:exist._id},data);
   else await new Transfert(data).save();
-  res.redirect('/transferts/list');
+
+  // Redirection vers la liste avec préremplissage recherche
+  const params = new URLSearchParams({
+    searchPhone: req.body.senderPhone,
+    searchCode: req.body.code,
+    searchName: req.body.receiverLastName
+  }).toString();
+  res.redirect('/transferts/list?' + params);
 });
 
 /* ================= RETRAIT DIRECT ================= */
@@ -224,31 +230,22 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   res.redirect('/transferts/list');
 });
 
-/* ================= LISTE + DASHBOARD ================= */
+/* ================= LISTE ================= */
 app.get('/transferts/list', requireLogin, async(req,res)=>{
   const perPage = 10;
   const page = Number(req.query.page) || 1;
 
   let list = await Transfert.find().sort({destinationLocation:1, createdAt:-1});
 
-  if(req.query.search){
-    const s=req.query.search.toLowerCase();
-    list=list.filter(t=>
-      t.senderPhone.includes(s)||
-      t.receiverPhone.includes(s)||
-      t.code.toLowerCase().includes(s)||
-      t.receiverLastName.toLowerCase().includes(s)
-    );
-  }
-
-  if(req.query.destination) list=list.filter(t=>t.destinationLocation===req.query.destination);
-  if(req.query.status==='retired') list=list.filter(t=>t.retired);
-  if(req.query.status==='not') list=list.filter(t=>!t.retired);
-
-  const destinations=[...new Set((await Transfert.find()).map(t=>t.destinationLocation))];
+  // Recherche
+  if(req.query.searchPhone) list = list.filter(t=>t.senderPhone.includes(req.query.searchPhone));
+  if(req.query.searchCode) list = list.filter(t=>t.code.includes(req.query.searchCode));
+  if(req.query.searchName) list = list.filter(t=>t.receiverLastName.toLowerCase().includes(req.query.searchName.toLowerCase()));
 
   const totalPages = Math.ceil(list.length/perPage);
   const pageList = list.slice((page-1)*perPage,page*perPage);
+
+  const destinations=[...new Set(list.map(t=>t.destinationLocation))];
 
   const grouped = {};
   pageList.forEach(t=>{
@@ -258,9 +255,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
 
 res.send(`
 <html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<head><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body{font-family:Arial;background:#f4f6f9;padding:20px}
 .card{background:#fff;border-radius:12px;padding:15px;margin:10px;box-shadow:0 4px 12px rgba(0,0,0,.1)}
@@ -269,22 +264,14 @@ body{font-family:Arial;background:#f4f6f9;padding:20px}
 </style>
 </head>
 <body>
+<h1>📄 Liste des transferts</h1>
 
-<h1>📊 Dashboard Transferts</h1>
-
-<form>
-<input name="search" placeholder="Téléphone / Code / Nom">
-<select name="destination"><option value="">Destination</option>
-${destinations.map(d=>`<option>${d}</option>`).join('')}</select>
-<select name="status">
-<option value="">Statut</option>
-<option value="retired">Retiré</option>
-<option value="not">Non retiré</option>
-</select>
+<form method="get">
+<input name="searchPhone" placeholder="Téléphone" value="${req.query.searchPhone||''}">
+<input name="searchCode" placeholder="Code" value="${req.query.searchCode||''}">
+<input name="searchName" placeholder="Nom destinataire" value="${req.query.searchName||''}">
 <button>🔍 Rechercher</button>
 </form>
-
-<canvas id="pie" height="120"></canvas>
 
 ${Object.keys(grouped).map(dest=>`
 <h2>${dest}</h2>
@@ -317,18 +304,6 @@ Page ${page} / ${totalPages}
 ${page<totalPages?`<a href="?page=${page+1}">Suivant ➡</a>`:''}
 </div>
 
-<script>
-new Chart(document.getElementById('pie'),{
- type:'pie',
- data:{labels:['Retiré','Non retiré'],
- datasets:[{data:[
- ${list.filter(t=>t.retired).length},
- ${list.filter(t=>!t.retired).length}
- ]}]},
- options:{responsive:true}
-});
-</script>
-
 <a href="/transferts/pdf">📄 Export PDF</a>
 </body>
 </html>
@@ -341,23 +316,26 @@ app.get('/transferts/delete/:id', requireLogin, requireRole('Administrateur'), a
   res.redirect('/transferts/list');
 });
 
-/* ================= IMPRIMER ================= */
+/* ================= IMPRIMER TICKET ================= */
 app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
 res.send(`
-<body onload="print()">
+<html><body onload="window.print()" style="font-family:Arial;text-align:center;padding:10px">
 <h3>💰 TRANSFERT</h3>
 Code: ${t.code}<br>
-Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})<br>
+Expéditeur: ${t.senderFirstName} ${t.senderLastName}<br>
+Tél: ${t.senderPhone}<br>
 Origine: ${t.originLocation}<br>
-Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})<br>
+Destinataire: ${t.receiverFirstName} ${t.receiverLastName}<br>
+Tél: ${t.receiverPhone}<br>
 Destination: ${t.destinationLocation}<br>
 Montant: ${t.amount} ${t.currency}<br>
 Frais: ${t.fees}<br>
 À recevoir: ${t.recoveryAmount}<br>
 Statut: ${t.retired?'Retiré':'Non retiré'}<br>
 Historique:<br>${t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-'}
-</body>`);
+</body></html>
+`);
 });
 
 /* ================= PDF ================= */
