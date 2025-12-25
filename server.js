@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD ÉVOLUÉ
+ * APP TRANSFERT – DASHBOARD FINAL ÉVOLUÉ
  ******************************************************************/
 
 const express = require('express');
@@ -64,10 +64,7 @@ async function generateUniqueCode() {
 }
 
 // ================= AUTH =================
-const requireLogin = (req,res,next)=>{
-  if(req.session.user) return next();
-  res.redirect('/login');
-};
+const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
 
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
@@ -112,7 +109,7 @@ app.get('/transferts/form', requireLogin, async(req,res)=>{
   let t=null;
   if(req.query.code) t = await Transfert.findOne({code:req.query.code});
   const code = t? t.code : await generateUniqueCode();
-res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{margin:0;font-family:Arial,sans-serif;background:#f0f4f8}
 .container{max-width:800px;margin:40px auto;background:#fff;padding:20px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.15);}
 h2{color:#2c7be5;text-align:center;margin-bottom:20px;}
@@ -209,10 +206,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     const paginated = transferts.slice((page-1)*limit,page*limit);
 
     const grouped = {};
-    paginated.forEach(t=>{
-      if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[];
-      grouped[t.destinationLocation].push(t);
-    });
+    paginated.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
 
     let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Liste Transferts</title>
@@ -248,31 +242,11 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     <a href="/logout">🚪 Déconnexion</a>
     </div>`;
 
-    html+=`
-    <form id="printSelectedForm" method="post" action="/transferts/print-selected" target="_blank">
-      <input type="hidden" name="ids" id="selectedIds">
-      <button type="button" onclick="printSelected()">🖨 Imprimer sélection</button>
-    </form>
-    <script>
-      function printSelected() {
-        const checkboxes = document.querySelectorAll('input[name="selected"]:checked');
-        if(checkboxes.length === 0){
-          alert('Veuillez sélectionner au moins un transfert.');
-          return;
-        }
-        const ids = Array.from(checkboxes).map(cb => cb.value);
-        document.getElementById('selectedIds').value = ids.join(',');
-        document.getElementById('printSelectedForm').submit();
-      }
-    </script>
-    `;
-
     for(let dest in grouped){
       html+=`<h3>Destination: ${dest}</h3><table>
-      <tr><th>Sélection</th><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Status</th><th>Historique</th><th>Actions</th></tr>`;
+      <tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Status</th><th>Historique</th><th>Actions</th></tr>`;
       grouped[dest].forEach(t=>{
         html+=`<tr>
-        <td><input type="checkbox" name="selected" value="${t._id}"></td>
         <td>${t.code}</td>
         <td>${t.userType}</td>
         <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
@@ -286,7 +260,6 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
         <td>
         <a href="/transferts/form?code=${t.code}"><button class="modify">✏️ Modifier</button></a>
         <a href="/transferts/delete/${t._id}" onclick="return confirm('❌ Confirmer suppression?');"><button class="delete">❌ Supprimer</button></a>
-        <a href="/transferts/print/${t._id}" target="_blank"><button style="background:#17a2b8;">🖨 Imprimer</button></a>
         ${t.retired?'':`<form method="post" action="/transferts/retirer" style="display:inline">
         <input type="hidden" name="id" value="${t._id}">
         <select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option></select>
@@ -299,11 +272,8 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     }
 
     html+='<div>';
-    for(let i=1;i<=totalPages;i++){
-      html+=`<a href="?page=${i}&search=${req.query.search||''}&status=${statusFilter}">${i}</a> `;
-    }
+    for(let i=1;i<=totalPages;i++){ html+=`<a href="?page=${i}&search=${req.query.search||''}&status=${statusFilter}">${i}</a> `; }
     html+='</div>';
-
     html+='</body></html>';
     res.send(html);
 
@@ -328,62 +298,103 @@ app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
   res.redirect('back');
 });
 
-// ================= IMPRIMER TICKET =================
-app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
+// ================= IMPRIMER TICKET INDIVIDUEL THERMIQUE =================
+app.get('/transferts/print/:id', requireLogin, async (req, res) => {
   const t = await Transfert.findById(req.params.id);
   if(!t) return res.send('Transfert introuvable');
-  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-body{font-family:Arial;text-align:center;padding:10px;}
-.ticket{border:1px dashed #333;padding:10px;width:280px;margin:auto;}
-h3{margin:5px 0;}p{margin:3px 0;font-size:14px;}
-button{margin-top:5px;padding:5px 10px;}
-</style></head><body>
-<div class="ticket">
-<h3>💰 Transfert</h3>
-<p>Code: ${t.code}</p>
-<p>Exp: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
-<p>Dest: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
-<p>Montant: ${t.amount} ${t.currency}</p>
-<p>Frais: ${t.fees}</p>
-<p>Reçu: ${t.recoveryAmount}</p>
-<p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
-</div>
-<button onclick="window.print()">🖨 Imprimer</button>
-</body></html>`);
+
+  const doc = new PDFDocument({size:[280,500], margin:10});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','inline; filename=ticket.pdf');
+  doc.pipe(res);
+
+  doc.fontSize(12).font('Helvetica-Bold').fillColor('#007bff').text('💰 TRANSFERT', {align:'center'});
+  doc.moveDown(0.2);
+
+  doc.fontSize(10).font('Helvetica').fillColor('black')
+     .text(`Code: ${t.code}`, {align:'center'})
+     .moveDown(0.2);
+
+  doc.font('Helvetica-Bold').text('Expéditeur:', {underline:true})
+     .font('Helvetica')
+     .text(`${t.senderFirstName} ${t.senderLastName}`)
+     .text(`Tél: ${t.senderPhone}`)
+     .text(`Origine: ${t.originLocation}`)
+     .moveDown(0.2);
+
+  doc.font('Helvetica-Bold').text('Destinataire:', {underline:true})
+     .font('Helvetica')
+     .text(`${t.receiverFirstName} ${t.receiverLastName}`)
+     .text(`Tél: ${t.receiverPhone}`)
+     .text(`Destination: ${t.destinationLocation}`)
+     .moveDown(0.2);
+
+  doc.text(`Montant: ${t.amount} ${t.currency}`)
+     .text(`Frais: ${t.fees}`)
+     .font('Helvetica-Bold').text(`À recevoir: ${t.recoveryAmount}`)
+     .font('Helvetica').text(`Statut: ${t.retired?'Retiré':'Non retiré'}`)
+     .moveDown(0.2);
+
+  if(t.retraitHistory.length){
+    doc.font('Helvetica-Oblique').fontSize(9).text('Historique Retrait:');
+    t.retraitHistory.forEach(h => { doc.text(`→ ${new Date(h.date).toLocaleString()} via ${h.mode}`); });
+  }
+
+  doc.end();
 });
 
-// ================= IMPRIMER MULTI-TICKETS =================
+// ================= IMPRIMER MULTI-TICKETS THERMIQUE =================
 app.post('/transferts/print-selected', requireLogin, async (req, res) => {
   try {
     const ids = (req.body.ids || '').split(',');
     if(ids.length === 0) return res.send('Aucun transfert sélectionné.');
-
     const transferts = await Transfert.find({ _id: { $in: ids } });
 
-    const doc = new PDFDocument({margin:20, size:'A4'});
+    const doc = new PDFDocument({size:[280,1000], margin:10});
     res.setHeader('Content-Type','application/pdf');
-    res.setHeader('Content-Disposition','inline; filename=transferts_selection.pdf');
+    res.setHeader('Content-Disposition','inline; filename=transferts_thermique.pdf');
     doc.pipe(res);
 
     transferts.forEach((t, index) => {
-      // Ticket style
-      doc.rect(doc.x, doc.y, doc.page.width - doc.page.margins.left - doc.page.margins.right, 100).stroke();
-      doc.fontSize(14).fillColor('#007bff').text(`💰 Transfert`, {align:'center'});
-      doc.moveDown(0.3);
-      doc.fontSize(12).fillColor('black')
-        .text(`Code: ${t.code}`)
-        .text(`Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`)
-        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`)
-        .text(`Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount}`)
-        .text(`Statut: ${t.retired?'Retiré':'Non retiré'}`);
+      doc.lineWidth(1).dash(2,{space:2}).rect(doc.x, doc.y, 260, 0).stroke().undash();
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#007bff').text('💰 TRANSFERT', {align:'center'});
+      doc.moveDown(0.2);
 
-      if(t.retraitHistory.length)
-        t.retraitHistory.forEach(h => doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`));
+      doc.fontSize(10).font('Helvetica').fillColor('black')
+         .text(`Code: ${t.code}`, {align:'center'})
+         .moveDown(0.2);
 
-      doc.moveDown(1);
-      if(index < transferts.length - 1 && doc.y > doc.page.height - 120) {
-        doc.addPage();
+      doc.font('Helvetica-Bold').text('Expéditeur:', {underline:true})
+         .font('Helvetica')
+         .text(`${t.senderFirstName} ${t.senderLastName}`)
+         .text(`Tél: ${t.senderPhone}`)
+         .text(`Origine: ${t.originLocation}`)
+         .moveDown(0.2);
+
+      doc.font('Helvetica-Bold').text('Destinataire:', {underline:true})
+         .font('Helvetica')
+         .text(`${t.receiverFirstName} ${t.receiverLastName}`)
+         .text(`Tél: ${t.receiverPhone}`)
+         .text(`Destination: ${t.destinationLocation}`)
+         .moveDown(0.2);
+
+      doc.text(`Montant: ${t.amount} ${t.currency}`)
+         .text(`Frais: ${t.fees}`)
+         .font('Helvetica-Bold').text(`À recevoir: ${t.recoveryAmount}`)
+         .font('Helvetica').text(`Statut: ${t.retired?'Retiré':'Non retiré'}`)
+         .moveDown(0.2);
+
+      if(t.retraitHistory.length){
+        doc.font('Helvetica-Oblique').fontSize(9).text('Historique Retrait:');
+        t.retraitHistory.forEach(h => { doc.text(`→ ${new Date(h.date).toLocaleString()} via ${h.mode}`); });
+        doc.moveDown(0.2);
       }
+
+      doc.moveDown(0.2)
+         .dash(2,{space:2}).moveTo(doc.x, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke().undash();
+      doc.moveDown(0.5);
+      if(index < transferts.length - 1) doc.addPage({size:[280,1000], margin:10});
     });
 
     doc.end();
@@ -399,9 +410,7 @@ app.get('/transferts/pdf', requireLogin, async(req,res)=>{
     const search = (req.query.search||'').toLowerCase();
     const statusFilter = req.query.status || 'all';
     let transferts = await Transfert.find().sort({createdAt:-1});
-    if(search){
-      transferts = transferts.filter(t=>Object.values(t.toObject()).some(v=>v && v.toString().toLowerCase().includes(search)));
-    }
+    if(search) transferts = transferts.filter(t=>Object.values(t.toObject()).some(v=>v && v.toString().toLowerCase().includes(search)));
     if(statusFilter==='retire') transferts = transferts.filter(t=>t.retired);
     else if(statusFilter==='non') transferts = transferts.filter(t=>!t.retired);
 
