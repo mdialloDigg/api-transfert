@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL
+ * APP TRANSFERT – DASHBOARD FINAL COMPLET
  ******************************************************************/
 
 const express = require('express');
@@ -69,17 +69,16 @@ const requireLogin = (req,res,next)=>{
   res.redirect('/login');
 };
 
-const requireRole = role => (req,res,next)=>{
-  if(req.session.role===role) return next();
-  res.status(403).send('Accès refusé');
-};
+// ================= LOCATIONS & CURRENCIES =================
+const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+const currencies = ['GNF','EUR','USD','XOF'];
 
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
 res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{margin:0;font-family:Arial;background:#f0f4f8;text-align:center;padding-top:80px;}
 form{background:#fff;padding:30px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.2);display:inline-block;}
-input,button{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc;}
+input,button,select{padding:12px;margin:8px;width:250px;border-radius:6px;border:1px solid #ccc;}
 button{background:#007bff;color:white;border:none;font-weight:bold;cursor:pointer;transition:0.3s;}
 button:hover{background:#0056b3;}
 </style></head><body>
@@ -87,10 +86,7 @@ button:hover{background:#0056b3;}
 <form method="post">
 <input name="username" placeholder="Utilisateur" required><br>
 <input type="password" name="password" placeholder="Mot de passe" required><br>
-<select name="role">
-<option value="agent">Agent</option>
-<option value="admin">Admin</option>
-</select><br>
+<select name="role"><option value="agent">Agent</option><option value="admin">Admin</option></select><br>
 <button>Connexion</button>
 </form></body></html>`);
 });
@@ -129,18 +125,80 @@ button{width:280px;padding:15px;margin:12px;font-size:16px;border:none;border-ra
 </body></html>`);
 });
 
-// ================= LOCATIONS & CURRENCIES =================
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-
 // ================= FORMULAIRE =================
 app.get('/transferts/form', requireLogin, async(req,res)=>{
   let t=null;
   if(req.query.code) t = await Transfert.findOne({code:req.query.code});
   const code = t? t.code : await generateUniqueCode();
-
-  res.send(`...HTML FORMULAIRE MODERNE AVEC CODE, MONTANTS, EXPÉDITEUR, DESTINATAIRE (RESPONSIVE)...`); 
-  // Pour ne pas surcharger ici, utilise le code front-end que je t’ai fourni précédemment
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Envoyer de l'argent</title>
+<style>
+body{margin:0;font-family:Arial;background:#f0f4f8;padding:20px}
+.container{max-width:900px;margin:auto;background:white;padding:30px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.1)}
+h2{text-align:center;color:#2c7be5;margin-bottom:25px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:15px}
+label{font-weight:600;color:#555}
+input,select{width:100%;padding:10px;border-radius:6px;border:1px solid #ccc;font-size:14px}
+input[readonly]{background:#e9ecef}
+button{width:100%;padding:14px;background:#2eb85c;color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:.3s}
+button:hover{background:#218838}
+a{text-decoration:none;color:#2c7be5;font-weight:600;display:inline-block;margin-top:15px}
+a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="container">
+<h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
+<form method="post">
+<div class="grid">
+<div>
+<label>Code transfert</label>
+<input type="text" name="code" value="${code}" required>
+</div>
+<div>
+<label>Type de personne</label>
+<select name="userType">
+${['Client','Distributeur','Administrateur','Agence de transfert'].map(v=>`<option ${t?.userType===v?'selected':''}>${v}</option>`).join('')}
+</select>
+</div>
+</div>
+<h3>Expéditeur</h3>
+<div class="grid">
+<input name="senderFirstName" placeholder="Prénom" value="${t?.senderFirstName||''}" required>
+<input name="senderLastName" placeholder="Nom" value="${t?.senderLastName||''}" required>
+<input name="senderPhone" placeholder="Téléphone" value="${t?.senderPhone||''}" required>
+<input name="originLocation" placeholder="Origine" value="${t?.originLocation||''}" required>
+</div>
+<h3>Destinataire</h3>
+<div class="grid">
+<input name="receiverFirstName" placeholder="Prénom" value="${t?.receiverFirstName||''}" required>
+<input name="receiverLastName" placeholder="Nom" value="${t?.receiverLastName||''}" required>
+<input name="receiverPhone" placeholder="Téléphone" value="${t?.receiverPhone||''}" required>
+<input name="destinationLocation" placeholder="Destination" value="${t?.destinationLocation||''}" required>
+</div>
+<h3>Montants</h3>
+<div class="grid">
+<input type="number" name="amount" id="amount" placeholder="Montant" value="${t?.amount||''}" required>
+<input type="number" name="fees" id="fees" placeholder="Frais" value="${t?.fees||''}" required>
+<input type="text" id="recovery" readonly placeholder="Montant à recevoir">
+<select name="currency">
+${['GNF','EUR','USD','XOF'].map(c=>`<option ${t?.currency===c?'selected':''}>${c}</option>`).join('')}
+</select>
+</div>
+<button>Enregistrer</button>
+</form>
+<a href="/menu">⬅ Retour menu</a>
+</div>
+<script>
+const a=document.getElementById('amount'); const f=document.getElementById('fees'); const r=document.getElementById('recovery');
+function calc(){r.value=(a.value||0)-(f.value||0);}
+a.oninput=f.oninput=calc; calc();
+</script>
+</body>
+</html>`);
 });
 
 app.post('/transferts/form', requireLogin, async(req,res)=>{
@@ -155,9 +213,7 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
     }else{
       await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
     }
-    // Redirige vers liste avec pré-remplissage recherche
-    const params = `?searchCode=${code}`;
-    res.redirect('/transferts/list'+params);
+    res.redirect('/transferts/list?searchCode='+code);
   }catch(err){console.error(err);res.status(500).send(err.message);}
 });
 
@@ -206,8 +262,81 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     grouped[t.destinationLocation].push(t);
   });
 
-  res.send(`...HTML LISTE MODERNE AVEC CARDS, RETRAIT, HISTORIQUE, PAGINATION, EXPORT PDF/Excel...`);
-  // Pour ne pas surcharger ici, utilise le code front-end responsive que je t’ai fourni précédemment
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liste des transferts</title>
+<style>
+body{margin:0;font-family:Arial;background:#f4f6f9;padding:15px}
+.header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:15px}
+.header a{margin:5px;text-decoration:none;color:#007bff;font-weight:600}
+.search-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:15px}
+.search-bar input{padding:8px;border-radius:6px;border:1px solid #ccc;flex:1;min-width:120px}
+.search-bar button{padding:8px 12px;border:none;border-radius:6px;background:#007bff;color:white;cursor:pointer}
+.card{background:white;border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 3px 10px rgba(0,0,0,.1)}
+.card h4{margin:0 0 5px 0;color:#007bff;font-size:16px}
+.card p{margin:2px 0;font-size:14px;color:#333}
+.actions{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px}
+.actions button{padding:5px 8px;border:none;border-radius:6px;color:white;font-size:12px;cursor:pointer}
+.modify{background:#28a745}.delete{background:#dc3545}.print{background:#17a2b8}.retirer{background:#007bff}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>Liste des transferts</h1>
+<div>
+<a href="/transferts/form">➕ Nouveau</a>
+<a href="/transferts/pdf">📄 PDF</a>
+<a href="/menu">⬅ Menu</a>
+</div>
+</div>
+
+<form class="search-bar" method="get">
+<input name="searchPhone" placeholder="Téléphone" value="${req.query.searchPhone||''}">
+<input name="searchCode" placeholder="Code" value="${req.query.searchCode||''}">
+<input name="searchName" placeholder="Nom destinataire" value="${req.query.searchName||''}">
+<select name="searchDest">
+<option value="all">Toutes destinations</option>
+${locations.map(v=>`<option ${req.query.searchDest===v?'selected':''}>${v}</option>`).join('')}
+</select>
+<select name="searchRetired">
+<option value="">Tous</option>
+<option value="oui" ${req.query.searchRetired==='oui'?'selected':''}>Retirés</option>
+<option value="non" ${req.query.searchRetired==='non'?'selected':''}>Non retirés</option>
+</select>
+<button>🔍 Rechercher</button>
+</form>
+
+${Object.keys(grouped).map(dest=>`
+<h3>${dest}</h3>
+${grouped[dest].map(t=>`
+<div class="card">
+<h4>Code: ${t.code}</h4>
+<p><b>Expéditeur:</b> ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
+<p><b>Destinataire:</b> ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
+<p><b>Montant:</b> ${t.amount} ${t.currency} | <b>Reçu:</b> ${t.recoveryAmount}</p>
+<p><b>Statut:</b> ${t.retired?'Retiré':'Non retiré'}</p>
+<p><b>Historique:</b><br>${t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>')||'-'}</p>
+<div class="actions">
+<a href="/transferts/form?code=${t.code}"><button class="modify">✏️ Modifier</button></a>
+<a href="/transferts/delete/${t._id}" onclick="return confirm('Supprimer ?')"><button class="delete">❌</button></a>
+<a href="/transferts/print/${t._id}" target="_blank"><button class="print">🖨️</button></a>
+${!t.retired?`<form method="post" action="/transferts/retirer" style="display:inline">
+<input type="hidden" name="id" value="${t._id}">
+<select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option><option>Produit</option><option>Service</option></select>
+<button class="retirer">Retirer</button></form>`:''}
+</div>
+</div>`).join('')}
+`).join('')}
+
+<div style="text-align:center;margin-top:10px">
+${page>1?`<a href="?page=${page-1}">⬅ Précédent</a>`:''} Page ${page}/${totalPages} ${page<totalPages?`<a href="?page=${page+1}">Suivant ➡</a>`:''}
+</div>
+</body>
+</html>
+`);
 });
 
 // ================= IMPRIMER TICKET =================
@@ -252,6 +381,14 @@ app.get('/transferts/pdf', requireLogin, async(req,res)=>{
       .moveDown(0.5);
     });
     doc.end();
+  }catch(err){console.error(err); res.status(500).send(err.message);}
+});
+
+// ================= DELETE =================
+app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  try{
+    await Transfert.findByIdAndDelete(req.params.id);
+    res.redirect('back');
   }catch(err){console.error(err); res.status(500).send(err.message);}
 });
 
