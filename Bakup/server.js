@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE
+ * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE (avec recherche et devise)
  ******************************************************************/
 
 const express = require('express');
@@ -38,6 +38,7 @@ const transfertSchema = new mongoose.Schema({
   amount: Number,
   fees: Number,
   recoveryAmount: Number,
+  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' }, // Nouveau champ devise
   recoveryMode: String,
   retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
@@ -192,6 +193,14 @@ ${locations.map(v=>`<option>${v}</option>`).join('')}
 <div><label>Frais</label><input type="number" id="fees" name="fees" required></div>
 <div><label>Montant à recevoir</label><input type="text" id="recoveryAmount" readonly></div>
 <div><label>Code transfert</label><input type="text" id="code" name="code" readonly value="${code}"></div>
+<div><label>Devise</label>
+<select name="currency">
+<option selected>GNF</option>
+<option>EUR</option>
+<option>USD</option>
+<option>XOF</option>
+</select>
+</div>
 </div>
 
 <button>Enregistrer</button>
@@ -255,6 +264,12 @@ Tél destinataire: <input name="receiverPhone" value="${t.receiverPhone}" requir
 Destination: <select name="destinationLocation">${locations.map(v=>`<option ${v===t.destinationLocation?'selected':''}>${v}</option>`).join('')}</select><br>
 Montant: <input type="number" name="amount" value="${t.amount}" required><br>
 Frais: <input type="number" name="fees" value="${t.fees}" required><br>
+Devise: <select name="currency">
+<option ${t.currency==='GNF'?'selected':''}>GNF</option>
+<option ${t.currency==='EUR'?'selected':''}>EUR</option>
+<option ${t.currency==='USD'?'selected':''}>USD</option>
+<option ${t.currency==='XOF'?'selected':''}>XOF</option>
+</select><br>
 <button>Enregistrer</button>
 </form>
 <a href="/transferts/list">⬅ Retour</a>
@@ -294,14 +309,30 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   }
 });
 
-// ================= LISTE AVEC ACTIONS =================
-app.get('/transferts/list', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find().sort({destinationLocation:1});
-  let grouped = {};
-  transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
+// ================= LISTE AVEC RECHERCHE =================
+app.get('/transferts/list', requireLogin, async (req, res) => {
+  const phoneFilter = req.query.phone || '';
 
-  let totalAmountAll=0,totalFeesAll=0,totalReceivedAll=0;
-  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  const query = phoneFilter
+    ? {
+        $or: [
+          { senderPhone: { $regex: phoneFilter, $options: 'i' } },
+          { receiverPhone: { $regex: phoneFilter, $options: 'i' } }
+        ]
+      }
+    : {};
+
+  const transferts = await Transfert.find(query).sort({ destinationLocation: 1 });
+
+  let grouped = {};
+  transferts.forEach(t => {
+    if (!grouped[t.destinationLocation]) grouped[t.destinationLocation] = [];
+    grouped[t.destinationLocation].push(t);
+  });
+
+  let totalAmountAll = 0, totalFeesAll = 0, totalReceivedAll = 0;
+
+  let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 table{width:95%;margin:auto;border-collapse:collapse;}
 th,td{border:1px solid #ccc;padding:8px;text-align:center;}
@@ -312,40 +343,48 @@ button.print{background:#17a2b8;color:white;}
 a{margin:2px;text-decoration:none;}
 form{display:inline;}
 </style>
-<script>
-function confirmDelete(){return confirm('❌ Confirmer suppression?');}
-</script>
+<script>function confirmDelete(){return confirm('❌ Confirmer suppression?');}</script>
 </head><body>
-<h2>Liste des transferts</h2><a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a> | <a href="/transferts/pdf">📄 PDF</a><hr>`;
-  for(let dest in grouped){
-    let ta=0,tf=0,tr=0;
-    html+=`<h3>Destination: ${dest}</h3><table>
+<h2>Liste des transferts</h2>
+<a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a> | <a href="/transferts/pdf">📄 PDF</a>
+
+<form method="get" action="/transferts/list" style="margin-top:10px;">
+  <label>Rechercher par téléphone:</label>
+  <input type="text" name="phone" placeholder="Ex: 770123456" value="${phoneFilter}" style="padding:5px 8px;border-radius:4px;border:1px solid #ccc;">
+  <button type="submit">🔍 Rechercher</button>
+  <a href="/transferts/list"><button type="button">❌ Réinitialiser</button></a>
+</form>
+<hr>`;
+
+  for (let dest in grouped) {
+    let ta = 0, tf = 0, tr = 0;
+    html += `<h3>Destination: ${dest}</h3><table>
 <tr><th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th><th>Reçu</th><th>Destinataire</th><th>Tél</th>
 <th>Code</th><th>Statut</th><th>Actions</th></tr>`;
-    grouped[dest].forEach(t=>{
-      ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
-      totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+    grouped[dest].forEach(t => {
+      ta += t.amount; tf += t.fees; tr += t.recoveryAmount;
+      totalAmountAll += t.amount; totalFeesAll += t.fees; totalReceivedAll += t.recoveryAmount;
 
-      let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
+      let histHtml = t.retraitHistory.map(h => `${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
 
-      html+=`<tr class="${t.retired?'retired':''}">
+      html += `<tr class="${t.retired ? 'retired' : ''}">
 <td>${t.userType}</td>
 <td>${t.senderFirstName} ${t.senderLastName}</td>
 <td>${t.senderPhone}</td>
 <td>${t.originLocation}</td>
-<td>${t.amount}</td>
-<td>${t.fees}</td>
-<td>${t.recoveryAmount}</td>
+<td>${t.amount} ${t.currency}</td>
+<td>${t.fees} ${t.currency}</td>
+<td>${t.recoveryAmount} ${t.currency}</td>
 <td>${t.receiverFirstName} ${t.receiverLastName}</td>
 <td>${t.receiverPhone}</td>
 <td>${t.code}</td>
-<td>${t.retired?'Retiré':'Non retiré'}<br>${histHtml}</td>
+<td>${t.retired ? 'Retiré' : 'Non retiré'}<br>${histHtml}</td>
 <td>
 <a href="/transferts/edit/${t._id}"><button>✏️ Modifier</button></a>
 <a href="/transferts/delete/${t._id}" onclick="return confirmDelete();"><button class="delete">❌ Supprimer</button></a>
 <a href="/transferts/print/${t._id}" target="_blank"><button class="print">🖨️ Imprimer</button></a>
-${t.retired?'':`<form method="post" action="/transferts/retirer">
+${t.retired ? '' : `<form method="post" action="/transferts/retirer">
 <input type="hidden" name="id" value="${t._id}">
 <select name="mode">
 <option>Espèces</option>
@@ -358,11 +397,11 @@ ${t.retired?'':`<form method="post" action="/transferts/retirer">
 </form>`}
 </td></tr>`;
     });
-    html+=`<tr style="font-weight:bold;"><td colspan="4">Total ${dest}</td><td>${ta}</td><td>${tf}</td><td>${tr}</td><td colspan="5"></td></tr></table>`;
+    html += `<tr style="font-weight:bold;"><td colspan="4">Total ${dest}</td><td>${ta}</td><td>${tf}</td><td>${tr}</td><td colspan="5"></td></tr></table>`;
   }
-  html+=`<h3>Total global</h3><table style="width:50%;margin:auto;"><tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
-<tr style="font-weight:bold;"><td>Total Frais</td><td>${totalFeesAll}</td></tr>
-<tr style="font-weight:bold;"><td>Total Reçu</td><td>${totalReceivedAll}</td></tr></table></body></html>`;
+  html += `<h3>Total global</h3><table style="width:50%;margin:auto;"><tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
+<tr style="font-weight:bold"><td>Total Frais</td><td>${totalFeesAll}</td></tr>
+<tr style="font-weight:bold"><td>Total Reçu</td><td>${totalReceivedAll}</td></tr></table></body></html>`;
   res.send(html);
 });
 
@@ -392,9 +431,9 @@ button{margin-top:10px;padding:8px 15px;}
 <p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
 <p>Tél: ${t.receiverPhone}</p>
 <p>Destination: ${t.destinationLocation}</p>
-<p>Montant: ${t.amount}</p>
-<p>Frais: ${t.fees}</p>
-<p>À recevoir: ${t.recoveryAmount}</p>
+<p>Montant: ${t.amount} ${t.currency}</p>
+<p>Frais: ${t.fees} ${t.currency}</p>
+<p>À recevoir: ${t.recoveryAmount} ${t.currency}</p>
 <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
 <button onclick="window.print()">🖨️ Imprimer</button>
 </div>
@@ -429,7 +468,7 @@ app.get('/transferts/pdf', requireLogin, async(req,res)=>{
         doc.fontSize(10).fillColor('black')
         .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
         .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
-        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+        .text(`Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} ${t.currency} | Reçu: ${t.recoveryAmount} ${t.currency} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
         if(t.retraitHistory && t.retraitHistory.length){
           t.retraitHistory.forEach(h=>{
             doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
