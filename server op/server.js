@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE (avec recherche et devise)
+ * APP TRANSFERT – VERSION FINALE DASHBOARD MODERNE (avec devise + recherche)
  ******************************************************************/
 
 const express = require('express');
@@ -38,7 +38,7 @@ const transfertSchema = new mongoose.Schema({
   amount: Number,
   fees: Number,
   recoveryAmount: Number,
-  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' }, // Nouveau champ devise
+  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' }, // Devise
   recoveryMode: String,
   retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
@@ -187,7 +187,7 @@ ${locations.map(v=>`<option>${v}</option>`).join('')}
 </select></div>
 </div>
 
-<h3>Montants & Code</h3>
+<h3>Montants, Devise & Code</h3>
 <div class="grid">
 <div><label>Montant</label><input type="number" id="amount" name="amount" required></div>
 <div><label>Frais</label><input type="number" id="fees" name="fees" required></div>
@@ -199,13 +199,11 @@ ${locations.map(v=>`<option>${v}</option>`).join('')}
 <option>EUR</option>
 <option>USD</option>
 <option>XOF</option>
-</select>
-</div>
+</select></div>
 </div>
 
 <button>Enregistrer</button>
 </form>
-
 <center><a href="/menu">⬅ Retour menu</a></center>
 </div>
 
@@ -240,6 +238,7 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
   }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
+// ================= EDIT =================
 app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
   if(!t) return res.send('Transfert introuvable');
@@ -288,7 +287,7 @@ app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
   res.redirect('/transferts/list');
 });
 
-// ================= SUPPRIMER =================
+// ================= DELETE =================
 app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
   await Transfert.findByIdAndDelete(req.params.id);
   res.redirect('/transferts/list');
@@ -309,20 +308,9 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   }
 });
 
-// ================= LISTE AVEC RECHERCHE =================
+// ================= LISTE AVEC RECHERCHE DYNAMIQUE =================
 app.get('/transferts/list', requireLogin, async (req, res) => {
-  const phoneFilter = req.query.phone || '';
-
-  const query = phoneFilter
-    ? {
-        $or: [
-          { senderPhone: { $regex: phoneFilter, $options: 'i' } },
-          { receiverPhone: { $regex: phoneFilter, $options: 'i' } }
-        ]
-      }
-    : {};
-
-  const transferts = await Transfert.find(query).sort({ destinationLocation: 1 });
+  const transferts = await Transfert.find().sort({ destinationLocation: 1 });
 
   let grouped = {};
   transferts.forEach(t => {
@@ -342,18 +330,16 @@ button.delete{background:#dc3545;color:white;}
 button.print{background:#17a2b8;color:white;}
 a{margin:2px;text-decoration:none;}
 form{display:inline;}
+input{padding:5px 8px;border-radius:4px;border:1px solid #ccc;margin-bottom:10px;}
 </style>
 <script>function confirmDelete(){return confirm('❌ Confirmer suppression?');}</script>
-</head><body>
+</head>
+<body>
 <h2>Liste des transferts</h2>
 <a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a> | <a href="/transferts/pdf">📄 PDF</a>
-
-<form method="get" action="/transferts/list" style="margin-top:10px;">
-  <label>Rechercher par téléphone:</label>
-  <input type="text" name="phone" placeholder="Ex: 770123456" value="${phoneFilter}" style="padding:5px 8px;border-radius:4px;border:1px solid #ccc;">
-  <button type="submit">🔍 Rechercher</button>
-  <a href="/transferts/list"><button type="button">❌ Réinitialiser</button></a>
-</form>
+<br><br>
+<label>Rechercher par téléphone:</label>
+<input type="text" id="phoneSearch" placeholder="Ex: 770123456">
 <hr>`;
 
   for (let dest in grouped) {
@@ -362,6 +348,7 @@ form{display:inline;}
 <tr><th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
 <th>Montant</th><th>Frais</th><th>Reçu</th><th>Destinataire</th><th>Tél</th>
 <th>Code</th><th>Statut</th><th>Actions</th></tr>`;
+
     grouped[dest].forEach(t => {
       ta += t.amount; tf += t.fees; tr += t.recoveryAmount;
       totalAmountAll += t.amount; totalFeesAll += t.fees; totalReceivedAll += t.recoveryAmount;
@@ -397,11 +384,36 @@ ${t.retired ? '' : `<form method="post" action="/transferts/retirer">
 </form>`}
 </td></tr>`;
     });
+
     html += `<tr style="font-weight:bold;"><td colspan="4">Total ${dest}</td><td>${ta}</td><td>${tf}</td><td>${tr}</td><td colspan="5"></td></tr></table>`;
   }
-  html += `<h3>Total global</h3><table style="width:50%;margin:auto;"><tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
-<tr style="font-weight:bold"><td>Total Frais</td><td>${totalFeesAll}</td></tr>
-<tr style="font-weight:bold"><td>Total Reçu</td><td>${totalReceivedAll}</td></tr></table></body></html>`;
+
+  html += `<h3>Total global</h3>
+<table style="width:50%;margin:auto;">
+<tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
+<tr style="font-weight:bold;"><td>Total Frais</td><td>${totalFeesAll}</td></tr>
+<tr style="font-weight:bold;"><td>Total Reçu</td><td>${totalReceivedAll}</td></tr>
+</table>
+
+<script>
+const searchInput = document.getElementById('phoneSearch');
+searchInput.addEventListener('input', function() {
+  const filter = this.value.toLowerCase();
+  const rows = document.querySelectorAll('table tr');
+  rows.forEach((row, index) => {
+    if(index === 0) return;
+    const senderPhone = row.cells[2]?.textContent.toLowerCase() || '';
+    const receiverPhone = row.cells[8]?.textContent.toLowerCase() || '';
+    if(senderPhone.includes(filter) || receiverPhone.includes(filter)){
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+});
+</script>
+</body></html>`;
+
   res.send(html);
 });
 
