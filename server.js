@@ -16,7 +16,7 @@ const app = express();
 app.use(helmet());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.set('trust proxy', 1); // si derrière proxy
+app.set('trust proxy', 1);
 app.use(session({
   secret: process.env.SESSION_SECRET || 'transfert-secret-final',
   resave: false,
@@ -154,10 +154,16 @@ app.get('/logout',(req,res)=>{
   req.session.destroy(()=>res.redirect('/login'));
 });
 
-// ================= TRANSFERTS – CREATION =================
+// ================= TRANSFERTS – CREATION / EDIT =================
 app.get('/transferts/new', requireLogin, async(req,res)=>{
   const code = await generateUniqueCode();
   res.send(generateTransfertForm(code));
+});
+
+app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+  res.send(generateTransfertForm(t.code, t));
 });
 
 app.post('/transferts/new', requireLogin, async(req,res)=>{
@@ -179,13 +185,6 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
     console.error(err);
     res.status(500).send('Erreur serveur');
   }
-});
-
-// ================= TRANSFERTS – EDIT =================
-app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  res.send(generateTransfertForm(t.code, t));
 });
 
 app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
@@ -283,75 +282,7 @@ ${t.retired?'':`<form method="post" action="/transferts/retirer">
   res.send(html);
 });
 
-// ================= TRANSFERTS – PRINT =================
-app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  res.send(`<html><body>
-<div class="ticket">
-<h3>💰 Transfert</h3>
-<p>Code: ${t.code}</p>
-<p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
-<p>Tél: ${t.senderPhone}</p>
-<p>Origine: ${t.originLocation}</p>
-<p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
-<p>Tél: ${t.receiverPhone}</p>
-<p>Destination: ${t.destinationLocation}</p>
-<p>Montant: ${t.amount}</p>
-<p>Frais: ${t.fees}</p>
-<p>À recevoir: ${t.recoveryAmount}</p>
-<p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
-<button onclick="window.print()">🖨️ Imprimer</button>
-</div>
-</body></html>`);
-});
-
-// ================= TRANSFERTS – PDF =================
-app.get('/transferts/pdf', requireLogin, async(req,res)=>{
-  try{
-    const list = await Transfert.find().sort({destinationLocation:1});
-    const doc = new PDFDocument({margin:30, size:'A4'});
-    res.setHeader('Content-Type','application/pdf');
-    res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
-    doc.pipe(res);
-
-    doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
-    doc.moveDown();
-
-    let groupedPDF = {};
-    list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
-
-    let totalA=0,totalF=0,totalR=0;
-
-    for(let dest in groupedPDF){
-      let subA=0,subF=0,subR=0;
-      doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
-      groupedPDF[dest].forEach(t=>{
-        subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
-        totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
-        doc.fontSize(10).fillColor('black')
-        .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
-        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
-        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
-        if(t.retraitHistory && t.retraitHistory.length){
-          t.retraitHistory.forEach(h=>{
-            doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
-          });
-        }
-        doc.moveDown(0.5);
-      });
-      doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
-    }
-    doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
-    doc.end();
-  }catch(err){ console.error(err); res.status(500).send('Erreur serveur');}
-});
-
-// ================= SERVEUR =================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
-
-// ================= FONCTIONS UTILITAIRES =================
+// ================= FONCTION – FORMULAIRE TRANSFERT =================
 function generateTransfertForm(code, t=null){
   return `
   <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -412,3 +343,73 @@ function generateTransfertForm(code, t=null){
   </body></html>
   `;
 }
+
+// ================= TRANSFERTS – PRINT =================
+app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+  res.send(`
+  <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>body{font-family:Arial;text-align:center;padding:20px;}
+  .ticket{border:1px dashed #333;padding:15px;width:300px;margin:auto;}
+  h3{margin:5px 0;} p{margin:3px 0;font-size:14px;} button{margin-top:10px;padding:8px 15px;}</style>
+  </head><body>
+  <div class="ticket">
+  <h3>💰 Transfert</h3>
+  <p>Code: ${t.code}</p>
+  <p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
+  <p>Tél: ${t.senderPhone}</p>
+  <p>Origine: ${t.originLocation}</p>
+  <p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
+  <p>Tél: ${t.receiverPhone}</p>
+  <p>Destination: ${t.destinationLocation}</p>
+  <p>Montant: ${t.amount}</p>
+  <p>Frais: ${t.fees}</p>
+  <p>À recevoir: ${t.recoveryAmount}</p>
+  <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+  <button onclick="window.print()">🖨️ Imprimer</button>
+  </div></body></html>
+  `);
+});
+
+// ================= TRANSFERTS – PDF =================
+app.get('/transferts/pdf', requireLogin, async(req,res)=>{
+  try{
+    const list = await Transfert.find().sort({destinationLocation:1});
+    const doc = new PDFDocument({margin:30, size:'A4'});
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
+    doc.pipe(res);
+
+    doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'}); doc.moveDown();
+
+    let groupedPDF = {};
+    list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
+
+    let totalA=0,totalF=0,totalR=0;
+
+    for(let dest in groupedPDF){
+      let subA=0,subF=0,subR=0;
+      doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
+      groupedPDF[dest].forEach(t=>{
+        subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
+        totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
+        doc.fontSize(10).fillColor('black')
+        .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
+        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+        if(t.retraitHistory && t.retraitHistory.length){
+          t.retraitHistory.forEach(h=> doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`));
+        }
+        doc.moveDown(0.5);
+      });
+      doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
+    }
+    doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
+    doc.end();
+  }catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
+});
+
+// ================= SERVEUR =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur en écoute sur le port ${PORT}`));
