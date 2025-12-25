@@ -230,7 +230,7 @@ app.post('/transferts/new', requireLogin, async(req,res)=>{
   }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
-// ================= FORMULAIRE MODIFIER TRANSFERT =================
+// ================= FORMULAIRE MODIFIER =================
 app.get('/transferts/edit/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
   if(!t) return res.send('Transfert introuvable');
@@ -329,6 +329,196 @@ app.post('/transferts/edit/:id', requireLogin, async(req,res)=>{
   const recoveryAmount = amount - fees;
   await Transfert.findByIdAndUpdate(req.params.id,{...req.body, amount, fees, recoveryAmount});
   res.redirect('/transferts/list');
+});
+
+// ================= LISTE AVEC RECHERCHE =================
+app.get('/transferts/list', requireLogin, async(req,res)=>{
+  const search = req.query.phone || '';
+  const transferts = await Transfert.find({
+    $or: [
+      { senderPhone: { $regex: search, $options: 'i' } },
+      { receiverPhone: { $regex: search, $options: 'i' } }
+    ]
+  }).sort({destinationLocation:1});
+
+  let grouped = {};
+  transferts.forEach(t=>{ if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[]; grouped[t.destinationLocation].push(t); });
+
+  let totalAmountAll=0,totalFeesAll=0,totalReceivedAll=0;
+  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+table{width:95%;margin:auto;border-collapse:collapse;}
+th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+th{background:#007bff;color:white;}
+button{padding:4px 8px;margin:2px;cursor:pointer;}
+button.delete{background:#dc3545;color:white;}
+button.print{background:#17a2b8;color:white;}
+a{margin:2px;text-decoration:none;}
+form{display:inline;}
+input.search{padding:6px;width:200px;margin-right:6px;}
+</style>
+<script>
+function confirmDelete(){return confirm('❌ Confirmer suppression?');}
+</script>
+</head><body>
+<h2>Liste des transferts</h2>
+<a href="/menu">⬅ Menu</a> | <a href="/transferts/new">➕ Nouveau</a> | <a href="/transferts/pdf">📄 PDF</a>
+<form method="get" style="display:inline;">
+<input type="text" name="phone" class="search" placeholder="Rechercher par téléphone" value="${search}">
+<button type="submit">🔍 Rechercher</button>
+</form>
+<hr>`;
+
+  for(let dest in grouped){
+    let ta=0,tf=0,tr=0;
+    html+=`<h3>Destination: ${dest}</h3><table>
+<tr><th>Type</th><th>Expéditeur</th><th>Tél</th><th>Origine</th>
+<th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Destinataire</th><th>Tél</th>
+<th>Code</th><th>Statut</th><th>Actions</th></tr>`;
+    grouped[dest].forEach(t=>{
+      ta+=t.amount; tf+=t.fees; tr+=t.recoveryAmount;
+      totalAmountAll+=t.amount; totalFeesAll+=t.fees; totalReceivedAll+=t.recoveryAmount;
+
+      let histHtml = t.retraitHistory.map(h=>`${new Date(h.date).toLocaleString()} (${h.mode})`).join('<br>') || '-';
+
+      html+=`<tr class="${t.retired?'retired':''}">
+<td>${t.userType}</td>
+<td>${t.senderFirstName} ${t.senderLastName}</td>
+<td>${t.senderPhone}</td>
+<td>${t.originLocation}</td>
+<td>${t.amount}</td>
+<td>${t.fees}</td>
+<td>${t.recoveryAmount}</td>
+<td>${t.currency}</td>
+<td>${t.receiverFirstName} ${t.receiverLastName}</td>
+<td>${t.receiverPhone}</td>
+<td>${t.code}</td>
+<td>${t.retired?'Retiré':'Non retiré'}<br>${histHtml}</td>
+<td>
+<a href="/transferts/edit/${t._id}"><button>✏️ Modifier</button></a>
+<a href="/transferts/delete/${t._id}" onclick="return confirmDelete();"><button class="delete">❌ Supprimer</button></a>
+<a href="/transferts/print/${t._id}" target="_blank"><button class="print">🖨️ Imprimer</button></a>
+${t.retired?'':`<form method="post" action="/transferts/retirer">
+<input type="hidden" name="id" value="${t._id}">
+<select name="mode">
+<option>Espèces</option>
+<option>Orange Money</option>
+<option>Wave</option>
+<option>Produit</option>
+<option>Service</option>
+</select>
+<button>Retirer</button>
+</form>`}
+</td></tr>`;
+    });
+    html+=`<tr style="font-weight:bold;"><td colspan="4">Total ${dest}</td><td>${ta}</td><td>${tf}</td><td>${tr}</td><td colspan="6"></td></tr></table>`;
+  }
+
+  html+=`<h3>Total global</h3><table style="width:50%;margin:auto;">
+<tr style="font-weight:bold;"><td>Total Montant</td><td>${totalAmountAll}</td></tr>
+<tr style="font-weight:bold;"><td>Total Frais</td><td>${totalFeesAll}</td></tr>
+<tr style="font-weight:bold;"><td>Total Reçu</td><td>${totalReceivedAll}</td></tr></table></body></html>`;
+  res.send(html);
+});
+
+// ================= RETRAIT =================
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  try{
+    await Transfert.findByIdAndUpdate(req.body.id,{
+      retired:true,
+      recoveryMode:req.body.mode,
+      $push: { retraitHistory: { date: new Date(), mode:req.body.mode } }
+    });
+    res.redirect('/transferts/list');
+  }catch(err){
+    console.error('Erreur retrait:', err);
+    res.status(500).send('Erreur serveur: ' + err.message);
+  }
+});
+
+// ================= SUPPRIMER =================
+app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndDelete(req.params.id);
+  res.redirect('/transferts/list');
+});
+
+// ================= IMPRIMER TICKET =================
+app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;text-align:center;padding:20px;}
+.ticket{border:1px dashed #333;padding:15px;width:300px;margin:auto;}
+h3{margin:5px 0;}
+p{margin:3px 0;font-size:14px;}
+button{margin-top:10px;padding:8px 15px;}
+</style>
+</head>
+<body>
+<div class="ticket">
+<h3>💰 Transfert</h3>
+<p>Code: ${t.code}</p>
+<p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
+<p>Tél: ${t.senderPhone}</p>
+<p>Origine: ${t.originLocation}</p>
+<p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
+<p>Tél: ${t.receiverPhone}</p>
+<p>Destination: ${t.destinationLocation}</p>
+<p>Montant: ${t.amount}</p>
+<p>Frais: ${t.fees}</p>
+<p>À recevoir: ${t.recoveryAmount}</p>
+<p>Devise: ${t.currency}</p>
+<p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+<button onclick="window.print()">🖨️ Imprimer</button>
+</div>
+</body>
+</html>
+  `);
+});
+
+// ================= PDF =================
+app.get('/transferts/pdf', requireLogin, async(req,res)=>{
+  try{
+    const list = await Transfert.find().sort({destinationLocation:1});
+    const doc = new PDFDocument({margin:30, size:'A4'});
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
+    doc.pipe(res);
+
+    doc.fontSize(18).text('RAPPORT DES TRANSFERTS',{align:'center'});
+    doc.moveDown();
+
+    let groupedPDF = {};
+    list.forEach(t=>{ if(!groupedPDF[t.destinationLocation]) groupedPDF[t.destinationLocation]=[]; groupedPDF[t.destinationLocation].push(t); });
+
+    let totalA=0,totalF=0,totalR=0;
+
+    for(let dest in groupedPDF){
+      let subA=0,subF=0,subR=0;
+      doc.fontSize(14).fillColor('#007bff').text(`Destination: ${dest}`);
+      groupedPDF[dest].forEach(t=>{
+        subA+=t.amount; subF+=t.fees; subR+=t.recoveryAmount;
+        totalA+=t.amount; totalF+=t.fees; totalR+=t.recoveryAmount;
+        doc.fontSize(10).fillColor('black')
+        .text(`Type: ${t.userType} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone}) | Origine: ${t.originLocation}`)
+        .text(`Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone}) | Destination: ${t.destinationLocation}`)
+        .text(`Montant: ${t.amount} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Devise: ${t.currency} | Statut: ${t.retired?'Retiré':'Non retiré'} | Code: ${t.code}`);
+        if(t.retraitHistory && t.retraitHistory.length){
+          t.retraitHistory.forEach(h=>{
+            doc.text(`→ Retiré le ${new Date(h.date).toLocaleString()} via ${h.mode}`);
+          });
+        }
+        doc.moveDown(0.5);
+      });
+      doc.fontSize(12).text(`Sous-total ${dest} → Montant: ${subA} | Frais: ${subF} | Reçu: ${subR}`).moveDown();
+    }
+    doc.fontSize(14).fillColor('black').text(`TOTAL GLOBAL → Montant: ${totalA} | Frais: ${totalF} | Reçu: ${totalR}`,{align:'center'});
+    doc.end();
+  }catch(err){ console.error(err); res.status(500).send(err.message);}
 });
 
 // ================= LOGOUT =================
