@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD COMPLET MODERNE
+ * APP TRANSFERT – VERSION FINALE TOUT-EN-UN
  ******************************************************************/
 const express = require('express');
 const mongoose = require('mongoose');
@@ -231,9 +231,90 @@ app.get('/transferts/pdf', requireLogin, async(req,res)=>{
   doc.end();
 });
 
-// ================= AJAX + LISTE =================
-app.get('/transferts/list', requireLogin, async(req,res)=>{
-  res.sendFile(__dirname+'/list.html'); // tu peux créer list.html séparément ou l’inclure inline
+// ================= LISTE AJAX =================
+app.get('/transferts/list', requireLogin, async (req,res)=>{
+  res.send(`<html>
+  <head><meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:Arial;background:#fff3e0;padding:10px;}
+    .card{background:#fff;margin:10px;padding:10px;border-radius:8px;transition:0.3s;}
+    .retired{background:#f44336;color:#fff;}
+    .non-retired{background:#4caf50;color:#fff;}
+    button{padding:5px;margin:2px;border:none;border-radius:4px;cursor:pointer;}
+    .orange{background:#ff9800;color:#fff;}
+    .green{background:#4caf50;color:#fff;}
+    .red{background:#f44336;color:#fff;}
+  </style>
+  </head>
+  <body>
+    <h2>Liste des transferts</h2>
+    <input type="text" id="searchPhone" placeholder="Téléphone">
+    <input type="text" id="searchCode" placeholder="Code">
+    <input type="text" id="searchName" placeholder="Nom / Prénom">
+    <input type="text" id="searchCountry" placeholder="Pays">
+    <select id="searchCurrency">
+      <option value="">Toutes devises</option>
+      <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
+    </select>
+    <button id="btnSearch" class="orange">🔍 Rechercher</button>
+    <button id="btnPDF" class="green">📄 Export PDF</button>
+    <div id="listContainer"></div>
+    <canvas id="chart" style="width:100%;max-width:600px;margin-top:20px;"></canvas>
+    <script>
+      function renderList(data){
+        let html='';
+        let labels=[], nonRetiredTotals=[], retiredTotals=[];
+        let grouped={};
+        data.forEach(t=>{
+          if(!grouped[t.destinationLocation]) grouped[t.destinationLocation]=[];
+          grouped[t.destinationLocation].push(t);
+        });
+        for(let dest in grouped){
+          html+='<h3>'+dest+'</h3>';
+          grouped[dest].forEach(t=>{
+            html+='<div class="card '+(t.retired?'retired':'non-retired')+'">'+
+            'Code: '+t.code+' | '+t.senderFirstName+' '+t.senderLastName+' → '+t.receiverFirstName+' '+t.receiverLastName+
+            ' | Montant: '+t.amount+' '+t.currency+
+            ' | <button onclick="window.location.href=\'/transferts/print/'+t._id+'\'">🖨️ Imprimer</button>'+
+            '</div>';
+          });
+          labels.push(dest);
+          nonRetiredTotals.push(grouped[dest].filter(t=>!t.retired).length);
+          retiredTotals.push(grouped[dest].filter(t=>t.retired).length);
+        }
+        $('#listContainer').html(html);
+        const ctx=document.getElementById('chart').getContext('2d');
+        if(window.transfertChart) window.transfertChart.destroy();
+        window.transfertChart=new Chart(ctx,{
+          type:'bar',
+          data:{
+            labels:labels,
+            datasets:[
+              {label:'Non retiré', data:nonRetiredTotals, backgroundColor:'#4caf50'},
+              {label:'Retiré', data:retiredTotals, backgroundColor:'#f44336'}
+            ]
+          },
+          options:{responsive:true, plugins:{legend:{position:'top'}}, scales:{x:{stacked:true},y:{stacked:true}}}
+        });
+      }
+      function fetchList(params={}){ $.get('/transferts/ajax', params, function(data){ renderList(data); }); }
+      $(document).ready(function(){
+        fetchList();
+        $('#btnSearch').click(function(){
+          fetchList({
+            phone: $('#searchPhone').val(),
+            code: $('#searchCode').val(),
+            name: $('#searchName').val(),
+            country: $('#searchCountry').val(),
+            currency: $('#searchCurrency').val()
+          });
+        });
+        $('#btnPDF').click(function(){ window.open('/transferts/pdf','_blank'); });
+      });
+    </script>
+  </body></html>`);
 });
 
 app.get('/transferts/ajax', requireLogin, async(req,res)=>{
