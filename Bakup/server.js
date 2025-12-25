@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL ÉVOLUÉ AVEC DROITS ADMIN2
+ * APP TRANSFERT – DASHBOARD FINAL AVEC DROITS ET TOTAUX EN HAUT
  ******************************************************************/
 
 const express = require('express');
@@ -232,6 +232,8 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   const limit=20;
   const totalPages = Math.ceil(transferts.length/limit);
   const paginated = transferts.slice((page-1)*limit, page*limit);
+
+  // Totaux en haut
   const totalAmount = paginated.reduce((sum,t)=>sum+t.amount,0);
   const totalFees = paginated.reduce((sum,t)=>sum+t.fees,0);
   const totalRecovery = paginated.reduce((sum,t)=>sum+t.recoveryAmount,0);
@@ -248,8 +250,10 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   .imprimer{background:#17a2b8;}
   input[type=checkbox]{width:16px;height:16px;}
   a{margin-right:10px;text-decoration:none;color:#007bff;}
+  .totaux{font-weight:bold;background:#e9ecef;}
   </style></head><body>
   <h2>📋 Liste des transferts</h2>
+  <p class="totaux">Totaux du tableau: Montant envoyé: ${totalAmount} | Frais: ${totalFees} | Reçu: ${totalRecovery}</p>
   <form method="get" style="margin-bottom:10px;">
     <input type="text" name="search" placeholder="Recherche..." value="${search}">
     <select name="status">
@@ -290,18 +294,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     </tr>`;
   });
 
-  html+=`</tbody>
-  <tfoot>
-    <tr>
-      <td colspan="5" style="text-align:right;font-weight:bold;">Totaux:</td>
-      <td>${totalAmount}</td>
-      <td>${totalFees}</td>
-      <td>${totalRecovery}</td>
-      <td colspan="2"></td>
-    </tr>
-  </tfoot>
-  </table>
-  <div>`;
+  html+=`</tbody></table><div>`;
   for(let i=1;i<=totalPages;i++){
     html+=`<a href="?page=${i}&search=${search}&status=${status}">${i}</a> `;
   }
@@ -309,7 +302,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   res.send(html);
 });
 
-// ================= IMPRIMER TICKET PETIT FORMAT =================
+// ================= TICKET PETIT FORMAT =================
 app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
   if(!t) return res.send('Transfert introuvable');
