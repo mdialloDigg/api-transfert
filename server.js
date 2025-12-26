@@ -7,73 +7,25 @@
 <style>
 body { font-family: Arial; margin: 10px; background: #f4f6f9; }
 h2 { color: #2c7be5; text-align: center; margin-bottom: 15px; }
-
-.table-container {
-  width: 100%;
-  overflow-x: auto;
-  max-height: 80vh;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  background: #fff;
-  position: relative;
-}
-
-table { width: 100%; border-collapse: collapse; min-width: 900px; }
-th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 14px; cursor: pointer; }
-th { background: #007bff; color: white; position: sticky; top: 0; z-index: 2; }
-.retired { background: #fff3b0; }
-
+.table-container { width:100%; overflow-x:auto; max-height:80vh; border:1px solid #ccc; border-radius:5px; background:#fff; position:relative; }
+table { width:100%; border-collapse: collapse; min-width:900px; }
+th, td { border:1px solid #ccc; padding:8px; text-align:left; font-size:14px; cursor:pointer; }
+th { background:#007bff; color:white; position: sticky; top:0; z-index:2; }
+.retired { background:#fff3b0; }
 button, a.button { padding:6px 10px; border:none; border-radius:5px; color:white; text-decoration:none; font-size:12px; cursor:pointer; margin-right:3px;}
 .modify{background:#28a745;}
 .delete{background:#dc3545;}
 .retirer{background:#ff9900;}
 .imprimer{background:#17a2b8;}
 .export{background:#6c757d;}
-
 #filters { display:flex; flex-wrap: wrap; gap:10px; margin-bottom:10px; }
 #filters input, #filters select { padding:6px; border-radius:5px; border:1px solid #ccc; font-size:14px; }
-
-#loadingSpinner {
-  display:none;
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform: translate(-50%, -50%);
-  width:40px;
-  height:40px;
-  border:5px solid #ccc;
-  border-top:5px solid #007bff;
-  border-radius:50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: translate(-50%, -50%) rotate(0deg);}
-  100% { transform: translate(-50%, -50%) rotate(360deg);}
-}
-
-.fade-in {
-  animation: fadeIn 0.6s ease forwards;
-  opacity: 0;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.highlight {
-  animation: highlightAnim 1.5s ease forwards;
-}
-
-@keyframes highlightAnim {
-  0% { background-color: #fff3b0; }
-  100% { background-color: inherit; }
-}
-
+#loadingSpinner { display:none; position:absolute; top:50%; left:50%; transform: translate(-50%, -50%); width:40px; height:40px; border:5px solid #ccc; border-top:5px solid #007bff; border-radius:50%; animation: spin 1s linear infinite; }
+@keyframes spin { 0% { transform: translate(-50%, -50%) rotate(0deg);} 100% { transform: translate(-50%, -50%) rotate(360deg);} }
+.fade-in { animation: fadeIn 0.6s ease forwards; opacity: 0; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 th.sort-asc::after { content: " ▲"; }
 th.sort-desc::after { content: " ▼"; }
-
 @media (max-width:768px){
   td { display:flex; justify-content:space-between; padding:6px; border-bottom:1px solid #ccc; }
   td button, td a.button { margin-left:5px; margin-top:0; flex-shrink:0; }
@@ -123,9 +75,9 @@ th.sort-desc::after { content: " ▼"; }
       <tr>
         <th data-key="code">Code</th>
         <th data-key="userType">Type</th>
-        <th data-key="sender">Expéditeur</th>
+        <th data-key="senderFirstName">Expéditeur</th>
         <th data-key="originLocation">Origine</th>
-        <th data-key="receiver">Destinataire</th>
+        <th data-key="receiverFirstName">Destinataire</th>
         <th data-key="amount">Montant</th>
         <th data-key="fees">Frais</th>
         <th data-key="recoveryAmount">Reçu</th>
@@ -143,13 +95,12 @@ th.sort-desc::after { content: " ▼"; }
 <script>
 let currentSort = {key:'', order:''};
 let currentPage = 1;
+const refreshInterval = 10000; // 10 secondes
 
-// Fonction pour afficher/masquer spinner
 function showSpinner(show){
   document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
 }
 
-// Charger la liste via AJAX avec filtres et tri
 async function loadTransferts(page=1){
   currentPage = page;
   showSpinner(true);
@@ -170,8 +121,6 @@ async function loadTransferts(page=1){
       const tr = document.createElement('tr');
       if(t.retired) tr.classList.add('retired');
       tr.classList.add('fade-in');
-      tr.style.animationDelay = `${index * 0.05}s`;
-      if(t.isNew || t.isUpdated) tr.classList.add('highlight');
 
       tr.innerHTML = `
         <td data-label="Code">${t.code}</td>
@@ -200,7 +149,7 @@ async function loadTransferts(page=1){
       tbody.appendChild(tr);
     });
 
-    // Pagination avec persistance tri/filtres
+    // Pagination
     const pagination = document.getElementById('pagination');
     pagination.innerHTML = '';
     for(let i=1;i<=data.totalPages;i++){
@@ -213,40 +162,37 @@ async function loadTransferts(page=1){
       pagination.appendChild(document.createTextNode(' '));
     }
 
-    // Indiquer la colonne triée
-    document.querySelectorAll('th').forEach(th=>{
+    // Tri visuel
+    document.querySelectorAll('th[data-key]').forEach(th=>{
       th.classList.remove('sort-asc','sort-desc');
       if(th.dataset.key === currentSort.key) th.classList.add(currentSort.order==='asc'?'sort-asc':'sort-desc');
     });
 
-  } catch (err) {
-    console.error('Erreur AJAX:', err);
-  } finally {
-    showSpinner(false);
-  }
+  } catch (err) { console.error('Erreur AJAX:', err); }
+  finally { showSpinner(false); }
 }
 
-// Tri par colonne
+// Tri
 document.querySelectorAll('th[data-key]').forEach(th=>{
   th.addEventListener('click',()=>{
-    if(currentSort.key===th.dataset.key){
-      currentSort.order = currentSort.order==='asc'?'desc':'asc';
-    } else {
-      currentSort.key = th.dataset.key;
-      currentSort.order = 'asc';
-    }
+    if(currentSort.key===th.dataset.key) currentSort.order = currentSort.order==='asc'?'desc':'asc';
+    else { currentSort.key = th.dataset.key; currentSort.order = 'asc'; }
     loadTransferts(currentPage);
   });
 });
 
-// Événements recherche et filtres
+// Filtres
 ['searchInput','statusSelect','currencySelect','destinationSelect'].forEach(id=>{
-  document.getElementById(id).addEventListener('input', ()=>loadTransferts(1));
-  document.getElementById(id).addEventListener('change', ()=>loadTransferts(1));
+  const el = document.getElementById(id);
+  el.addEventListener('input', ()=>loadTransferts(1));
+  el.addEventListener('change', ()=>loadTransferts(1));
 });
 
 // Chargement initial
 loadTransferts();
+
+// Rafraîchissement automatique
+setInterval(() => loadTransferts(currentPage), refreshInterval);
 </script>
 
 </body>
