@@ -3,25 +3,31 @@ const mongoose = require("mongoose");
 const session = require("express-session");
 const bodyParser = require("body-parser");
 const PDFDocument = require("pdfkit");
-const XLSX = require("xlsx");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* ===================== CONFIG ===================== */
 
-mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1/transferts");
+mongoose.connect(
+  process.env.MONGODB_URI || "mongodb://127.0.0.1/transferts",
+  { useNewUrlParser: true, useUnifiedTopology: true }
+);
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use(session({
-  secret: "secret123",
+  secret: "secret",
   resave: false,
   saveUninitialized: true
 }));
 
-/* ===================== ROLES ===================== */
+/* ===================== ROLES & DROITS ===================== */
+/*
+ a      => peut seulement RETIRER
+ admin2 => peut TOUT sauf retirer
+*/
 
 const ROLES = {
   a: { withdraw: true },
@@ -31,8 +37,8 @@ const ROLES = {
 function allow(action) {
   return (req, res, next) => {
     const role = req.session.role;
-    if (role && ROLES[role] && ROLES[role][action]) next();
-    else res.status(403).send("Accès refusé");
+    if (role && ROLES[role] && ROLES[role][action]) return next();
+    res.status(403).send("Accès refusé");
   };
 }
 
@@ -61,28 +67,27 @@ const WithdrawalSchema = new mongoose.Schema({
 const Transfert = mongoose.model("Transfert", TransfertSchema);
 const Withdrawal = mongoose.model("Withdrawal", WithdrawalSchema);
 
-/* ===================== AUTH (SIMPLIFIÉ) ===================== */
+/* ===================== LOGIN SIMPLE ===================== */
 
 app.get("/login/:role", (req, res) => {
   req.session.role = req.params.role;
   res.redirect("/");
 });
 
-/* ===================== PAGE HTML ===================== */
+/* ===================== PAGE PRINCIPALE ===================== */
 
 app.get("/", (req, res) => {
-  res.send(`
-<!DOCTYPE html>
+  res.send(`<!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 body{font-family:Arial;background:#f4f6f9;padding:10px}
 table{width:100%;border-collapse:collapse;background:#fff}
 th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#007bff;color:#fff}
 .retired{background:#fff3b0}
-button{border:none;padding:5px 7px;border-radius:4px;color:#fff}
+button{border:none;padding:4px 6px;border-radius:4px;color:#fff;margin:1px}
 .edit{background:#28a745}
 .del{background:#dc3545}
 .ret{background:#ff9800}
@@ -93,11 +98,11 @@ button{border:none;padding:5px 7px;border-radius:4px;color:#fff}
 
 <h3>📋 Transferts</h3>
 
-<input id="search" placeholder="Recherche">
+<input id="search" placeholder="Recherche code / nom">
 <select id="status">
-<option value="">Tous</option>
-<option value="retire">Retiré</option>
-<option value="non">Non retiré</option>
+  <option value="">Tous</option>
+  <option value="retire">Retiré</option>
+  <option value="non">Non retiré</option>
 </select>
 <button onclick="load()">🔍</button>
 <button onclick="create()">➕ Nouveau</button>
@@ -105,29 +110,36 @@ button{border:none;padding:5px 7px;border-radius:4px;color:#fff}
 <table>
 <thead>
 <tr>
-<th>Code</th><th>Expéditeur</th><th>Destinataire</th>
-<th>Montant</th><th>Frais</th><th>Reçu</th>
-<th>Devise</th><th>Destination</th><th>Status</th><th>Actions</th>
+<th>Code</th>
+<th>Expéditeur</th>
+<th>Destinataire</th>
+<th>Montant</th>
+<th>Frais</th>
+<th>Reçu</th>
+<th>Devise</th>
+<th>Destination</th>
+<th>Status</th>
+<th>Actions</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
 </table>
 
-<h4>📊 Totaux</h4>
+<h4>📊 Totaux reçus (par destination & devise)</h4>
 <div id="totaux"></div>
 
 <script>
 async function load(){
   const r = await fetch("/api/transferts?search="+search.value+"&status="+status.value);
   const data = await r.json();
-  const tbody = document.getElementById("tbody");
   tbody.innerHTML="";
   let totals={};
 
   data.forEach(t=>{
     let tr=document.createElement("tr");
     if(t.retired) tr.className="retired";
-    tr.innerHTML=
+
+    tr.innerHTML =
       "<td>"+t.code+"</td>"+
       "<td>"+t.sender+"</td>"+
       "<td>"+t.receiver+"</td>"+
@@ -138,11 +150,12 @@ async function load(){
       "<td>"+t.destination+"</td>"+
       "<td>"+(t.retired?"Retiré":"Non")+"</td>"+
       "<td>"+
-      "<button class='edit' onclick='edit(\""+t._id+"\")'>✏️</button>"+
-      "<button class='del' onclick='del(\""+t._id+"\")'>❌</button>"+
-      "<button class='ret' onclick='ret(\""+t._id+"\")'>💰</button>"+
-      "<button class='print' onclick='printT(\""+t._id+"\")'>🖨</button>"+
+        "<button class='edit' onclick='edit(\""+t._id+"\")'>✏️</button>"+
+        "<button class='del' onclick='del(\""+t._id+"\")'>❌</button>"+
+        "<button class='ret' onclick='ret(\""+t._id+"\")'>💰</button>"+
+        "<button class='print' onclick='printT(\""+t._id+"\")'>🖨</button>"+
       "</td>";
+
     tbody.appendChild(tr);
 
     if(!totals[t.destination]) totals[t.destination]={};
@@ -150,37 +163,53 @@ async function load(){
     totals[t.destination][t.currency]+=t.recovery;
   });
 
-  let div=document.getElementById("totaux");
-  div.innerHTML="";
+  totaux.innerHTML="";
   for(let d in totals){
     for(let c in totals[d]){
-      div.innerHTML+="<p>"+d+" / "+c+" : "+totals[d][c]+"</p>";
+      totaux.innerHTML += "<p>"+d+" / "+c+" : "+totals[d][c]+"</p>";
     }
   }
 }
 
 function create(){
-  const a=prompt("Montant");
-  const f=prompt("Frais");
-  fetch("/api/transferts",{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({amount:a,fees:f})}).then(load);
+  const a = Number(prompt("Montant"));
+  const f = Number(prompt("Frais"));
+  fetch("/api/transferts",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({amount:a,fees:f})
+  }).then(load);
 }
-function edit(id){alert("Modifier "+id);}
-function del(id){fetch("/api/transferts/"+id,{method:"DELETE"}).then(load);}
+
+function edit(id){
+  alert("Fonction modifier à implémenter pour : "+id);
+}
+
+function del(id){
+  fetch("/api/transferts/"+id,{method:"DELETE"}).then(load);
+}
+
 function ret(id){
-  const m=prompt("Mode");
-  fetch("/api/transferts/retirer",{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({id:id,mode:m})}).then(load);
+  const m = prompt("Mode de retrait");
+  fetch("/api/transferts/retirer",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({id:id,mode:m})
+  }).then(load);
 }
-function printT(id){window.open("/print/"+id);}
+
+function printT(id){
+  window.open("/print/"+id);
+}
+
 load();
 </script>
+
 </body>
-</html>
-`);
+</html>`);
 });
 
-/* ===================== API ===================== */
+/* ===================== API AJAX ===================== */
 
 app.get("/api/transferts", async (req, res) => {
   const q = {};
@@ -193,18 +222,19 @@ app.get("/api/transferts", async (req, res) => {
   }
   if (req.query.status === "retire") q.retired = true;
   if (req.query.status === "non") q.retired = false;
-  res.json(await Transfert.find(q));
+
+  res.json(await Transfert.find(q).sort({createdAt:-1}));
 });
 
 app.post("/api/transferts", allow("create"), async (req, res) => {
-  const r = Number(req.body.amount) - Number(req.body.fees);
+  const rec = Number(req.body.amount) - Number(req.body.fees);
   await Transfert.create({
-    code: "TR"+Date.now(),
+    code: "TR" + Date.now(),
     sender: "Client",
-    receiver: "Dest",
+    receiver: "Destinataire",
     amount: req.body.amount,
     fees: req.body.fees,
-    recovery: r,
+    recovery: rec,
     currency: "XOF",
     destination: "Local"
   });
@@ -220,11 +250,15 @@ app.post("/api/transferts/retirer", allow("withdraw"), async (req, res) => {
   const t = await Transfert.findById(req.body.id);
   t.retired = true;
   await t.save();
-  await Withdrawal.create({ transfertId: t._id, user: req.session.role, mode: req.body.mode });
+  await Withdrawal.create({
+    transfertId: t._id,
+    user: req.session.role,
+    mode: req.body.mode
+  });
   res.sendStatus(200);
 });
 
-/* ===================== PRINT ===================== */
+/* ===================== IMPRESSION PDF ===================== */
 
 app.get("/print/:id", async (req, res) => {
   const t = await Transfert.findById(req.params.id);
@@ -232,11 +266,17 @@ app.get("/print/:id", async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   pdf.pipe(res);
   pdf.text("Code: " + t.code);
+  pdf.text("Expéditeur: " + t.sender);
+  pdf.text("Destinataire: " + t.receiver);
   pdf.text("Montant: " + t.amount + " " + t.currency);
+  pdf.text("Frais: " + t.fees);
+  pdf.text("Reçu: " + t.recovery);
   pdf.text("Statut: " + (t.retired ? "Retiré" : "Non"));
   pdf.end();
 });
 
 /* ===================== START ===================== */
 
-app.listen(PORT, () => console.log("OK http://localhost:" + PORT));
+app.listen(PORT, () => {
+  console.log("✅ Serveur OK : http://localhost:" + PORT);
+});
