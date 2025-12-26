@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL AVEC TOTAUX TABLEAU / LIGNES RET
+ * APP TRANSFERT – DASHBOARD AJAX + EXPORTS COMPLET
  ******************************************************************/
 
 const express = require('express');
@@ -8,8 +8,6 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 
@@ -113,7 +111,7 @@ app.post('/login', async (req,res)=>{
 
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= FORMULAIRE =================
+// ================= FORMULAIRE AJAX =================
 app.get('/transferts/form', requireLogin, async(req,res)=>{
   if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
   let t=null;
@@ -134,7 +132,7 @@ app.get('/transferts/form', requireLogin, async(req,res)=>{
   </style></head><body>
   <div class="container">
   <h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
-  <form method="post">
+  <form id="transfertForm">
   <h3>Type de personne</h3>
   <select name="userType">
   <option ${t&&t.userType==='Client'?'selected':''}>Client</option>
@@ -165,36 +163,62 @@ app.get('/transferts/form', requireLogin, async(req,res)=>{
   <div><label>Code transfert</label><input type="text" name="code" readonly value="${code}"></div>
   </div>
 
-  <button>${t?'Enregistrer Modifications':'Enregistrer'}</button>
+  <button type="submit">${t?'Enregistrer Modifications':'Enregistrer'}</button>
   </form>
   <center><a href="/transferts/list">⬅ Retour liste</a></center>
   </div>
-  <script>
-  const amountField = document.getElementById('amount');
-  const feesField = document.getElementById('fees');
-  const recoveryField = document.getElementById('recoveryAmount');
-  function updateRecovery(){const a=parseFloat(amountField.value)||0;const f=parseFloat(feesField.value)||0;recoveryField.value=a-f;}
-  amountField.addEventListener('input',updateRecovery);
-  feesField.addEventListener('input',updateRecovery);
-  updateRecovery();
-  </script>
-  </body></html>`);
+
+<script>
+const amountField = document.getElementById('amount');
+const feesField = document.getElementById('fees');
+const recoveryField = document.getElementById('recoveryAmount');
+function updateRecovery(){const a=parseFloat(amountField.value)||0;const f=parseFloat(feesField.value)||0;recoveryField.value=a-f;}
+amountField.addEventListener('input',updateRecovery);
+feesField.addEventListener('input',updateRecovery);
+updateRecovery();
+
+// AJAX pour le formulaire
+document.getElementById('transfertForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target).entries());
+  const res = await fetch('/transferts/form',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  if(res.ok){
+    alert('✅ Transfert enregistré');
+    window.location.href='/transferts/list';
+  } else {
+    const txt = await res.text();
+    alert('❌ Erreur: '+txt);
+  }
+});
+</script>
+</body></html>`);
 });
 
-// ================= POST FORMULAIRE =================
+// ================= POST FORMULAIRE AJAX =================
 app.post('/transferts/form', requireLogin, async(req,res)=>{
   if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
-  const amount = Number(req.body.amount||0);
-  const fees = Number(req.body.fees||0);
-  const recoveryAmount = amount - fees;
-  const code = req.body.code || await generateUniqueCode();
-  let existing = await Transfert.findOne({code});
-  if(existing) await Transfert.findByIdAndUpdate(existing._id,{...req.body, amount, fees, recoveryAmount});
-  else await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
-  res.redirect(`/transferts/list?search=${code}`);
+  try{
+    const amount = Number(req.body.amount||0);
+    const fees = Number(req.body.fees||0);
+    const recoveryAmount = amount - fees;
+    const code = req.body.code || await generateUniqueCode();
+    let existing = await Transfert.findOne({code});
+    if(existing){
+      await Transfert.findByIdAndUpdate(existing._id,{...req.body, amount, fees, recoveryAmount});
+    } else {
+      await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
+    }
+    res.json({success:true, code});
+  }catch(err){
+    res.status(500).send(err.message);
+  }
 });
 
-// ================= RETRAIT / SUPPRESSION =================
+// ================= RETRAIT / SUPPRESSION AJAX =================
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   if(!req.session.user.permissions.retrait) return res.status(403).send('Accès refusé');
   await Transfert.findByIdAndUpdate(req.body.id,{
@@ -202,16 +226,16 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
     recoveryMode:req.body.mode,
     $push:{ retraitHistory:{ date:new Date(), mode:req.body.mode } }
   });
-  res.redirect('back');
+  res.json({success:true});
 });
 
 app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
   if(!req.session.user.permissions.suppression) return res.status(403).send('Accès refusé');
   await Transfert.findByIdAndDelete(req.params.id);
-  res.redirect('back');
+  res.json({success:true});
 });
 
-// ================= LISTE AVEC TOTAUX TABLEAU =================
+// ================= LISTE AJAX =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
   const { search='', status='all', page=1 } = req.query;
   let transferts = await Transfert.find().sort({createdAt:-1});
@@ -228,11 +252,10 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   if(status==='retire') transferts = transferts.filter(t=>t.retired);
   else if(status==='non') transferts = transferts.filter(t=>!t.retired);
 
-  const limit=20;
+  const limit = 20;
   const totalPages = Math.ceil(transferts.length/limit);
   const paginated = transferts.slice((page-1)*limit, page*limit);
 
-  // Totaux par destination / devise
   const totals = {};
   paginated.forEach(t=>{
     if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
@@ -242,12 +265,13 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     totals[t.destinationLocation][t.currency].recovery += t.recoveryAmount;
   });
 
-  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+  // --- Génération HTML (incluant AJAX pour filtre, retrait, suppression, pagination) ---
+  let html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Transferts</title><style>
   body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
   table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
   th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
   th{background:#007bff;color:white;}
-  .retired{background:#fff3b0;} /* jaune clair */
+  .retired{background:#fff3b0;}
   button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
   .modify{background:#28a745;}
   .delete{background:#dc3545;}
@@ -256,20 +280,17 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   a{margin-right:10px;text-decoration:none;color:#007bff;}
   </style></head><body>
   <h2>📋 Liste des transferts</h2>
-  <div>`;
+  <h3>📊 Totaux par destination et devise</h3>
+  <table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
 
-  // Tableau des totaux
-  html+='<h3>📊 Totaux par destination et devise</h3>';
-  html+='<table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>';
   for(let dest in totals){
     for(let curr in totals[dest]){
-      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+      html += `<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
     }
   }
-  html+='</tbody></table>';
+  html += '</tbody></table>';
 
-  // Recherche / filtre / actions
-  html+=`<form method="get" style="margin-bottom:10px;">
+  html += `<form id="filterForm" style="margin-bottom:10px;">
     <input type="text" name="search" placeholder="Recherche..." value="${search}">
     <select name="status">
       <option value="all" ${status==='all'?'selected':''}>Tous</option>
@@ -277,158 +298,118 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
       <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
     </select>
     <button>🔍 Filtrer</button>
-  </form>
-  ${req.session.user.permissions.ecriture?'<a href="/transferts/form">➕ Nouveau</a>':''}
-  <a href="/transferts/pdf">📄 Export PDF</a>
+  </form>`;
+
+  if(req.session.user.permissions.ecriture) html+='<a href="/transferts/form">➕ Nouveau</a> ';
+  html+=`<a href="/transferts/pdf">📄 Export PDF</a>
   <a href="/transferts/excel">📊 Export Excel</a>
   <a href="/transferts/word">📝 Export Word</a>
-  <a href="/logout">🚪 Déconnexion</a>
-  <table><thead><tr>
-  <th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th>
-  <th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+  <a href="/logout">🚪 Déconnexion</a>`;
+
+  html += '<table><thead><tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
 
   paginated.forEach(t=>{
-    html+=`<tr class="${t.retired?'retired':''}">
-    <td>${t.code}</td>
-    <td>${t.userType}</td>
-    <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
-    <td>${t.originLocation}</td>
-    <td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
-    <td>${t.amount}</td>
-    <td>${t.fees}</td>
-    <td>${t.recoveryAmount}</td>
-    <td>${t.currency}</td>
-    <td>${t.retired?'Retiré':'Non retiré'}</td>
-    <td>
-      ${req.session.user.permissions.modification?`<a href="/transferts/form?code=${t.code}"><button class="modify">✏️ Modifier</button></a>`:''}
-      ${req.session.user.permissions.suppression?`<a href="/transferts/delete/${t._id}" onclick="return confirm('❌ Confirmer?');"><button class="delete">❌ Supprimer</button></a>`:''}
-      ${req.session.user.permissions.retrait && !t.retired?`<form method="post" action="/transferts/retirer" style="display:inline">
-        <input type="hidden" name="id" value="${t._id}">
-        <select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option></select>
-        <button class="retirer">💰 Retirer</button></form>`:''}
-      ${req.session.user.permissions.imprimer?`<a href="/transferts/print/${t._id}" target="_blank"><button class="imprimer">🖨 Imprimer</button></a>`:''}
-    </td>
-    </tr>`;
+    html += `<tr class="${t.retired?'retired':''}">
+      <td>${t.code}</td>
+      <td>${t.userType}</td>
+      <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
+      <td>${t.originLocation}</td>
+      <td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
+      <td>${t.amount}</td>
+      <td>${t.fees}</td>
+      <td>${t.recoveryAmount}</td>
+      <td>${t.currency}</td>
+      <td>${t.retired?'Retiré':'En attente'}</td>
+      <td>`;
+    if(req.session.user.permissions.modification) html+=`<button class="modify" onclick="window.location='/transferts/form?code=${t.code}'">✏️</button>`;
+    if(req.session.user.permissions.retrait && !t.retired) html+=`<button class="retirer" onclick="retirer('${t._id}')">💸 Retirer</button>`;
+    if(req.session.user.permissions.suppression) html+=`<button class="delete" onclick="supprimer('${t._id}')">🗑️</button>`;
+    html+='</td></tr>';
   });
-
   html+='</tbody></table>';
 
-  // Pagination
-  html+='<div>';
-  for(let i=1;i<=totalPages;i++){
-    html+=`<a href="?page=${i}&search=${search}&status=${status}">${i}</a> `;
+  html += `<div id="pagination">`;
+  for(let p=1;p<=totalPages;p++){
+    html += `<a href="#" onclick="goPage(${p})">${p}</a> `;
   }
-  html+='</div></body></html>';
+  html += '</div>';
+
+  html += `<script>
+  async function retirer(id){
+    const mode = prompt('Mode de retrait (ex: Espèces, Virement):');
+    if(!mode) return;
+    await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});
+    location.reload();
+  }
+  async function supprimer(id){
+    if(!confirm('Confirmer suppression?')) return;
+    await fetch('/transferts/delete/'+id);
+    location.reload();
+  }
+  document.getElementById('filterForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const data = new FormData(this);
+    const params = new URLSearchParams(data).toString();
+    window.location='/transferts/list?'+params;
+  });
+  function goPage(p){
+    const params = new URLSearchParams({search:'${search}',status:'${status}',page:p}).toString();
+    window.location='/transferts/list?'+params;
+  }
+  </script></body></html>`;
   res.send(html);
 });
 
-// ================= TICKET PETIT FORMAT =================
-app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-  body{font-family:Arial;text-align:center;padding:10px;}
-  .ticket{border:1px dashed #333;padding:10px;width:280px;margin:auto;}
-  h3{margin:5px 0;}p{margin:3px 0;font-size:14px;}
-  button{margin-top:5px;padding:5px 10px;}
-  </style></head><body>
-  <div class="ticket">
-  <h3>💰 Transfert</h3>
-  <p>Code: ${t.code}</p>
-  <p>Exp: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
-  <p>Dest: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
-  <p>Montant: ${t.amount} ${t.currency}</p>
-  <p>Frais: ${t.fees}</p>
-  <p>Reçu: ${t.recoveryAmount}</p>
-  <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
-  </div>
-  <button onclick="window.print()">🖨 Imprimer</button>
-  </body></html>`);
-});
-
-// ================= EXPORT PDF =================
+// ================= EXPORTS =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find().sort({createdAt:-1});
-  const doc = new PDFDocument({ margin: 30, size: 'A4' });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename="transferts.pdf"');
+  const doc = new PDFDocument();
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','inline; filename="transferts.pdf"');
   doc.pipe(res);
-  doc.fontSize(18).text('Liste des transferts', { align:'center' }).moveDown();
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  doc.fontSize(16).text('Liste des transferts', {align:'center'});
+  doc.moveDown();
   transferts.forEach(t=>{
-    doc.fontSize(12).text(`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Dest: ${t.receiverFirstName} ${t.receiverLastName} | Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'}`);
-    doc.moveDown(0.3);
+    doc.fontSize(12).text(`${t.code} | ${t.senderFirstName} -> ${t.receiverFirstName} | ${t.amount} ${t.currency} | ${t.retired?'Retiré':'En attente'}`);
   });
   doc.end();
 });
 
-// ================= EXPORT EXCEL =================
-app.get('/transferts/excel', requireLogin, async (req, res) => {
-  const transferts = await Transfert.find().sort({ createdAt: -1 });
+app.get('/transferts/excel', requireLogin, async(req,res)=>{
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Transferts');
   sheet.columns = [
-    { header: 'Code', key: 'code', width: 15 },
-    { header: 'Type', key: 'userType', width: 20 },
-    { header: 'Expéditeur', key: 'sender', width: 30 },
-    { header: 'Origine', key: 'originLocation', width: 15 },
-    { header: 'Destinataire', key: 'receiver', width: 30 },
-    { header: 'Destination', key: 'destinationLocation', width: 15 },
-    { header: 'Montant', key: 'amount', width: 12 },
-    { header: 'Frais', key: 'fees', width: 12 },
-    { header: 'Reçu', key: 'recoveryAmount', width: 12 },
-    { header: 'Devise', key: 'currency', width: 10 },
-    { header: 'Statut', key: 'status', width: 12 },
-    { header: 'Date', key: 'createdAt', width: 20 },
+    {header:'Code',key:'code'}, {header:'Expéditeur',key:'sender'},
+    {header:'Destinataire',key:'receiver'},{header:'Montant',key:'amount'},
+    {header:'Frais',key:'fees'},{header:'Reçu',key:'recovery'},
+    {header:'Devise',key:'currency'},{header:'Status',key:'status'}
   ];
-  transferts.forEach(t => {
-    sheet.addRow({
-      code: t.code,
-      userType: t.userType,
-      sender: `${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`,
-      originLocation: t.originLocation,
-      receiver: `${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`,
-      destinationLocation: t.destinationLocation,
-      amount: t.amount,
-      fees: t.fees,
-      recoveryAmount: t.recoveryAmount,
-      currency: t.currency,
-      status: t.retired ? 'Retiré' : 'Non retiré',
-      createdAt: t.createdAt.toLocaleString(),
-    });
-  });
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="transferts.xlsx"`);
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  transferts.forEach(t=>sheet.addRow({
+    code:t.code,
+    sender:`${t.senderFirstName} ${t.senderLastName}`,
+    receiver:`${t.receiverFirstName} ${t.receiverLastName}`,
+    amount:t.amount, fees:t.fees, recovery:t.recoveryAmount,
+    currency:t.currency,
+    status:t.retired?'Retiré':'En attente'
+  }));
+  res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition','attachment; filename="transferts.xlsx"');
   await workbook.xlsx.write(res);
   res.end();
 });
 
-// ================= EXPORT WORD (HTML compatible Word) =================
 app.get('/transferts/word', requireLogin, async(req,res)=>{
+  let content = '<html><body><h2>Liste des transferts</h2><table border="1" cellpadding="5">';
+  content += '<tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th></tr>';
   const transferts = await Transfert.find().sort({createdAt:-1});
-  let html = `<html><head><meta charset="UTF-8"><title>Transferts</title></head><body>`;
-  html += `<h2>Liste des transferts</h2>`;
-  html += `<table border="1" cellspacing="0" cellpadding="5">
-  <tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Statut</th><th>Date</th></tr>`;
   transferts.forEach(t=>{
-    html+=`<tr>
-    <td>${t.code}</td>
-    <td>${t.userType}</td>
-    <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
-    <td>${t.originLocation}</td>
-    <td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
-    <td>${t.destinationLocation}</td>
-    <td>${t.amount}</td>
-    <td>${t.fees}</td>
-    <td>${t.recoveryAmount}</td>
-    <td>${t.currency}</td>
-    <td>${t.retired?'Retiré':'Non retiré'}</td>
-    <td>${t.createdAt.toLocaleString()}</td>
-    </tr>`;
+    content += `<tr><td>${t.code}</td><td>${t.senderFirstName} ${t.senderLastName}</td><td>${t.receiverFirstName} ${t.receiverLastName}</td><td>${t.amount}</td><td>${t.fees}</td><td>${t.recoveryAmount}</td><td>${t.currency}</td><td>${t.retired?'Retiré':'En attente'}</td></tr>`;
   });
-  html += `</table></body></html>`;
-  res.setHeader('Content-Type', 'application/msword');
-  res.setHeader('Content-Disposition', 'attachment; filename="transferts.doc"');
-  res.send(html);
+  content += '</table></body></html>';
+  res.setHeader('Content-Type','application/msword');
+  res.setHeader('Content-Disposition','attachment; filename="transferts.doc"');
+  res.send(content);
 });
 
 // ================= START SERVER =================
