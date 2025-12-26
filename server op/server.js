@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL AVEC TOTAUX PAR DEVISE/DEST
+ * APP TRANSFERT – DASHBOARD FINAL AVEC TOTAUX TABLEAU / LIGNES RET
  ******************************************************************/
 
 const express = require('express');
@@ -63,10 +63,9 @@ async function generateUniqueCode() {
   return code;
 }
 
-// ================= AUTH =================
+// ================= AUTH / PERMISSIONS =================
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
 
-// Permissions dynamiques
 function setPermissions(username){
   let permissions = { lecture:true, ecriture:false, retrait:false, modification:true, suppression:true, imprimer:true };
   if(username === 'a'){ permissions = { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true }; }
@@ -193,7 +192,7 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
   res.redirect(`/transferts/list?search=${code}`);
 });
 
-// ================= RETRAIT =================
+// ================= RETRAIT / SUPPRESSION =================
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   if(!req.session.user.permissions.retrait) return res.status(403).send('Accès refusé');
   await Transfert.findByIdAndUpdate(req.body.id,{
@@ -204,14 +203,13 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   res.redirect('back');
 });
 
-// ================= SUPPRIMER =================
 app.get('/transferts/delete/:id', requireLogin, async(req,res)=>{
   if(!req.session.user.permissions.suppression) return res.status(403).send('Accès refusé');
   await Transfert.findByIdAndDelete(req.params.id);
   res.redirect('back');
 });
 
-// ================= LISTE AVEC TOTAUX PAR DEVISE/DEST =================
+// ================= LISTE AVEC TOTAUX TABLEAU =================
 app.get('/transferts/list', requireLogin, async(req,res)=>{
   const { search='', status='all', page=1 } = req.query;
   let transferts = await Transfert.find().sort({createdAt:-1});
@@ -232,7 +230,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   const totalPages = Math.ceil(transferts.length/limit);
   const paginated = transferts.slice((page-1)*limit, page*limit);
 
-  // Totaux par devise et par destination
+  // Totaux par destination / devise
   const totals = {};
   paginated.forEach(t=>{
     if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
@@ -247,25 +245,28 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
   th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
   th{background:#007bff;color:white;}
-  .retired{background:#ffa500;}
+  .retired{background:#fff3b0;} /* jaune clair */
   button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
   .modify{background:#28a745;}
   .delete{background:#dc3545;}
   .retirer{background:#ff9900;}
   .imprimer{background:#17a2b8;}
   a{margin-right:10px;text-decoration:none;color:#007bff;}
-  .totaux{font-weight:bold;background:#e9ecef;padding:5px;margin-bottom:5px;}
   </style></head><body>
   <h2>📋 Liste des transferts</h2>
   <div>`;
 
+  // Tableau des totaux
+  html+='<h3>📊 Totaux par destination et devise</h3>';
+  html+='<table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>';
   for(let dest in totals){
-    html+=`<p class="totaux">Destination: ${dest}</p>`;
     for(let curr in totals[dest]){
-      html+=`<p class="totaux">Devise: ${curr} | Montant: ${totals[dest][curr].amount} | Frais: ${totals[dest][curr].fees} | Reçu: ${totals[dest][curr].recovery}</p>`;
+      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
     }
   }
+  html+='</tbody></table>';
 
+  // Recherche / filtre / actions
   html+=`<form method="get" style="margin-bottom:10px;">
     <input type="text" name="search" placeholder="Recherche..." value="${search}">
     <select name="status">
@@ -297,7 +298,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     <td>${t.retired?'Retiré':'Non retiré'}</td>
     <td>
       ${req.session.user.permissions.modification?`<a href="/transferts/form?code=${t.code}"><button class="modify">✏️ Modifier</button></a>`:''}
-      ${req.session.user.permissions.suppression?`<a href="/transferts/delete/${t._id}" onclick="return confirm('Confirmer ?');"><button class="delete">❌ Supprimer</button></a>`:''}
+      ${req.session.user.permissions.suppression?`<a href="/transferts/delete/${t._id}" onclick="return confirm('❌ Confirmer?');"><button class="delete">❌ Supprimer</button></a>`:''}
       ${req.session.user.permissions.retrait && !t.retired?`<form method="post" action="/transferts/retirer" style="display:inline">
         <input type="hidden" name="id" value="${t._id}">
         <select name="mode"><option>Espèces</option><option>Orange Money</option><option>Wave</option></select>
@@ -307,7 +308,10 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
     </tr>`;
   });
 
-  html+='</tbody></table><div>';
+  html+='</tbody></table>';
+
+  // Pagination
+  html+='<div>';
   for(let i=1;i<=totalPages;i++){
     html+=`<a href="?page=${i}&search=${search}&status=${status}">${i}</a> `;
   }
