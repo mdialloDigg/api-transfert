@@ -1,220 +1,92 @@
-/************************************************
- * APP TRANSFERT – VERSION FINALE UNIQUE
- * Desktop + Mobile + PWA
- ************************************************/
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } = require('docx');
 
-require('dotenv').config();
-const express = require('express');
-const mongoose = require('mongoose');
-const session = require('express-session');
-const bcrypt = require('bcryptjs');
-const helmet = require('helmet');
-const crypto = require('crypto');
+// ================= EXPORT EXCEL =================
+app.get('/transferts/excel', requireLogin, async (req, res) => {
+  const transferts = await Transfert.find().sort({ createdAt: -1 });
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Transferts');
 
-const app = express();
+  // En-têtes
+  sheet.columns = [
+    { header: 'Code', key: 'code', width: 15 },
+    { header: 'Type', key: 'userType', width: 20 },
+    { header: 'Expéditeur', key: 'sender', width: 30 },
+    { header: 'Origine', key: 'originLocation', width: 15 },
+    { header: 'Destinataire', key: 'receiver', width: 30 },
+    { header: 'Destination', key: 'destinationLocation', width: 15 },
+    { header: 'Montant', key: 'amount', width: 12 },
+    { header: 'Frais', key: 'fees', width: 12 },
+    { header: 'Reçu', key: 'recoveryAmount', width: 12 },
+    { header: 'Devise', key: 'currency', width: 10 },
+    { header: 'Statut', key: 'status', width: 12 },
+    { header: 'Date', key: 'createdAt', width: 20 },
+  ];
 
-/* ================= CONFIG ================= */
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(helmet());
-
-app.use(session({
-  name: 'transfert.sid',
-  secret: process.env.SESSION_SECRET || 'secret-dev',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { httpOnly: true }
-}));
-
-/* ================= DATABASE ================= */
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
-
-/* ================= MODELS ================= */
-const transfertSchema = new mongoose.Schema({
-  senderFirstName:String,
-  senderLastName:String,
-  senderPhone:String,
-  receiverFirstName:String,
-  receiverLastName:String,
-  receiverPhone:String,
-  amount:Number,
-  fees:Number,
-  recoveryAmount:Number,
-  currency:String,
-  retired:{type:Boolean,default:false},
-  code:{type:String,unique:true},
-  createdAt:{type:Date,default:Date.now}
-});
-transfertSchema.index({ code:1 },{ unique:true });
-const Transfert = mongoose.model('Transfert', transfertSchema);
-
-const userSchema = new mongoose.Schema({
-  username:String,
-  password:String,
-  role:{type:String,default:'agent'}
-});
-const User = mongoose.model('User', userSchema);
-
-/* ================= INIT ADMIN AUTO ================= */
-(async()=>{
-  if(!await User.findOne({username:'admin'})){
-    await new User({
-      username:'admin',
-      password:bcrypt.hashSync('admin',10),
-      role:'admin'
-    }).save();
-    console.log('👤 Admin créé (admin / admin)');
-  }
-})();
-
-/* ================= UTILS ================= */
-async function generateCode(){
-  let code;
-  do{
-    code = crypto.randomBytes(2).toString('hex').toUpperCase();
-  }while(await Transfert.exists({code}));
-  return code;
-}
-
-const requireLogin=(req,res,next)=>{
-  if(req.session.user) return next();
-  res.redirect('/login');
-};
-
-/* ================= PWA FILES ================= */
-app.get('/manifest.json',(req,res)=>{
-  res.json({
-    name:"Transfert Money",
-    short_name:"Transfert",
-    start_url:"/transferts",
-    display:"standalone",
-    theme_color:"#007bff",
-    background_color:"#ffffff"
+  transferts.forEach(t => {
+    sheet.addRow({
+      code: t.code,
+      userType: t.userType,
+      sender: `${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`,
+      originLocation: t.originLocation,
+      receiver: `${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`,
+      destinationLocation: t.destinationLocation,
+      amount: t.amount,
+      fees: t.fees,
+      recoveryAmount: t.recoveryAmount,
+      currency: t.currency,
+      status: t.retired ? 'Retiré' : 'Non retiré',
+      createdAt: t.createdAt.toLocaleString(),
+    });
   });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="transferts.xlsx"`);
+
+  await workbook.xlsx.write(res);
+  res.end();
 });
 
-app.get('/sw.js',(req,res)=>{
-res.type('application/javascript').send(`
-self.addEventListener('fetch',e=>{
-  e.respondWith(fetch(e.request).catch(()=>new Response('Offline')))
+// ================= EXPORT WORD =================
+app.get('/transferts/word', requireLogin, async (req, res) => {
+  const transferts = await Transfert.find().sort({ createdAt: -1 });
+
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: [
+        new Paragraph({ text: 'Liste des Transferts', heading: 'Heading1' }),
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            new TableRow({
+              children: [
+                'Code','Type','Expéditeur','Origine','Destinataire','Destination','Montant','Frais','Reçu','Devise','Statut','Date'
+              ].map(text => new TableCell({ children: [new Paragraph({ text, bold: true })] }))
+            }),
+            ...transferts.map(t => new TableRow({
+              children: [
+                t.code,
+                t.userType,
+                `${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`,
+                t.originLocation,
+                `${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`,
+                t.destinationLocation,
+                t.amount.toString(),
+                t.fees.toString(),
+                t.recoveryAmount.toString(),
+                t.currency,
+                t.retired ? 'Retiré' : 'Non retiré',
+                t.createdAt.toLocaleString()
+              ].map(text => new TableCell({ children: [new Paragraph(text)] }))
+            }))
+          ]
+        })
+      ]
+    }]
+  });
+
+  const buffer = await Packer.toBuffer(doc);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="transferts.docx"`);
+  res.send(buffer);
 });
-`);
-});
-
-/* ================= LOGIN ================= */
-app.get('/login',(req,res)=>{
-res.send(`
-<!doctype html><html><head>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<link rel=manifest href=/manifest.json>
-<style>
-body{font-family:Arial;background:#f4f6f9;text-align:center;padding-top:80px}
-form{background:#fff;padding:30px;border-radius:12px;display:inline-block}
-input,button{width:240px;padding:12px;margin:6px;font-size:16px}
-button{background:#007bff;color:#fff;border:none}
-</style></head><body>
-<form method=post>
-<h2>Connexion</h2>
-<input name=username placeholder=Utilisateur required>
-<input type=password name=password placeholder="Mot de passe" required>
-<button>Connexion</button>
-</form>
-<script>
-if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js')}
-</script>
-</body></html>
-`);
-});
-
-app.post('/login',async(req,res)=>{
-  const u=await User.findOne({username:req.body.username});
-  if(!u||!bcrypt.compareSync(req.body.password,u.password))
-    return res.send('Accès refusé');
-  req.session.user={username:u.username};
-  res.redirect('/transferts');
-});
-
-app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
-
-/* ================= LISTE ================= */
-app.get('/transferts',requireLogin,async(req,res)=>{
-  const list=await Transfert.find().sort({createdAt:-1}).lean();
-res.send(`
-<!doctype html><html><head>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<link rel=manifest href=/manifest.json>
-<style>
-body{font-family:Arial;background:#f4f6f9;padding:10px}
-.desktop{display:block}.mobile{display:none}
-@media(max-width:768px){.desktop{display:none}.mobile{display:block}}
-table{width:100%;background:#fff;border-collapse:collapse}
-th,td{border:1px solid #ccc;padding:6px}
-.card{background:#fff;padding:12px;border-radius:12px;margin-bottom:10px}
-button{padding:10px;border:none;border-radius:6px}
-.green{background:#28a745;color:#fff}
-</style></head><body>
-<h2>📋 Transferts</h2>
-<a href=/new><button class=green>➕ Nouveau</button></a>
-<a href=/logout><button>🚪 Quitter</button></a>
-
-<table class=desktop>
-<tr><th>Code</th><th>Exp</th><th>Dest</th><th>Montant</th></tr>
-${list.map(t=>`
-<tr><td>${t.code}</td>
-<td>${t.senderFirstName}</td>
-<td>${t.receiverFirstName}</td>
-<td>${t.amount} ${t.currency}</td></tr>`).join('')}
-</table>
-
-<div class=mobile>
-${list.map(t=>`
-<div class=card>
-<b>${t.amount} ${t.currency}</b><br>
-Code: ${t.code}<br>
-${t.senderFirstName} → ${t.receiverFirstName}
-</div>`).join('')}
-</div>
-
-<script>
-if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js')}
-</script>
-</body></html>
-`);
-});
-
-/* ================= NEW ================= */
-app.get('/new',requireLogin,async(req,res)=>{
-const code=await generateCode();
-res.send(`
-<!doctype html><html><head>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<style>
-body{font-family:Arial;background:#f4f6f9;padding:10px}
-input,button{width:100%;padding:14px;margin:6px;font-size:16px}
-button{background:#28a745;color:#fff;border:none}
-</style></head><body>
-<h2>Nouveau transfert</h2>
-<form method=post>
-<input name=senderFirstName placeholder="Expéditeur" required>
-<input name=receiverFirstName placeholder="Destinataire" required>
-<input type=number name=amount placeholder="Montant" required>
-<input type=number name=fees placeholder="Frais" required>
-<input name=currency value="GNF">
-<input name=code readonly value=${code}>
-<button>Enregistrer</button>
-</form>
-</body></html>
-`);
-});
-
-app.post('/new',requireLogin,async(req,res)=>{
-  const a=+req.body.amount,f=+req.body.fees;
-  await new Transfert({...req.body,amount:a,fees:f,recoveryAmount:a-f}).save();
-  res.redirect('/transferts');
-});
-
-/* ================= START ================= */
-const PORT=3000;
-app.listen(PORT,()=>console.log('🚀 http://localhost:'+PORT));
