@@ -8,6 +8,8 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -279,6 +281,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   ${req.session.user.permissions.ecriture?'<a href="/transferts/form">➕ Nouveau</a>':''}
   <a href="/transferts/pdf">📄 Export PDF</a>
   <a href="/transferts/excel">📊 Export Excel</a>
+  <a href="/transferts/word">📝 Export Word</a>
   <a href="/logout">🚪 Déconnexion</a>
   <table><thead><tr>
   <th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th>
@@ -343,8 +346,90 @@ app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   </body></html>`);
 });
 
-// ================= EXPORT PDF / EXCEL =================
-// (Même code que précédemment, adapté si nécessaire pour inclure la devise)
+// ================= EXPORT PDF =================
+app.get('/transferts/pdf', requireLogin, async(req,res)=>{
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  const doc = new PDFDocument({ margin: 30, size: 'A4' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="transferts.pdf"');
+  doc.pipe(res);
+  doc.fontSize(18).text('Liste des transferts', { align:'center' }).moveDown();
+  transferts.forEach(t=>{
+    doc.fontSize(12).text(`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Dest: ${t.receiverFirstName} ${t.receiverLastName} | Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'}`);
+    doc.moveDown(0.3);
+  });
+  doc.end();
+});
+
+// ================= EXPORT EXCEL =================
+app.get('/transferts/excel', requireLogin, async (req, res) => {
+  const transferts = await Transfert.find().sort({ createdAt: -1 });
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Transferts');
+  sheet.columns = [
+    { header: 'Code', key: 'code', width: 15 },
+    { header: 'Type', key: 'userType', width: 20 },
+    { header: 'Expéditeur', key: 'sender', width: 30 },
+    { header: 'Origine', key: 'originLocation', width: 15 },
+    { header: 'Destinataire', key: 'receiver', width: 30 },
+    { header: 'Destination', key: 'destinationLocation', width: 15 },
+    { header: 'Montant', key: 'amount', width: 12 },
+    { header: 'Frais', key: 'fees', width: 12 },
+    { header: 'Reçu', key: 'recoveryAmount', width: 12 },
+    { header: 'Devise', key: 'currency', width: 10 },
+    { header: 'Statut', key: 'status', width: 12 },
+    { header: 'Date', key: 'createdAt', width: 20 },
+  ];
+  transferts.forEach(t => {
+    sheet.addRow({
+      code: t.code,
+      userType: t.userType,
+      sender: `${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`,
+      originLocation: t.originLocation,
+      receiver: `${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`,
+      destinationLocation: t.destinationLocation,
+      amount: t.amount,
+      fees: t.fees,
+      recoveryAmount: t.recoveryAmount,
+      currency: t.currency,
+      status: t.retired ? 'Retiré' : 'Non retiré',
+      createdAt: t.createdAt.toLocaleString(),
+    });
+  });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="transferts.xlsx"`);
+  await workbook.xlsx.write(res);
+  res.end();
+});
+
+// ================= EXPORT WORD (HTML compatible Word) =================
+app.get('/transferts/word', requireLogin, async(req,res)=>{
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  let html = `<html><head><meta charset="UTF-8"><title>Transferts</title></head><body>`;
+  html += `<h2>Liste des transferts</h2>`;
+  html += `<table border="1" cellspacing="0" cellpadding="5">
+  <tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Statut</th><th>Date</th></tr>`;
+  transferts.forEach(t=>{
+    html+=`<tr>
+    <td>${t.code}</td>
+    <td>${t.userType}</td>
+    <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
+    <td>${t.originLocation}</td>
+    <td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
+    <td>${t.destinationLocation}</td>
+    <td>${t.amount}</td>
+    <td>${t.fees}</td>
+    <td>${t.recoveryAmount}</td>
+    <td>${t.currency}</td>
+    <td>${t.retired?'Retiré':'Non retiré'}</td>
+    <td>${t.createdAt.toLocaleString()}</td>
+    </tr>`;
+  });
+  html += `</table></body></html>`;
+  res.setHeader('Content-Type', 'application/msword');
+  res.setHeader('Content-Disposition', 'attachment; filename="transferts.doc"');
+  res.send(html);
+});
 
 // ================= START SERVER =================
 const PORT = process.env.PORT || 3000;
