@@ -1,282 +1,294 @@
+// server.js
 const express = require("express");
-const mongoose = require("mongoose");
-const session = require("express-session");
 const bodyParser = require("body-parser");
-const PDFDocument = require("pdfkit");
-
+const { MongoClient, ObjectId } = require("mongodb");
+const XLSX = require("xlsx");
+const { Document, Packer, Paragraph, TextRun } = require("docx");
+const fs = require("fs");
+const path = require("path");
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-/* ===================== CONFIG ===================== */
-
-mongoose.connect(
-  process.env.MONGODB_URI || "mongodb://127.0.0.1/transferts",
-  { useNewUrlParser: true, useUnifiedTopology: true }
-);
+const port = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use(session({
-  secret: "secret",
-  resave: false,
-  saveUninitialized: true
-}));
+// MongoDB setup
+const uri = "mongodb://localhost:27017";
+const client = new MongoClient(uri);
+let db, transfers;
 
-/* ===================== ROLES & DROITS ===================== */
-/*
- a      => peut seulement RETIRER
- admin2 => peut TOUT sauf retirer
-*/
-
-const ROLES = {
-  a: { withdraw: true },
-  admin2: { create: true, edit: true, delete: true }
-};
-
-function allow(action) {
-  return (req, res, next) => {
-    const role = req.session.role;
-    if (role && ROLES[role] && ROLES[role][action]) return next();
-    res.status(403).send("Accès refusé");
-  };
+async function connectDB() {
+  await client.connect();
+  db = client.db("transfertDB");
+  transfers = db.collection("transferts");
 }
+connectDB().catch(console.error);
 
-/* ===================== MODELS ===================== */
+// Session simple
+let currentUser = null;
 
-const TransfertSchema = new mongoose.Schema({
-  code: String,
-  sender: String,
-  receiver: String,
-  amount: Number,
-  fees: Number,
-  recovery: Number,
-  currency: String,
-  destination: String,
-  retired: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
+// Login simple
+app.get("/login/:user", (req,res)=>{
+  const user=req.params.user;
+  if(user==="a" || user==="admin2"){
+    currentUser={username:user, role:user};
+    res.redirect("/transferts");
+  } else res.send("Utilisateur inconnu");
 });
 
-const WithdrawalSchema = new mongoose.Schema({
-  transfertId: String,
-  user: String,
-  mode: String,
-  date: { type: Date, default: Date.now }
+app.get("/logout",(req,res)=>{
+  currentUser=null;
+  res.redirect("/login/a");
 });
 
-const Transfert = mongoose.model("Transfert", TransfertSchema);
-const Withdrawal = mongoose.model("Withdrawal", WithdrawalSchema);
+// Page principale
+app.get("/transferts", async (req,res)=>{
+  if(!currentUser) return res.redirect("/login/a");
+  const destinations = await transfers.distinct("destinationLocation");
+  const currencies = await transfers.distinct("currency");
 
-/* ===================== LOGIN SIMPLE ===================== */
+  let optionsLocation = destinations.map(d=>`<option value="${d}">${d}</option>`).join("");
+  let optionsCurrency = currencies.map(c=>`<option value="${c}">${c}</option>`).join("");
 
-app.get("/login/:role", (req, res) => {
-  req.session.role = req.params.role;
-  res.redirect("/");
+  res.send(`
+  <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body{font-family:Arial;margin:0;padding:10px;background:#f4f6f9;}
+      table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+      th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+      th{background:#007bff;color:white;}
+      .retired{background:#fff3b0;}
+      button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+      .modify{background:#28a745;}
+      .delete{background:#dc3545;}
+      .retirer{background:#ff9900;}
+      .imprimer{background:#17a2b8;}
+      .excel{background:#17a2b8;}
+      .word{background:#6f42c1;}
+      @media(max-width:600px){table, th, td{font-size:12px;} button{padding:3px 5px;}}
+      .modal{display:none;position:fixed;z-index:1;padding-top:100px;left:0;top:0;width:100%;height:100%;overflow:auto;background:rgba(0,0,0,0.4);}
+      .modal-content{background:#fefefe;margin:auto;padding:20px;border:1px solid #888;width:90%;max-width:500px;}
+      .close{color:#aaa;float:right;font-size:28px;font-weight:bold;cursor:pointer;}
+    </style>
+  </head>
+  <body>
+    <h2>📋 Liste des transferts</h2>
+    <div>
+      <input id="search" placeholder="Recherche...">
+      <select id="status">
+        <option value="all">Tous</option>
+        <option value="retire">Retirés</option>
+        <option value="non">Non retirés</option>
+      </select>
+      <select id="currency"><option value="">Toutes devises</option>${optionsCurrency}</select>
+      <select id="destination"><option value="">Toutes destinations</option>${optionsLocation}</select>
+      <button onclick="loadData()">🔍 Filtrer</button>
+      <a href="/logout">🚪 Déconnexion</a>
+      <button onclick="openModal('create')">➕ Nouveau transfert</button>
+      <button onclick="exportExcel()" class="excel">📊 Excel</button>
+      <button onclick="exportWord()" class="word">📝 Word</button>
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th>
+            <th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <h3>📊 Totaux par destination et devise</h3>
+      <div id="totaux"></div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3 id="modalTitle">Nouveau transfert</h3>
+        <form id="transferForm">
+          <input name="code" placeholder="Code" required><br><br>
+          <input name="userType" placeholder="Type" required><br><br>
+          <input name="senderFirstName" placeholder="Prénom expéditeur" required><br><br>
+          <input name="senderLastName" placeholder="Nom expéditeur" required><br><br>
+          <input name="senderPhone" placeholder="Téléphone expéditeur" required><br><br>
+          <input name="originLocation" placeholder="Origine" required><br><br>
+          <input name="receiverFirstName" placeholder="Prénom destinataire" required><br><br>
+          <input name="receiverLastName" placeholder="Nom destinataire" required><br><br>
+          <input name="receiverPhone" placeholder="Téléphone destinataire" required><br><br>
+          <input name="amount" placeholder="Montant" type="number" step="0.01" required><br><br>
+          <input name="fees" placeholder="Frais" type="number" step="0.01" required><br><br>
+          <input name="currency" placeholder="Devise" required><br><br>
+          <input name="destinationLocation" placeholder="Destination" required><br><br>
+          <input type="hidden" name="id">
+          <button type="submit">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const role = "${currentUser.role}";
+
+      async function loadData() {
+        const search = encodeURIComponent(document.getElementById("search").value);
+        const status = encodeURIComponent(document.getElementById("status").value);
+        const currency = encodeURIComponent(document.getElementById("currency").value);
+        const destination = encodeURIComponent(document.getElementById("destination").value);
+
+        const res = await fetch(\`/transferts/data?search=\${search}&status=\${status}&currency=\${currency}&destination=\${destination}\`);
+        const data = await res.json();
+
+        const tbody = document.getElementById("tbody");
+        tbody.innerHTML = "";
+        const totals = {};
+
+        data.forEach(t => {
+          const tr = document.createElement("tr");
+          if(t.retired) tr.className="retired";
+
+          let actions = '';
+          if(role!=='a') actions += '<button class="modify" onclick="openModal(\'edit\',\\''+t._id+'\\')">✏️</button>';
+          if(role!=='a') actions += '<button class="delete" onclick="removeTransfer(\\''+t._id+'\\')">❌</button>';
+          if(role==='a') actions += '<button class="retirer" onclick="retirer(\\''+t._id+'\\')">💰</button>';
+          actions += '<button class="imprimer" onclick="imprimer(\\''+t._id+'\\')">🖨</button>';
+
+          tr.innerHTML = \`
+            <td>\${t.code}</td><td>\${t.userType}</td><td>\${t.senderFirstName} \${t.senderLastName} (\${t.senderPhone})</td>
+            <td>\${t.originLocation}</td><td>\${t.receiverFirstName} \${t.receiverLastName} (\${t.receiverPhone})</td>
+            <td>\${t.amount}</td><td>\${t.fees}</td><td>\${t.recoveryAmount}</td>
+            <td>\${t.currency}</td><td>\${t.retired?"Retiré":"Non retiré"}</td><td>\${actions}</td>
+          \`;
+          tbody.appendChild(tr);
+
+          if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
+          if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
+          totals[t.destinationLocation][t.currency].amount += t.amount;
+          totals[t.destinationLocation][t.currency].fees += t.fees;
+          totals[t.destinationLocation][t.currency].recovery += t.recoveryAmount;
+        });
+
+        const divtot = document.getElementById("totaux");
+        divtot.innerHTML = "";
+        for(let dest in totals){
+          for(let curr in totals[dest]){
+            divtot.innerHTML += "<p>"+dest+" | "+curr+" : Montant="+totals[dest][curr].amount+", Frais="+totals[dest][curr].fees+", Reçu="+totals[dest][curr].recovery+"</p>";
+          }
+        }
+      }
+
+      function openModal(mode,id=null){
+        document.getElementById("modal").style.display="block";
+        const form = document.getElementById("transferForm");
+        form.reset();
+        form.id.value = '';
+        document.getElementById("modalTitle").innerText = mode==='create'?'Nouveau transfert':'Modifier transfert';
+        if(mode==='edit' && id){
+          fetch('/transferts/data/'+id).then(res=>res.json()).then(t=>{
+            for(let key in t) if(form[key]) form[key].value=t[key];
+          });
+        }
+      }
+      function closeModal(){ document.getElementById("modal").style.display="none"; }
+
+      document.getElementById("transferForm").addEventListener("submit", async e=>{
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const obj = {};
+        formData.forEach((v,k)=> obj[k]=v);
+        obj.amount=parseFloat(obj.amount); obj.fees=parseFloat(obj.fees);
+        obj.recoveryAmount = obj.amount - obj.fees;
+
+        const method = obj.id?'PUT':'POST';
+        const url = obj.id?'/transferts/edit/'+obj.id:'/transferts/create';
+        await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+        closeModal(); loadData();
+      });
+
+      function removeTransfer(id){ fetch('/transferts/delete/'+id,{method:'DELETE'}).then(loadData); }
+      function retirer(id){ if(role!=='a') return alert("Interdit"); const mode=prompt("Mode de retrait"); if(mode) fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})}).then(loadData); }
+      function imprimer(id){ window.open('/transferts/print/'+id,'_blank'); }
+      function exportExcel(){ window.location='/transferts/excel'; }
+      function exportWord(){ window.location='/transferts/word'; }
+
+      window.onclick = function(event){ if(event.target==document.getElementById("modal")) closeModal(); }
+      window.onload = loadData;
+    </script>
+  </body>
+  </html>
+  `);
 });
 
-/* ===================== PAGE PRINCIPALE ===================== */
+// API
+app.get("/transferts/data", async (req,res)=>{
+  const { search,status,currency,destination } = req.query;
+  const query = {};
+  if(search) query.code={$regex:search,$options:"i"};
+  if(status==='retire') query.retired=true;
+  if(status==='non') query.retired=false;
+  if(currency) query.currency=currency;
+  if(destination) query.destinationLocation=destination;
+  const data = await transfers.find(query).toArray();
+  res.json(data);
+});
 
-app.get("/", (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body{font-family:Arial;background:#f4f6f9;padding:10px}
-table{width:100%;border-collapse:collapse;background:#fff}
-th,td{border:1px solid #ccc;padding:6px;font-size:13px}
-th{background:#007bff;color:#fff}
-.retired{background:#fff3b0}
-button{border:none;padding:4px 6px;border-radius:4px;color:#fff;margin:1px}
-.edit{background:#28a745}
-.del{background:#dc3545}
-.ret{background:#ff9800}
-.print{background:#17a2b8}
-</style>
-</head>
-<body>
+app.get("/transferts/data/:id", async (req,res)=>{
+  const t = await transfers.findOne({_id:ObjectId(req.params.id)});
+  res.json(t);
+});
 
-<h3>📋 Transferts</h3>
+app.post("/transferts/create", async (req,res)=>{
+  const t = {...req.body, retired:false};
+  await transfers.insertOne(t);
+  res.sendStatus(200);
+});
 
-<input id="search" placeholder="Recherche code / nom">
-<select id="status">
-  <option value="">Tous</option>
-  <option value="retire">Retiré</option>
-  <option value="non">Non retiré</option>
-</select>
-<button onclick="load()">🔍</button>
-<button onclick="create()">➕ Nouveau</button>
+app.put("/transferts/edit/:id", async (req,res)=>{
+  const t = {...req.body};
+  await transfers.updateOne({_id:ObjectId(req.params.id)},{$set:t});
+  res.sendStatus(200);
+});
 
-<table>
-<thead>
-<tr>
-<th>Code</th>
-<th>Expéditeur</th>
-<th>Destinataire</th>
-<th>Montant</th>
-<th>Frais</th>
-<th>Reçu</th>
-<th>Devise</th>
-<th>Destination</th>
-<th>Status</th>
-<th>Actions</th>
-</tr>
-</thead>
-<tbody id="tbody"></tbody>
-</table>
+app.delete("/transferts/delete/:id", async (req,res)=>{
+  if(currentUser.role==='a') return res.sendStatus(403);
+  await transfers.deleteOne({_id:ObjectId(req.params.id)});
+  res.sendStatus(200);
+});
 
-<h4>📊 Totaux reçus (par destination & devise)</h4>
-<div id="totaux"></div>
+app.post("/transferts/retirer", async (req,res)=>{
+  if(currentUser.role!=='a') return res.sendStatus(403);
+  await transfers.updateOne({_id:ObjectId(req.body.id)},{$set:{retired:true,mode:req.body.mode}});
+  res.sendStatus(200);
+});
 
-<script>
-async function load(){
-  const r = await fetch("/api/transferts?search="+search.value+"&status="+status.value);
-  const data = await r.json();
-  tbody.innerHTML="";
-  let totals={};
+app.get("/transferts/print/:id", async (req,res)=>{
+  const t = await transfers.findOne({_id:ObjectId(req.params.id)});
+  if(!t) return res.send("Transfert introuvable");
+  res.send(`<pre>${JSON.stringify(t,null,2)}</pre>`);
+});
 
+// Export Excel
+app.get("/transferts/excel", async (req,res)=>{
+  const data = await transfers.find({}).toArray();
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Transferts");
+  const file = path.join(__dirname,"transferts.xlsx");
+  XLSX.writeFile(wb, file);
+  res.download(file, ()=>fs.unlinkSync(file));
+});
+
+// Export Word
+app.get("/transferts/word", async (req,res)=>{
+  const data = await transfers.find({}).toArray();
+  const doc = new Document();
   data.forEach(t=>{
-    let tr=document.createElement("tr");
-    if(t.retired) tr.className="retired";
-
-    tr.innerHTML =
-      "<td>"+t.code+"</td>"+
-      "<td>"+t.sender+"</td>"+
-      "<td>"+t.receiver+"</td>"+
-      "<td>"+t.amount+"</td>"+
-      "<td>"+t.fees+"</td>"+
-      "<td>"+t.recovery+"</td>"+
-      "<td>"+t.currency+"</td>"+
-      "<td>"+t.destination+"</td>"+
-      "<td>"+(t.retired?"Retiré":"Non")+"</td>"+
-      "<td>"+
-        "<button class='edit' onclick='edit(\""+t._id+"\")'>✏️</button>"+
-        "<button class='del' onclick='del(\""+t._id+"\")'>❌</button>"+
-        "<button class='ret' onclick='ret(\""+t._id+"\")'>💰</button>"+
-        "<button class='print' onclick='printT(\""+t._id+"\")'>🖨</button>"+
-      "</td>";
-
-    tbody.appendChild(tr);
-
-    if(!totals[t.destination]) totals[t.destination]={};
-    if(!totals[t.destination][t.currency]) totals[t.destination][t.currency]=0;
-    totals[t.destination][t.currency]+=t.recovery;
+    doc.addSection({children:[new Paragraph({children:[new TextRun(\`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Destinataire: ${t.receiverFirstName} ${t.receiverLastName} | Montant: ${t.amount} ${t.currency} | Status: ${t.retired?'Retiré':'Non retiré'}\`)])}]});
   });
-
-  totaux.innerHTML="";
-  for(let d in totals){
-    for(let c in totals[d]){
-      totaux.innerHTML += "<p>"+d+" / "+c+" : "+totals[d][c]+"</p>";
-    }
-  }
-}
-
-function create(){
-  const a = Number(prompt("Montant"));
-  const f = Number(prompt("Frais"));
-  fetch("/api/transferts",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({amount:a,fees:f})
-  }).then(load);
-}
-
-function edit(id){
-  alert("Fonction modifier à implémenter pour : "+id);
-}
-
-function del(id){
-  fetch("/api/transferts/"+id,{method:"DELETE"}).then(load);
-}
-
-function ret(id){
-  const m = prompt("Mode de retrait");
-  fetch("/api/transferts/retirer",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({id:id,mode:m})
-  }).then(load);
-}
-
-function printT(id){
-  window.open("/print/"+id);
-}
-
-load();
-</script>
-
-</body>
-</html>`);
+  const buffer = await Packer.toBuffer(doc);
+  const file = path.join(__dirname,"transferts.docx");
+  fs.writeFileSync(file, buffer);
+  res.download(file, ()=>fs.unlinkSync(file));
 });
 
-/* ===================== API AJAX ===================== */
-
-app.get("/api/transferts", async (req, res) => {
-  const q = {};
-  if (req.query.search) {
-    q.$or = [
-      { code: new RegExp(req.query.search, "i") },
-      { sender: new RegExp(req.query.search, "i") },
-      { receiver: new RegExp(req.query.search, "i") }
-    ];
-  }
-  if (req.query.status === "retire") q.retired = true;
-  if (req.query.status === "non") q.retired = false;
-
-  res.json(await Transfert.find(q).sort({createdAt:-1}));
-});
-
-app.post("/api/transferts", allow("create"), async (req, res) => {
-  const rec = Number(req.body.amount) - Number(req.body.fees);
-  await Transfert.create({
-    code: "TR" + Date.now(),
-    sender: "Client",
-    receiver: "Destinataire",
-    amount: req.body.amount,
-    fees: req.body.fees,
-    recovery: rec,
-    currency: "XOF",
-    destination: "Local"
-  });
-  res.sendStatus(200);
-});
-
-app.delete("/api/transferts/:id", allow("delete"), async (req, res) => {
-  await Transfert.findByIdAndDelete(req.params.id);
-  res.sendStatus(200);
-});
-
-app.post("/api/transferts/retirer", allow("withdraw"), async (req, res) => {
-  const t = await Transfert.findById(req.body.id);
-  t.retired = true;
-  await t.save();
-  await Withdrawal.create({
-    transfertId: t._id,
-    user: req.session.role,
-    mode: req.body.mode
-  });
-  res.sendStatus(200);
-});
-
-/* ===================== IMPRESSION PDF ===================== */
-
-app.get("/print/:id", async (req, res) => {
-  const t = await Transfert.findById(req.params.id);
-  const pdf = new PDFDocument();
-  res.setHeader("Content-Type", "application/pdf");
-  pdf.pipe(res);
-  pdf.text("Code: " + t.code);
-  pdf.text("Expéditeur: " + t.sender);
-  pdf.text("Destinataire: " + t.receiver);
-  pdf.text("Montant: " + t.amount + " " + t.currency);
-  pdf.text("Frais: " + t.fees);
-  pdf.text("Reçu: " + t.recovery);
-  pdf.text("Statut: " + (t.retired ? "Retiré" : "Non"));
-  pdf.end();
-});
-
-/* ===================== START ===================== */
-
-app.listen(PORT, () => {
-  console.log("✅ Serveur OK : http://localhost:" + PORT);
-});
+app.listen(port, ()=>console.log(`Server running on port ${port}`));
