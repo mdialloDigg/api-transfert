@@ -4,291 +4,354 @@ const bodyParser = require("body-parser");
 const { MongoClient, ObjectId } = require("mongodb");
 const XLSX = require("xlsx");
 const { Document, Packer, Paragraph, TextRun } = require("docx");
-const fs = require("fs");
-const path = require("path");
+
 const app = express();
-const port = process.env.PORT || 3000;
-
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true }));
 
-// MongoDB setup
+// MongoDB
 const uri = "mongodb://localhost:27017";
 const client = new MongoClient(uri);
-let db, transfers;
-
+let db, transferts;
 async function connectDB() {
   await client.connect();
   db = client.db("transfertDB");
-  transfers = db.collection("transferts");
+  transferts = db.collection("transferts");
 }
-connectDB().catch(console.error);
+connectDB();
 
-// Session simple
-let currentUser = null;
+// Middleware utilisateur (simulé)
+const currentUser = { username: "admin", role: "admin" }; // admin2, retirer
 
-// Login simple
-app.get("/login/:user", (req,res)=>{
-  const user=req.params.user;
-  if(user==="a" || user==="admin2"){
-    currentUser={username:user, role:user};
-    res.redirect("/transferts");
-  } else res.send("Utilisateur inconnu");
-});
+// ROUTE PRINCIPALE
+app.get("/transferts", async (req, res) => {
+  const destinations = await transferts.distinct("destinationLocation");
+  const currencies = await transferts.distinct("currency");
 
-app.get("/logout",(req,res)=>{
-  currentUser=null;
-  res.redirect("/login/a");
-});
-
-// Page principale
-app.get("/transferts", async (req,res)=>{
-  if(!currentUser) return res.redirect("/login/a");
-  const destinations = await transfers.distinct("destinationLocation");
-  const currencies = await transfers.distinct("currency");
-
-  let optionsLocation = destinations.map(d=>`<option value="${d}">${d}</option>`).join("");
-  let optionsCurrency = currencies.map(c=>`<option value="${c}">${c}</option>`).join("");
+  const optionsDestination = destinations.map(d=>`<option value="${d}">${d}</option>`).join("");
+  const optionsCurrency = currencies.map(c=>`<option value="${c}">${c}</option>`).join("");
 
   res.send(`
-  <html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body{font-family:Arial;margin:0;padding:10px;background:#f4f6f9;}
-      table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
-      th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
-      th{background:#007bff;color:white;}
-      .retired{background:#fff3b0;}
-      button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
-      .modify{background:#28a745;}
-      .delete{background:#dc3545;}
-      .retirer{background:#ff9900;}
-      .imprimer{background:#17a2b8;}
-      .excel{background:#17a2b8;}
-      .word{background:#6f42c1;}
-      @media(max-width:600px){table, th, td{font-size:12px;} button{padding:3px 5px;}}
-      .modal{display:none;position:fixed;z-index:1;padding-top:100px;left:0;top:0;width:100%;height:100%;overflow:auto;background:rgba(0,0,0,0.4);}
-      .modal-content{background:#fefefe;margin:auto;padding:20px;border:1px solid #888;width:90%;max-width:500px;}
-      .close{color:#aaa;float:right;font-size:28px;font-weight:bold;cursor:pointer;}
-    </style>
-  </head>
-  <body>
-    <h2>📋 Liste des transferts</h2>
-    <div>
-      <input id="search" placeholder="Recherche...">
-      <select id="status">
-        <option value="all">Tous</option>
-        <option value="retire">Retirés</option>
-        <option value="non">Non retirés</option>
-      </select>
-      <select id="currency"><option value="">Toutes devises</option>${optionsCurrency}</select>
-      <select id="destination"><option value="">Toutes destinations</option>${optionsLocation}</select>
-      <button onclick="loadData()">🔍 Filtrer</button>
-      <a href="/logout">🚪 Déconnexion</a>
-      <button onclick="openModal('create')">➕ Nouveau transfert</button>
-      <button onclick="exportExcel()" class="excel">📊 Excel</button>
-      <button onclick="exportWord()" class="word">📝 Word</button>
-      <table>
-        <thead>
-          <tr>
-            <th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th>
-            <th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-      <h3>📊 Totaux par destination et devise</h3>
-      <div id="totaux"></div>
-    </div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;margin:0;padding:10px;background:#f4f6f9;}
+table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+th{background:#007bff;color:white;}
+.retired{background:#fff3b0;}
+button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+.modify{background:#28a745;}
+.delete{background:#dc3545;}
+.retirer{background:#ff9900;}
+.imprimer{background:#17a2b8;}
+@media(max-width:600px){table, th, td{font-size:12px;} button{padding:3px 5px;}}
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);}
+.modal-content{background:white;padding:20px;margin:50px auto;width:90%;max-width:500px;border-radius:8px;}
+</style>
+</head>
+<body>
+<h2>📋 Liste des transferts</h2>
+<div>
+<input id="search" placeholder="Recherche...">
+<select id="status">
+  <option value="all">Tous</option>
+  <option value="retire">Retirés</option>
+  <option value="non">Non retirés</option>
+</select>
+<select id="currency"><option value="">Toutes devises</option>${optionsCurrency}</select>
+<select id="destination"><option value="">Toutes destinations</option>${optionsDestination}</select>
+<button onclick="loadData()">🔍 Filtrer</button>
+<button onclick="openModal()">➕ Nouveau</button>
+<button onclick="exportExcel()">📊 Excel</button>
+<button onclick="exportWord()">📝 Word</button>
+<table>
+<thead>
+<tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+<h3>📊 Totaux par destination et devise</h3>
+<div id="totaux"></div>
+</div>
 
-    <!-- Modal -->
-    <div id="modal" class="modal">
-      <div class="modal-content">
-        <span class="close" onclick="closeModal()">&times;</span>
-        <h3 id="modalTitle">Nouveau transfert</h3>
-        <form id="transferForm">
-          <input name="code" placeholder="Code" required><br><br>
-          <input name="userType" placeholder="Type" required><br><br>
-          <input name="senderFirstName" placeholder="Prénom expéditeur" required><br><br>
-          <input name="senderLastName" placeholder="Nom expéditeur" required><br><br>
-          <input name="senderPhone" placeholder="Téléphone expéditeur" required><br><br>
-          <input name="originLocation" placeholder="Origine" required><br><br>
-          <input name="receiverFirstName" placeholder="Prénom destinataire" required><br><br>
-          <input name="receiverLastName" placeholder="Nom destinataire" required><br><br>
-          <input name="receiverPhone" placeholder="Téléphone destinataire" required><br><br>
-          <input name="amount" placeholder="Montant" type="number" step="0.01" required><br><br>
-          <input name="fees" placeholder="Frais" type="number" step="0.01" required><br><br>
-          <input name="currency" placeholder="Devise" required><br><br>
-          <input name="destinationLocation" placeholder="Destination" required><br><br>
-          <input type="hidden" name="id">
-          <button type="submit">Enregistrer</button>
-        </form>
-      </div>
-    </div>
+<div id="modal" class="modal">
+<div class="modal-content">
+<h3 id="modalTitle"></h3>
+<input type="hidden" id="editId">
+<label>Code:</label><input id="newCode"><br>
+<label>Type:</label><input id="newType"><br>
+<label>Expéditeur:</label><input id="newSender"><br>
+<label>Origine:</label><input id="newOrigin"><br>
+<label>Destinataire:</label><input id="newReceiver"><br>
+<label>Montant:</label><input id="newAmount" type="number"><br>
+<label>Frais:</label><input id="newFees" type="number"><br>
+<label>Reçu:</label><input id="newRecovery" type="number" readonly><br>
+<label>Devise:</label><input id="newCurrency"><br>
+<label>Destination:</label><input id="newDestination"><br>
+<button onclick="saveTransfer()">💾 Enregistrer</button>
+<button onclick="closeModal()">❌ Fermer</button>
+</div>
+</div>
 
-    <script>
-      const role = "${currentUser.role}";
+<script>
+const currentUserRole = "${currentUser.role}";
 
-      async function loadData() {
-        const search = encodeURIComponent(document.getElementById("search").value);
-        const status = encodeURIComponent(document.getElementById("status").value);
-        const currency = encodeURIComponent(document.getElementById("currency").value);
-        const destination = encodeURIComponent(document.getElementById("destination").value);
+async function loadData(){
+  const search=document.getElementById("search").value;
+  const status=document.getElementById("status").value;
+  const currency=document.getElementById("currency").value;
+  const destination=document.getElementById("destination").value;
+  const resp=await fetch("/transferts/data?search="+encodeURIComponent(search)+
+                         "&status="+encodeURIComponent(status)+
+                         "&currency="+encodeURIComponent(currency)+
+                         "&destination="+encodeURIComponent(destination));
+  const data=await resp.json();
+  const tbody=document.getElementById("tbody");
+  tbody.innerHTML="";
+  const totals={};
+  data.forEach(t=>{
+    const tr=document.createElement("tr");
+    if(t.retired) tr.className="retired";
+    let actions="";
+    if(currentUserRole==="admin2" || currentUserRole==="admin"){
+      actions+=\`<button class='modify' onclick='openEdit("\${t._id}")'>✏️</button>\`;
+      actions+=\`<button class='delete' onclick='remove("\${t._id}")'>❌</button>\`;
+    }
+    if(currentUserRole==="retirer" || currentUserRole==="admin"){
+      actions+=\`<button class='retirer' onclick='retirer("\${t._id}")'>💰</button>\`;
+    }
+    actions+=\`<button class='imprimer' onclick='imprimer("\${t._id}")'>🖨</button>\`;
+    tr.innerHTML="<td>"+t.code+"</td>"+
+                 "<td>"+t.userType+"</td>"+
+                 "<td>"+t.senderFirstName+" "+t.senderLastName+" ("+t.senderPhone+")</td>"+
+                 "<td>"+t.originLocation+"</td>"+
+                 "<td>"+t.receiverFirstName+" "+t.receiverLastName+" ("+t.receiverPhone+")</td>"+
+                 "<td>"+t.amount+"</td>"+
+                 "<td>"+t.fees+"</td>"+
+                 "<td>"+t.recoveryAmount+"</td>"+
+                 "<td>"+t.currency+"</td>"+
+                 "<td>"+(t.retired?"Retiré":"Non retiré")+"</td>"+
+                 "<td>"+actions+"</td>";
+    tbody.appendChild(tr);
 
-        const res = await fetch(\`/transferts/data?search=\${search}&status=\${status}&currency=\${currency}&destination=\${destination}\`);
-        const data = await res.json();
+    if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
+    if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
+    totals[t.destinationLocation][t.currency].amount+=t.amount;
+    totals[t.destinationLocation][t.currency].fees+=t.fees;
+    totals[t.destinationLocation][t.currency].recovery+=t.recoveryAmount;
+  });
 
-        const tbody = document.getElementById("tbody");
-        tbody.innerHTML = "";
-        const totals = {};
+  const divtot=document.getElementById("totaux");
+  divtot.innerHTML="";
+  for(const dest in totals){
+    for(const curr in totals[dest]){
+      divtot.innerHTML+="<p>"+dest+" | "+curr+" : Montant="+totals[dest][curr].amount+
+                        ", Frais="+totals[dest][curr].fees+
+                        ", Reçu="+totals[dest][curr].recovery+"</p>";
+    }
+  }
+}
 
-        data.forEach(t => {
-          const tr = document.createElement("tr");
-          if(t.retired) tr.className="retired";
+// Modal et calcul automatique
+function openModal(){ 
+  document.getElementById("modalTitle").innerText="Nouveau Transfert";
+  document.getElementById("editId").value="";
+  document.querySelectorAll("#modal input").forEach(i=>i.value="");
+  document.getElementById("modal").style.display="block"; 
+}
+function closeModal(){ document.getElementById("modal").style.display="none"; }
+document.getElementById("newAmount").addEventListener("input", updateRecovery);
+document.getElementById("newFees").addEventListener("input", updateRecovery);
+function updateRecovery(){
+  const amount=parseFloat(document.getElementById("newAmount").value)||0;
+  const fees=parseFloat(document.getElementById("newFees").value)||0;
+  document.getElementById("newRecovery").value=(amount-fees).toFixed(2);
+}
 
-          let actions = '';
-          if(role!=='a') actions += '<button class="modify" onclick="openModal(\'edit\',\\''+t._id+'\\')">✏️</button>';
-          if(role!=='a') actions += '<button class="delete" onclick="removeTransfer(\\''+t._id+'\\')">❌</button>';
-          if(role==='a') actions += '<button class="retirer" onclick="retirer(\\''+t._id+'\\')">💰</button>';
-          actions += '<button class="imprimer" onclick="imprimer(\\''+t._id+'\\')">🖨</button>';
+// Edit
+async function openEdit(id){
+  const resp=await fetch("/transferts/data?id="+id);
+  const t=await resp.json();
+  if(!t[0]) return alert("Introuvable");
+  const tr=t[0];
+  document.getElementById("modalTitle").innerText="Modifier Transfert";
+  document.getElementById("editId").value=tr._id;
+  document.getElementById("newCode").value=tr.code;
+  document.getElementById("newType").value=tr.userType;
+  document.getElementById("newSender").value=tr.senderFirstName;
+  document.getElementById("newOrigin").value=tr.originLocation;
+  document.getElementById("newReceiver").value=tr.receiverFirstName;
+  document.getElementById("newAmount").value=tr.amount;
+  document.getElementById("newFees").value=tr.fees;
+  document.getElementById("newRecovery").value=tr.recoveryAmount;
+  document.getElementById("newCurrency").value=tr.currency;
+  document.getElementById("newDestination").value=tr.destinationLocation;
+  document.getElementById("modal").style.display="block";
+}
 
-          tr.innerHTML = \`
-            <td>\${t.code}</td><td>\${t.userType}</td><td>\${t.senderFirstName} \${t.senderLastName} (\${t.senderPhone})</td>
-            <td>\${t.originLocation}</td><td>\${t.receiverFirstName} \${t.receiverLastName} (\${t.receiverPhone})</td>
-            <td>\${t.amount}</td><td>\${t.fees}</td><td>\${t.recoveryAmount}</td>
-            <td>\${t.currency}</td><td>\${t.retired?"Retiré":"Non retiré"}</td><td>\${actions}</td>
-          \`;
-          tbody.appendChild(tr);
+// Save
+async function saveTransfer(){
+  const id=document.getElementById("editId").value;
+  const data={
+    code: document.getElementById("newCode").value,
+    userType: document.getElementById("newType").value,
+    senderFirstName: document.getElementById("newSender").value,
+    originLocation: document.getElementById("newOrigin").value,
+    receiverFirstName: document.getElementById("newReceiver").value,
+    amount: parseFloat(document.getElementById("newAmount").value),
+    fees: parseFloat(document.getElementById("newFees").value),
+    recoveryAmount: parseFloat(document.getElementById("newRecovery").value),
+    currency: document.getElementById("newCurrency").value,
+    destinationLocation: document.getElementById("newDestination").value
+  };
+  if(id){
+    await fetch("/transferts/edit/"+id,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+  } else {
+    await fetch("/transferts/new",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+  }
+  closeModal();
+  loadData();
+}
 
-          if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-          if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
-          totals[t.destinationLocation][t.currency].amount += t.amount;
-          totals[t.destinationLocation][t.currency].fees += t.fees;
-          totals[t.destinationLocation][t.currency].recovery += t.recoveryAmount;
-        });
+// Delete
+function remove(id){ fetch("/transferts/delete/"+id,{method:"DELETE"}).then(loadData); }
 
-        const divtot = document.getElementById("totaux");
-        divtot.innerHTML = "";
-        for(let dest in totals){
-          for(let curr in totals[dest]){
-            divtot.innerHTML += "<p>"+dest+" | "+curr+" : Montant="+totals[dest][curr].amount+", Frais="+totals[dest][curr].fees+", Reçu="+totals[dest][curr].recovery+"</p>";
-          }
-        }
-      }
+// Retirer
+function retirer(id){ 
+  const mode=prompt("Mode de retrait: Espèces, Orange Money, Wave");
+  if(mode) fetch("/transferts/retirer",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,mode})}).then(loadData); 
+}
 
-      function openModal(mode,id=null){
-        document.getElementById("modal").style.display="block";
-        const form = document.getElementById("transferForm");
-        form.reset();
-        form.id.value = '';
-        document.getElementById("modalTitle").innerText = mode==='create'?'Nouveau transfert':'Modifier transfert';
-        if(mode==='edit' && id){
-          fetch('/transferts/data/'+id).then(res=>res.json()).then(t=>{
-            for(let key in t) if(form[key]) form[key].value=t[key];
-          });
-        }
-      }
-      function closeModal(){ document.getElementById("modal").style.display="none"; }
+// Imprimer
+function imprimer(id){ window.open("/transferts/print/"+id,"_blank"); }
 
-      document.getElementById("transferForm").addEventListener("submit", async e=>{
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const obj = {};
-        formData.forEach((v,k)=> obj[k]=v);
-        obj.amount=parseFloat(obj.amount); obj.fees=parseFloat(obj.fees);
-        obj.recoveryAmount = obj.amount - obj.fees;
+// Export Excel
+function exportExcel(){
+  const search=document.getElementById("search").value;
+  const status=document.getElementById("status").value;
+  const currency=document.getElementById("currency").value;
+  const destination=document.getElementById("destination").value;
+  window.location.href="/transferts/excel?search="+encodeURIComponent(search)+
+                         "&status="+encodeURIComponent(status)+
+                         "&currency="+encodeURIComponent(currency)+
+                         "&destination="+encodeURIComponent(destination);
+}
 
-        const method = obj.id?'PUT':'POST';
-        const url = obj.id?'/transferts/edit/'+obj.id:'/transferts/create';
-        await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
-        closeModal(); loadData();
-      });
+// Export Word
+function exportWord(){
+  const search=document.getElementById("search").value;
+  const status=document.getElementById("status").value;
+  const currency=document.getElementById("currency").value;
+  const destination=document.getElementById("destination").value;
+  window.location.href="/transferts/word?search="+encodeURIComponent(search)+
+                         "&status="+encodeURIComponent(status)+
+                         "&currency="+encodeURIComponent(currency)+
+                         "&destination="+encodeURIComponent(destination);
+}
 
-      function removeTransfer(id){ fetch('/transferts/delete/'+id,{method:'DELETE'}).then(loadData); }
-      function retirer(id){ if(role!=='a') return alert("Interdit"); const mode=prompt("Mode de retrait"); if(mode) fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})}).then(loadData); }
-      function imprimer(id){ window.open('/transferts/print/'+id,'_blank'); }
-      function exportExcel(){ window.location='/transferts/excel'; }
-      function exportWord(){ window.location='/transferts/word'; }
-
-      window.onclick = function(event){ if(event.target==document.getElementById("modal")) closeModal(); }
-      window.onload = loadData;
-    </script>
-  </body>
-  </html>
+window.onload=loadData;
+</script>
+</body>
+</html>
   `);
 });
 
-// API
+// API DATA
 app.get("/transferts/data", async (req,res)=>{
-  const { search,status,currency,destination } = req.query;
-  const query = {};
-  if(search) query.code={$regex:search,$options:"i"};
-  if(status==='retire') query.retired=true;
-  if(status==='non') query.retired=false;
-  if(currency) query.currency=currency;
-  if(destination) query.destinationLocation=destination;
-  const data = await transfers.find(query).toArray();
+  const q={};
+  if(req.query.id) q._id=ObjectId(req.query.id);
+  if(req.query.search) q.code={$regex:req.query.search,$options:"i"};
+  if(req.query.status==="retire") q.retired=true;
+  if(req.query.status==="non") q.retired=false;
+  if(req.query.currency) q.currency=req.query.currency;
+  if(req.query.destination) q.destinationLocation=req.query.destination;
+  const data=await transferts.find(q).toArray();
   res.json(data);
 });
 
-app.get("/transferts/data/:id", async (req,res)=>{
-  const t = await transfers.findOne({_id:ObjectId(req.params.id)});
-  res.json(t);
-});
-
-app.post("/transferts/create", async (req,res)=>{
-  const t = {...req.body, retired:false};
-  await transfers.insertOne(t);
+// CREATE
+app.post("/transferts/new", async (req,res)=>{
+  const t=req.body;
+  t.retired=false;
+  await transferts.insertOne(t);
   res.sendStatus(200);
 });
 
+// EDIT
 app.put("/transferts/edit/:id", async (req,res)=>{
-  const t = {...req.body};
-  await transfers.updateOne({_id:ObjectId(req.params.id)},{$set:t});
+  await transferts.updateOne({_id:ObjectId(req.params.id)},{$set:req.body});
   res.sendStatus(200);
 });
 
+// DELETE
 app.delete("/transferts/delete/:id", async (req,res)=>{
-  if(currentUser.role==='a') return res.sendStatus(403);
-  await transfers.deleteOne({_id:ObjectId(req.params.id)});
+  await transferts.deleteOne({_id:ObjectId(req.params.id)});
   res.sendStatus(200);
 });
 
+// RETIRER
 app.post("/transferts/retirer", async (req,res)=>{
-  if(currentUser.role!=='a') return res.sendStatus(403);
-  await transfers.updateOne({_id:ObjectId(req.body.id)},{$set:{retired:true,mode:req.body.mode}});
+  await transferts.updateOne({_id:ObjectId(req.body.id)},{$set:{retired:true,mode:req.body.mode}});
   res.sendStatus(200);
 });
 
+// PRINT
 app.get("/transferts/print/:id", async (req,res)=>{
-  const t = await transfers.findOne({_id:ObjectId(req.params.id)});
-  if(!t) return res.send("Transfert introuvable");
-  res.send(`<pre>${JSON.stringify(t,null,2)}</pre>`);
+  const t=await transferts.findOne({_id:ObjectId(req.params.id)});
+  if(!t) return res.send("Introuvable");
+  res.send(`<h1>Transfert ${t.code}</h1>
+            <p>Expéditeur: ${t.senderFirstName} ${t.senderLastName}</p>
+            <p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName}</p>
+            <p>Montant: ${t.amount} ${t.currency}</p>
+            <p>Status: ${t.retired?"Retiré":"Non retiré"}</p>
+            <button onclick="window.print()">🖨 Imprimer</button>`);
 });
 
-// Export Excel
+// EXPORT EXCEL
 app.get("/transferts/excel", async (req,res)=>{
-  const data = await transfers.find({}).toArray();
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Transferts");
-  const file = path.join(__dirname,"transferts.xlsx");
-  XLSX.writeFile(wb, file);
-  res.download(file, ()=>fs.unlinkSync(file));
+  const q={};
+  if(req.query.search) q.code={$regex:req.query.search,$options:"i"};
+  if(req.query.status==="retire") q.retired=true;
+  if(req.query.status==="non") q.retired=false;
+  if(req.query.currency) q.currency=req.query.currency;
+  if(req.query.destination) q.destinationLocation=req.query.destination;
+  const data=await transferts.find(q).toArray();
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Transferts");
+  const buf=XLSX.write(wb,{type:"buffer",bookType:"xlsx"});
+  res.setHeader("Content-Disposition","attachment; filename=transferts.xlsx");
+  res.send(buf);
 });
 
-// Export Word
+// EXPORT WORD
 app.get("/transferts/word", async (req,res)=>{
-  const data = await transfers.find({}).toArray();
+  const q={};
+  if(req.query.search) q.code={$regex:req.query.search,$options:"i"};
+  if(req.query.status==="retire") q.retired=true;
+  if(req.query.status==="non") q.retired=false;
+  if(req.query.currency) q.currency=req.query.currency;
+  if(req.query.destination) q.destinationLocation=req.query.destination;
+  const data=await transferts.find(q).toArray();
   const doc = new Document();
   data.forEach(t=>{
-    doc.addSection({children:[new Paragraph({children:[new TextRun(\`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Destinataire: ${t.receiverFirstName} ${t.receiverLastName} | Montant: ${t.amount} ${t.currency} | Status: ${t.retired?'Retiré':'Non retiré'}\`)])}]});
+    doc.addSection({
+      children:[
+        new Paragraph({
+          children:[
+            new TextRun(`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Destinataire: ${t.receiverFirstName} ${t.receiverLastName} | Montant: ${t.amount} ${t.currency} | Status: ${t.retired?'Retiré':'Non retiré'}`)
+          ]
+        })
+      ]
+    });
   });
-  const buffer = await Packer.toBuffer(doc);
-  const file = path.join(__dirname,"transferts.docx");
-  fs.writeFileSync(file, buffer);
-  res.download(file, ()=>fs.unlinkSync(file));
+  const b64 = await Packer.toBase64String(doc);
+  res.setHeader("Content-Disposition","attachment; filename=transferts.docx");
+  res.send(Buffer.from(b64,"base64"));
 });
 
-app.listen(port, ()=>console.log(`Server running on port ${port}`));
+// SERVER
+app.listen(3000,()=>console.log("Server running on http://localhost:3000/transferts"));
