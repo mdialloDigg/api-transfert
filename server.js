@@ -1,11 +1,12 @@
 /******************************************************************
- * APP TRANSFERT – DASHBOARD FINAL AVEC AJAX, TOTAUX, EXPORTS
+ * APP TRANSFERT – DASHBOARD COMPLET AVEC AJAX, EXPORT ET MOBILE
  ******************************************************************/
 
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
 
@@ -14,11 +15,7 @@ const app = express();
 // ================= CONFIG =================
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({
-  secret: 'transfert-secret-final',
-  resave: false,
-  saveUninitialized: true
-}));
+app.use(session({ secret: 'transfert-secret-final', resave: false, saveUninitialized: true }));
 
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
@@ -65,7 +62,6 @@ async function generateUniqueCode() {
 
 // ================= AUTH / PERMISSIONS =================
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
-
 function setPermissions(username){
   let permissions = { lecture:true, ecriture:false, retrait:false, modification:true, suppression:true, imprimer:true };
   if(username === 'a'){ permissions = { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true }; }
@@ -102,168 +98,139 @@ app.post('/login', async (req,res)=>{
       user = await new Auth({ username, password: hashed }).save();
     }
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
+
     const permissions = setPermissions(username);
     req.session.user = { username:user.username, role:user.role, permissions };
-    res.redirect('/transferts');
+    res.redirect('/transferts/list');
   }catch(err){ console.error(err); res.status(500).send('Erreur serveur: '+err.message);}
 });
 
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= DASHBOARD =================
-app.get('/transferts', requireLogin, async(req,res)=>{
-  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-  body{font-family:Arial;margin:0;padding:10px;background:#f4f6f9;}
-  table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
-  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
-  th{background:#007bff;color:white;}
-  .retired{background:#fff3b0;}
-  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
-  .modify{background:#28a745;}
-  .delete{background:#dc3545;}
-  .retirer{background:#ff9900;}
-  input, select{margin:4px;padding:6px;border-radius:4px;}
-  #modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);}
-  #modalContent{background:white;margin:50px auto;padding:20px;max-width:500px;border-radius:10px;}
-  </style></head><body>
+// ================= SERVE STATIC =================
+app.use('/static', express.static('public'));
 
-  <h2>📋 Transferts</h2>
-
-  <input type="text" id="searchInput" placeholder="Recherche...">
-  <select id="statusSelect"><option value="all">Tous</option><option value="retire">Retirés</option><option value="non">Non retirés</option></select>
-  <select id="currencySelect"><option value="">Toutes devises</option>${currencies.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
-  <select id="destinationSelect"><option value="">Toutes destinations</option>${locations.map(l=>`<option value="${l}">${l}</option>`).join('')}</select>
-  <button onclick="fetchTransferts()">Filtrer</button>
-  ${req.session.user.permissions.ecriture?'<button id="newTransfert">➕ Nouveau</button>':''}
-  <a href="/transferts/excel">📊 Export Excel</a>
-  <a href="/transferts/word">📄 Export Word</a>
-  <a href="/logout">🚪 Déconnexion</a>
-
-  <div id="totaux"></div>
-  <table><thead>
-  <tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>
-  </thead><tbody id="transfertsBody"></tbody></table>
-
-  <!-- Modal -->
-  <div id="modal">
-    <div id="modalContent">
-      <h3 id="modalTitle">Transfert</h3>
-      <form id="transfertForm">
-        <input type="hidden" name="id">
-        Type: <select name="userType"><option>Client</option><option>Distributeur</option><option>Administrateur</option><option>Agence de transfert</option></select><br>
-        Expéditeur: <input name="senderFirstName" placeholder="Prénom"> <input name="senderLastName" placeholder="Nom"> <input name="senderPhone" placeholder="Téléphone"><br>
-        Origine: <select name="originLocation">${locations.map(l=>`<option>${l}</option>`).join('')}</select><br>
-        Destinataire: <input name="receiverFirstName" placeholder="Prénom"> <input name="receiverLastName" placeholder="Nom"> <input name="receiverPhone" placeholder="Téléphone"><br>
-        Destination: <select name="destinationLocation">${locations.map(l=>`<option>${l}</option>`).join('')}</select><br>
-        Montant: <input type="number" name="amount" value="0"> Frais: <input type="number" name="fees" value="0"> Montant reçu: <input type="text" name="recoveryAmount" readonly><br>
-        Devise: <select name="currency">${currencies.map(c=>`<option>${c}</option>`).join('')}</select><br>
-        <button>Enregistrer</button>
-        <button type="button" id="modalClose">Fermer</button>
-      </form>
-    </div>
-  </div>
-
-  <script>
-  // ================= SCRIPT AJAX COMPLET =================
-  ${/** Copie le script AJAX complet avec imprimer ligne fourni dans la réponse précédente */}
-  </script>
-
-  </body></html>`);
-});
-
-// ================= ROUTES AJAX / CRUD =================
+// ================= ROUTES AJAX =================
 app.get('/transferts/data', requireLogin, async(req,res)=>{
-  let {search='', status='all', currency='', destination=''} = req.query;
+  let { search='', status='all', currency='', destination='' } = req.query;
   let transferts = await Transfert.find().sort({createdAt:-1});
+
+  search = search.toLowerCase();
   transferts = transferts.filter(t=>{
-    return (t.code.toLowerCase().includes(search.toLowerCase()) ||
-            t.senderFirstName.toLowerCase().includes(search.toLowerCase()) ||
-            t.senderLastName.toLowerCase().includes(search.toLowerCase()) ||
-            t.senderPhone.toLowerCase().includes(search.toLowerCase()) ||
-            t.receiverFirstName.toLowerCase().includes(search.toLowerCase()) ||
-            t.receiverLastName.toLowerCase().includes(search.toLowerCase()) ||
-            t.receiverPhone.toLowerCase().includes(search.toLowerCase()));
+    return t.code.toLowerCase().includes(search)
+      || t.senderFirstName.toLowerCase().includes(search)
+      || t.senderLastName.toLowerCase().includes(search)
+      || t.senderPhone.toLowerCase().includes(search)
+      || t.receiverFirstName.toLowerCase().includes(search)
+      || t.receiverLastName.toLowerCase().includes(search)
+      || t.receiverPhone.toLowerCase().includes(search);
   });
+
   if(status==='retire') transferts = transferts.filter(t=>t.retired);
-  if(status==='non') transferts = transferts.filter(t=>!t.retired);
+  else if(status==='non') transferts = transferts.filter(t=>!t.retired);
   if(currency) transferts = transferts.filter(t=>t.currency===currency);
   if(destination) transferts = transferts.filter(t=>t.destinationLocation===destination);
+
   res.json(transferts);
 });
 
+// ================= CRUD TRANSFERT =================
 app.get('/transferts/:id', requireLogin, async(req,res)=>{
   const t = await Transfert.findById(req.params.id);
   res.json(t);
 });
 
 app.post('/transferts', requireLogin, async(req,res)=>{
-  let code = await generateUniqueCode();
-  let t = new Transfert({...req.body, code});
-  await t.save();
-  res.json({success:true});
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  const recoveryAmount = amount - fees;
+  const code = await generateUniqueCode();
+  await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory: [], code}).save();
+  res.sendStatus(200);
 });
 
 app.put('/transferts/:id', requireLogin, async(req,res)=>{
-  await Transfert.findByIdAndUpdate(req.params.id, req.body);
-  res.json({success:true});
-});
-
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  await Transfert.findByIdAndUpdate(req.body.id,{retired:true});
-  res.json({success:true});
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  const recoveryAmount = amount - fees;
+  await Transfert.findByIdAndUpdate(req.params.id,{...req.body, amount, fees, recoveryAmount});
+  res.sendStatus(200);
 });
 
 app.delete('/transferts/delete/:id', requireLogin, async(req,res)=>{
   await Transfert.findByIdAndDelete(req.params.id);
-  res.json({success:true});
+  res.sendStatus(200);
+});
+
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndUpdate(req.body.id,{
+    retired:true,
+    recoveryMode:req.body.mode,
+    $push:{ retraitHistory:{ date:new Date(), mode:req.body.mode } }
+  });
+  res.sendStatus(200);
+});
+
+// ================= PRINT =================
+app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+  body{font-family:Arial;text-align:center;padding:10px;}
+  .ticket{border:1px dashed #333;padding:10px;width:280px;margin:auto;}
+  h3{margin:5px 0;}p{margin:3px 0;font-size:14px;}
+  button{margin-top:5px;padding:5px 10px;}
+  </style></head><body>
+  <div class="ticket">
+  <h3>💰 Transfert</h3>
+  <p>Code: ${t.code}</p>
+  <p>Exp: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
+  <p>Dest: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
+  <p>Montant: ${t.amount} ${t.currency}</p>
+  <p>Frais: ${t.fees}</p>
+  <p>Reçu: ${t.recoveryAmount}</p>
+  <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+  </div>
+  <button onclick="window.print()">🖨 Imprimer</button>
+  </body></html>`);
 });
 
 // ================= EXPORT EXCEL =================
 app.get('/transferts/excel', requireLogin, async(req,res)=>{
-  var transferts = await Transfert.find();
-  var workbook = new ExcelJS.Workbook();
-  var sheet = workbook.addWorksheet('Transferts');
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Transferts');
   sheet.columns = [
-    {header:'Code', key:'code'},
-    {header:'Type', key:'userType'},
-    {header:'Expéditeur', key:'sender'},
-    {header:'Origine', key:'origin'},
-    {header:'Destinataire', key:'receiver'},
-    {header:'Montant', key:'amount'},
-    {header:'Frais', key:'fees'},
-    {header:'Reçu', key:'recovery'},
-    {header:'Devise', key:'currency'},
-    {header:'Status', key:'status'}
+    {header:'Code', key:'code'}, {header:'Type', key:'userType'},
+    {header:'Expéditeur', key:'sender'}, {header:'Origine', key:'origin'},
+    {header:'Destinataire', key:'receiver'}, {header:'Montant', key:'amount'},
+    {header:'Frais', key:'fees'}, {header:'Reçu', key:'recovery'}, {header:'Devise', key:'currency'}, {header:'Statut', key:'status'}
   ];
-  transferts.forEach(function(t){
+  transferts.forEach(t=>{
     sheet.addRow({
-      code: t.code,
-      userType: t.userType,
-      sender: t.senderFirstName+' '+t.senderLastName+' ('+t.senderPhone+')',
-      origin: t.originLocation,
-      receiver: t.receiverFirstName+' '+t.receiverLastName+' ('+t.receiverPhone+')',
-      amount: t.amount,
-      fees: t.fees,
-      recovery: t.recoveryAmount,
-      currency: t.currency,
-      status: t.retired?'Retiré':'Non retiré'
+      code:t.code, userType:t.userType,
+      sender:`${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})`, origin:t.originLocation,
+      receiver:`${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})`,
+      amount:t.amount, fees:t.fees, recovery:t.recoveryAmount, currency:t.currency, status:t.retired?'Retiré':'Non retiré'
     });
   });
   res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
-  await workbook.xlsx.write(res); res.end();
+  await workbook.xlsx.write(res);
+  res.end();
 });
 
 // ================= EXPORT WORD =================
 app.get('/transferts/word', requireLogin, async(req,res)=>{
-  var transferts = await Transfert.find();
-  var doc = new Document();
-  transferts.forEach(function(t){
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  const doc = new Document();
+  transferts.forEach(t=>{
     doc.addSection({children:[
-      new Paragraph({children:[new TextRun('Code: '+t.code+' Type: '+t.userType+' Expéditeur: '+t.senderFirstName+' '+t.senderLastName+' ('+t.senderPhone+') Destinataire: '+t.receiverFirstName+' '+t.receiverLastName+' ('+t.receiverPhone+') Montant: '+t.amount+' '+t.currency+' Frais: '+t.fees+' Reçu: '+t.recoveryAmount+' Statut: '+(t.retired?'Retiré':'Non retiré'))]})
+      new Paragraph({children:[new TextRun({text:`Code: ${t.code} | Expéditeur: ${t.senderFirstName} ${t.senderLastName} | Destinataire: ${t.receiverFirstName} ${t.receiverLastName} | Montant: ${t.amount} ${t.currency} | Frais: ${t.fees} | Reçu: ${t.recoveryAmount} | Statut: ${t.retired?'Retiré':'Non retiré'}`})]})
     ]});
   });
-  var buffer = await Packer.toBuffer(doc);
+  const packer = new Packer();
+  const buffer = await packer.toBuffer(doc);
   res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   res.setHeader('Content-Disposition','attachment; filename=transferts.docx');
   res.send(buffer);
