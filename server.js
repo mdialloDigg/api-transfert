@@ -6,7 +6,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
 
@@ -19,8 +18,8 @@ app.use(session({ secret: 'transfert-secret-final', resave: false, saveUninitial
 
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+  .then(()=>console.log('✅ MongoDB connecté'))
+  .catch(console.error);
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -61,9 +60,14 @@ async function generateUniqueCode() {
 // ================= AUTH =================
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
 
+// ================= CONSTANTS =================
+const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+const currencies = ['GNF','EUR','USD','XOF'];
+
 // ================= LOGIN / LOGOUT =================
 app.get('/login',(req,res)=>{
-  res.send(`<!DOCTYPE html>
+  res.send(`
+<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Connexion</title>
 <style>
 body{margin:0;font-family:Arial;background:#f0f4f8;display:flex;justify-content:center;align-items:center;height:100vh;}
@@ -82,7 +86,8 @@ button:hover{background:#0056b3;}
 <button>Se connecter</button>
 </form>
 </div>
-</body></html>`);
+</body></html>
+  `);
 });
 
 app.post('/login', async (req,res)=>{
@@ -99,14 +104,11 @@ app.post('/login', async (req,res)=>{
 
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= CONSTANTS =================
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-
-// ================= PAGE PRINCIPALE TRANSFERTS =================
+// ================= TRANSFERTS PAGE =================
 app.get('/transferts', requireLogin, async(req,res)=>{
-  const code = await generateUniqueCode(); // pour formulaire rapide
-  res.send(`<!DOCTYPE html>
+  const code = await generateUniqueCode();
+  res.send(`
+<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Transferts</title>
 <style>
@@ -114,7 +116,7 @@ body{font-family:Arial;margin:10px;background:#f4f6f9;}
 h2{color:#2c7be5;text-align:center;margin-bottom:15px;}
 .table-container{width:100%;overflow-x:auto;max-height:60vh;border:1px solid #ccc;border-radius:5px;background:#fff;position:relative;}
 table{width:100%;border-collapse: collapse;min-width:900px;}
-th, td{border:1px solid #ccc;padding:8px;text-align:left;font-size:14px;cursor:pointer;}
+th, td{border:1px solid #ccc;padding:8px;text-align:left;font-size:14px;}
 th{background:#007bff;color:white;position: sticky;top:0;z-index:2;}
 .retired{background:#fff3b0;}
 button, a.button{padding:6px 10px;border:none;border-radius:5px;color:white;text-decoration:none;font-size:12px;cursor:pointer;margin-right:3px;}
@@ -137,9 +139,7 @@ button, a.button{padding:6px 10px;border:none;border-radius:5px;color:white;text
 </style>
 </head>
 <body>
-
 <h2>📋 Liste des transferts</h2>
-
 <div id="filters">
 <input id="searchInput" placeholder="Recherche...">
 <select id="statusSelect">
@@ -163,22 +163,21 @@ ${locations.map(v=>`<option value="${v}">${v}</option>`).join('')}
 <a href="/transferts/word" class="button export">📄 Word</a>
 <a href="/logout" class="button delete">🚪 Déconnexion</a>
 </div>
-
 <div class="table-container">
 <div id="loadingSpinner"></div>
 <table>
 <thead>
 <tr>
-<th data-key="code">Code</th>
-<th data-key="userType">Type</th>
-<th data-key="senderFirstName">Expéditeur</th>
-<th data-key="originLocation">Origine</th>
-<th data-key="receiverFirstName">Destinataire</th>
-<th data-key="amount">Montant</th>
-<th data-key="fees">Frais</th>
-<th data-key="recoveryAmount">Reçu</th>
-<th data-key="currency">Devise</th>
-<th data-key="retired">Status</th>
+<th>Code</th>
+<th>Type</th>
+<th>Expéditeur</th>
+<th>Origine</th>
+<th>Destinataire</th>
+<th>Montant</th>
+<th>Frais</th>
+<th>Reçu</th>
+<th>Devise</th>
+<th>Status</th>
 <th>Actions</th>
 </tr>
 </thead>
@@ -222,127 +221,57 @@ ${locations.map(v=>`<option value="${v}">${v}</option>`).join('')}
 </div>
 
 <script>
-let currentSort={key:'',order:''};let currentPage=1;const refreshInterval=10000;
-const modal=document.getElementById('transfertModal');
-const addBtn=document.getElementById('addTransfertBtn');
-const closeBtn=document.getElementById('modalClose');
-const form=document.getElementById('transfertForm');
-
-addBtn.onclick=()=>{modal.style.display='flex';document.getElementById('modalTitle').textContent='➕ Nouveau Transfert';form.reset();}
-closeBtn.onclick=()=>modal.style.display='none';
-window.onclick=(e)=>{if(e.target==modal)modal.style.display='none';}
-
-// Calcul montant à recevoir
-const amountField=form.querySelector('[name="amount"]');
-const feesField=form.querySelector('[name="fees"]');
-const recoveryField=form.querySelector('[name="recoveryAmount"]');
-function updateRecovery(){const a=parseFloat(amountField.value)||0;const f=parseFloat(feesField.value)||0;recoveryField.value=(a-f).toFixed(2);}
-amountField.addEventListener('input',updateRecovery);
-feesField.addEventListener('input',updateRecovery);
-
-// Soumission AJAX
-form.onsubmit=async(e)=>{
-e.preventDefault();
-const data=Object.fromEntries(new FormData(form).entries());
-data.amount=parseFloat(data.amount);data.fees=parseFloat(data.fees);data.recoveryAmount=parseFloat(data.amount-data.fees);
-const res=await fetch('/transferts/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-if(res.ok){modal.style.display='none';loadTransferts(currentPage);}};
-
-// ================= TRANSFERTS AJAX =================
-async function loadTransferts(page=1){
-currentPage=page;document.getElementById('loadingSpinner').style.display='block';
-const search=document.getElementById('searchInput').value;
-const status=document.getElementById('statusSelect').value;
-const currency=document.getElementById('currencySelect').value;
-const destination=document.getElementById('destinationSelect').value;
-try{
-let url=`/transferts/list?search=${search}&status=${status}&currency=${currency}&destination=${destination}&page=${page}&ajax=1`;
-if(currentSort.key) url+=`&sortKey=${currentSort.key}&sortOrder=${currentSort.order}`;
-const res=await fetch(url);const data=await res.json();
-const tbody=document.getElementById('transfertsBody');tbody.innerHTML='';
-data.transferts.forEach(t=>{
-const tr=document.createElement('tr');if(t.retired)tr.classList.add('retired');tr.classList.add('fade-in');
-tr.innerHTML=`<td data-label="Code">${t.code}</td>
-<td data-label="Type">${t.userType}</td>
-<td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
-<td data-label="Origine">${t.originLocation}</td>
-<td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
-<td data-label="Montant">${t.amount}</td>
-<td data-label="Frais">${t.fees}</td>
-<td data-label="Reçu">${t.recoveryAmount}</td>
-<td data-label="Devise">${t.currency}</td>
-<td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
-<td>
-<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>
-<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
-</td>`;
-tbody.appendChild(tr);
+// ================= JS AJAX / Modal =================
+async function fetchTransferts(){
+  const search=document.getElementById('searchInput').value;
+  const status=document.getElementById('statusSelect').value;
+  const currency=document.getElementById('currencySelect').value;
+  const destination=document.getElementById('destinationSelect').value;
+  const url=`/transferts/data?search=${search}&status=${status}&currency=${currency}&destination=${destination}`;
+  const res=await fetch(url);
+  const data=await res.json();
+  const tbody=document.getElementById('transfertsBody');
+  tbody.innerHTML='';
+  data.transferts.forEach(t=>{
+    const tr=document.createElement('tr');
+    tr.className=t.retired?'retired':'';
+    tr.innerHTML=\`
+    <td>\${t.code}</td>
+    <td>\${t.userType}</td>
+    <td>\${t.senderFirstName} \${t.senderLastName} (\${t.senderPhone})</td>
+    <td>\${t.originLocation}</td>
+    <td>\${t.receiverFirstName} \${t.receiverLastName} (\${t.receiverPhone})</td>
+    <td>\${t.amount}</td>
+    <td>\${t.fees}</td>
+    <td>\${t.recoveryAmount}</td>
+    <td>\${t.currency}</td>
+    <td>\${t.retired?'Retiré':'Non retiré'}</td>
+    <td><button class="modify" onclick="editTransfert('\${t._id}')">✏️</button></td>
+    \`;
+    tbody.appendChild(tr);
+  });
+}
+['searchInput','statusSelect','currencySelect','destinationSelect'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',fetchTransferts);
 });
-const pagination=document.getElementById('pagination');pagination.innerHTML='';
-for(let i=1;i<=data.totalPages;i++){const a=document.createElement('a');a.href="#";a.textContent=i;if(i===currentPage)a.style.fontWeight='bold';a.onclick=(e)=>{e.preventDefault();loadTransferts(i);};pagination.appendChild(a);pagination.appendChild(document.createTextNode(' '));}
-}catch(err){console.error(err);}finally{document.getElementById('loadingSpinner').style.display='none';}
-}
-document.querySelectorAll('th[data-key]').forEach(th=>{th.addEventListener('click',()=>{if(currentSort.key===th.dataset.key)currentSort.order=currentSort.order==='asc'?'desc':'asc';else{currentSort.key=th.dataset.key;currentSort.order='asc';}loadTransferts(currentPage);});});
-['searchInput','statusSelect','currencySelect','destinationSelect'].forEach(id=>{const el=document.getElementById(id);el.addEventListener('input',()=>loadTransferts(1));el.addEventListener('change',()=>loadTransferts(1));});
-loadTransferts();
-setInterval(()=>loadTransferts(currentPage),refreshInterval);
-
-// Edit / Delete
-async function editTransfert(id){
-const res=await fetch('/transferts/get/'+id);const t=await res.json();
-modal.style.display='flex';
-document.getElementById('modalTitle').textContent='✏️ Modifier Transfert';
-form.code.value=t.code;form.userType.value=t.userType;form.senderFirstName.value=t.senderFirstName;
-form.senderLastName.value=t.senderLastName;form.senderPhone.value=t.senderPhone;
-form.originLocation.value=t.originLocation;form.receiverFirstName.value=t.receiverFirstName;
-form.receiverLastName.value=t.receiverLastName;form.receiverPhone.value=t.receiverPhone;
-form.destinationLocation.value=t.destinationLocation;form.amount.value=t.amount;
-form.fees.value=t.fees;updateRecovery();form.currency.value=t.currency;
-}
-
-async function deleteTransfert(id){
-if(!confirm('❌ Confirmer la suppression?')) return;
-await fetch('/transferts/delete/'+id,{method:'DELETE'});
-loadTransferts(currentPage);
-}
+fetchTransferts();
 </script>
-</body></html>`);
+</body>
+</html>
+  `);
 });
 
-// ================= API TRANSFERTS =================
-app.post('/transferts/save', requireLogin, async(req,res)=>{
-const data=req.body;
-let existing=await Transfert.findOne({code:data.code});
-if(existing){
-await Transfert.findByIdAndUpdate(existing._id,{...data});
-}else{await new Transfert({...data}).save();}
-res.sendStatus(200);
-});
-
-app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
-const t=await Transfert.findById(req.params.id);
-res.json(t);
-});
-
-app.delete('/transferts/delete/:id', requireLogin, async(req,res)=>{
-await Transfert.findByIdAndDelete(req.params.id);
-res.sendStatus(200);
-});
-
-// ================= LIST AJAX =================
-app.get('/transferts/list', requireLogin, async (req,res)=>{
-  const { search='', status='all', currency='', destination='', page=1, sortKey='', sortOrder='asc', ajax } = req.query;
-  let query = {};
+// ================= DATA API =================
+app.get('/transferts/data', requireLogin, async(req,res)=>{
+  const { search='', status='all', currency='', destination='' } = req.query;
+  const query = {};
   if(search){const regex=new RegExp(search,'i');query.$or=[{code:regex},{senderFirstName:regex},{senderLastName:regex},{senderPhone:regex},{receiverFirstName:regex},{receiverLastName:regex},{receiverPhone:regex}];}
   if(status==='retire') query.retired=true;
   if(status==='non') query.retired=false;
   if(currency) query.currency=currency;
   if(destination) query.destinationLocation=destination;
-
-  let transferts=await Transfert.find(query);
-  if(sortKey){transferts.sort((a,b)=>{let v1=a[sortKey],v2=b[sortKey];if(typeof v1==='string')v1=v1.toLowerCase();if(typeof v2==='string')v2=v2.toLowerCase();if(v1<v2)return sortOrder==='asc'?-1:1;if(v1>v2)return sortOrder==='asc'?1:-1;return 0;});}
-  const limit=20; const totalPages=Math.ceil(transferts.length/limit); const paginated=transferts.slice((page-1)*limit,page*limit);
-  res.json({ transferts:paginated,totalPages });
+  const transferts=await Transfert.find(query);
+  res.json({ transferts });
 });
 
 // ================= EXPORTS =================
