@@ -85,35 +85,74 @@ app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); 
 
 // ================= TRANSFERTS PAGE =================
 app.get('/transferts', requireLogin, async(req,res)=>{
-  const code = await generateUniqueCode();
-  res.send('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Transferts</title><style>body{font-family:Arial;margin:10px;background:#f4f6f9;} h2{color:#2c7be5;text-align:center;margin-bottom:15px;} .table-container{width:100%;overflow-x:auto;max-height:60vh;border:1px solid #ccc;border-radius:5px;background:#fff;position:relative;} table{width:100%;border-collapse: collapse;min-width:900px;} th, td{border:1px solid #ccc;padding:8px;text-align:left;font-size:14px;} th{background:#007bff;color:white;position: sticky;top:0;z-index:2;} .retired{background:#fff3b0;} button, a.button{padding:6px 10px;border:none;border-radius:5px;color:white;text-decoration:none;font-size:12px;cursor:pointer;margin-right:3px;} .modify{background:#28a745;} .delete{background:#dc3545;} .retirer{background:#ff9900;} .imprimer{background:#17a2b8;} .export{background:#6c757d;} #filters{display:flex;flex-wrap: wrap;gap:10px;margin-bottom:10px;} #filters input,#filters select{padding:6px;border-radius:5px;border:1px solid #ccc;font-size:14px;} #loadingSpinner{display:none;position:absolute;top:50%;left:50%;transform: translate(-50%, -50%);width:40px;height:40px;border:5px solid #ccc;border-top:5px solid #007bff;border-radius:50%;animation: spin 1s linear infinite;} @keyframes spin{0%{transform: translate(-50%, -50%) rotate(0deg);}100%{transform: translate(-50%, -50%) rotate(360deg);}} @media (max-width:768px){td{display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #ccc;} td button, td a.button{margin-left:5px;margin-top:0;flex-shrink:0;} td::before{content: attr(data-label);font-weight:bold;flex:1;}}</style></head><body><h2>📋 Liste des transferts</h2><div id="filters"><input id="searchInput" placeholder="Recherche..."><select id="statusSelect"><option value="all">Tous</option><option value="retire">Retirés</option><option value="non">Non retirés</option></select><select id="currencySelect"><option value="">Toutes devises</option><option value="GNF">GNF</option><option value="EUR">EUR</option><option value="USD">USD</option><option value="XOF">XOF</option></select><select id="destinationSelect"><option value="">Toutes destinations</option>'+locations.map(function(v){return '<option value="'+v+'">'+v+'</option>';}).join('')+'</select><a href="/transferts/excel" class="button export">📊 Excel</a><a href="/transferts/word" class="button export">📄 Word</a><a href="/logout" class="button delete">🚪 Déconnexion</a></div><div class="table-container"><div id="loadingSpinner"></div><table><thead><tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr></thead><tbody id="transfertsBody"></tbody></table></div><script>async function fetchTransferts(){var search=document.getElementById("searchInput").value;var status=document.getElementById("statusSelect").value;var currency=document.getElementById("currencySelect").value;var destination=document.getElementById("destinationSelect").value;var url="/transferts/data?search="+encodeURIComponent(search)+"&status="+encodeURIComponent(status)+"&currency="+encodeURIComponent(currency)+"&destination="+encodeURIComponent(destination);var res=await fetch(url);var data=await res.json();var tbody=document.getElementById("transfertsBody");tbody.innerHTML="";data.transferts.forEach(function(t){var tr=document.createElement("tr");if(t.retired)tr.className="retired";var actions="<button class='modify' onclick='editTransfert(\""+t._id+"\")'>✏️</button>";tr.innerHTML="<td>"+t.code+"</td><td>"+t.userType+"</td><td>"+t.senderFirstName+" "+t.senderLastName+" ("+t.senderPhone+")</td><td>"+t.originLocation+"</td><td>"+t.receiverFirstName+" "+t.receiverLastName+" ("+t.receiverPhone+")</td><td>"+t.amount+"</td><td>"+t.fees+"</td><td>"+t.recoveryAmount+"</td><td>"+t.currency+"</td><td>"+(t.retired?"Retiré":"Non retiré")+"</td><td>"+actions+"</td>";tbody.appendChild(tr);});}document.getElementById("searchInput").addEventListener("input",fetchTransferts);document.getElementById("statusSelect").addEventListener("change",fetchTransferts);document.getElementById("currencySelect").addEventListener("change",fetchTransferts);document.getElementById("destinationSelect").addEventListener("change",fetchTransferts);fetchTransferts();</script></body></html>');
+  var html = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Transferts</title><style>body{font-family:Arial;margin:10px;background:#f4f6f9;} h2{color:#2c7be5;text-align:center;margin-bottom:15px;} .table-container{width:100%;overflow-x:auto;max-height:60vh;border:1px solid #ccc;border-radius:5px;background:#fff;position:relative;} table{width:100%;border-collapse: collapse;min-width:900px;} th, td{border:1px solid #ccc;padding:8px;text-align:left;font-size:14px;} th{background:#007bff;color:white;position: sticky;top:0;z-index:2;} .retired{background:#fff3b0;} button, a.button{padding:6px 10px;border:none;border-radius:5px;color:white;text-decoration:none;font-size:12px;cursor:pointer;margin-right:3px;} .modify{background:#28a745;} .delete{background:#dc3545;} .retirer{background:#ff9900;} .imprimer{background:#17a2b8;} .export{background:#6c757d;} #filters{display:flex;flex-wrap: wrap;gap:10px;margin-bottom:10px;} #filters input,#filters select{padding:6px;border-radius:5px;border:1px solid #ccc;font-size:14px;} @media (max-width:768px){td{display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #ccc;} td button, td a.button{margin-left:5px;margin-top:0;flex-shrink:0;} td::before{content: attr(data-label);font-weight:bold;flex:1;}}</style></head><body>';
+  html += '<h2>📋 Liste des transferts</h2>';
+  html += '<div id="filters">';
+  html += '<input id="searchInput" placeholder="Recherche...">';
+  html += '<select id="statusSelect"><option value="all">Tous</option><option value="retire">Retirés</option><option value="non">Non retirés</option></select>';
+  html += '<select id="currencySelect"><option value="">Toutes devises</option>';
+  for(var i=0;i<currencies.length;i++){ html += '<option value="'+currencies[i]+'">'+currencies[i]+'</option>'; }
+  html += '</select>';
+  html += '<select id="destinationSelect"><option value="">Toutes destinations</option>';
+  for(var i=0;i<locations.length;i++){ html += '<option value="'+locations[i]+'">'+locations[i]+'</option>'; }
+  html += '</select>';
+  html += '<a href="/transferts/excel" class="button export">📊 Excel</a>';
+  html += '<a href="/transferts/word" class="button export">📄 Word</a>';
+  html += '<a href="/logout" class="button delete">🚪 Déconnexion</a>';
+  html += '</div>';
+  html += '<div class="table-container"><table><thead><tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr></thead><tbody id="transfertsBody"></tbody></table></div>';
+
+  // ================= AJAX SCRIPT =================
+  html += '<script>async function fetchTransferts(){';
+  html += 'var search=document.getElementById("searchInput").value;';
+  html += 'var status=document.getElementById("statusSelect").value;';
+  html += 'var currency=document.getElementById("currencySelect").value;';
+  html += 'var destination=document.getElementById("destinationSelect").value;';
+  html += 'var url="/transferts/data?search="+encodeURIComponent(search)+"&status="+encodeURIComponent(status)+"&currency="+encodeURIComponent(currency)+"&destination="+encodeURIComponent(destination);';
+  html += 'var res=await fetch(url);';
+  html += 'var data=await res.json();';
+  html += 'var tbody=document.getElementById("transfertsBody");tbody.innerHTML="";';
+  html += 'data.transferts.forEach(function(t){';
+  html += 'var tr=document.createElement("tr");if(t.retired)tr.className="retired";';
+  html += 'var actions="<button class=\'modify\'>✏️</button>";';
+  html += 'tr.innerHTML="<td>"+t.code+"</td><td>"+t.userType+"</td><td>"+t.senderFirstName+" "+t.senderLastName+" ("+t.senderPhone+")</td><td>"+t.originLocation+"</td><td>"+t.receiverFirstName+" "+t.receiverLastName+" ("+t.receiverPhone+")</td><td>"+t.amount+"</td><td>"+t.fees+"</td><td>"+t.recoveryAmount+"</td><td>"+t.currency+"</td><td>"+(t.retired?"Retiré":"Non retiré")+"</td><td>"+actions+"</td>";';
+  html += 'tbody.appendChild(tr);});';
+  html += '}';
+  html += 'document.getElementById("searchInput").addEventListener("input",fetchTransferts);';
+  html += 'document.getElementById("statusSelect").addEventListener("change",fetchTransferts);';
+  html += 'document.getElementById("currencySelect").addEventListener("change",fetchTransferts);';
+  html += 'document.getElementById("destinationSelect").addEventListener("change",fetchTransferts);';
+  html += 'fetchTransferts();';
+  html += '</script>';
+
+  html += '</body></html>';
+  res.send(html);
 });
 
 // ================= DATA API =================
 app.get('/transferts/data', requireLogin, async(req,res)=>{
-  const search = req.query.search || '';
-  const status = req.query.status || 'all';
-  const currency = req.query.currency || '';
-  const destination = req.query.destination || '';
-  const query = {};
+  var search = req.query.search || '';
+  var status = req.query.status || 'all';
+  var currency = req.query.currency || '';
+  var destination = req.query.destination || '';
+  var query = {};
   if(search){
-    const regex = new RegExp(search, 'i');
+    var regex = new RegExp(search,'i');
     query.$or = [{code:regex},{senderFirstName:regex},{senderLastName:regex},{senderPhone:regex},{receiverFirstName:regex},{receiverLastName:regex},{receiverPhone:regex}];
   }
   if(status==='retire') query.retired=true;
   if(status==='non') query.retired=false;
-  if(currency) query.currency = currency;
-  if(destination) query.destinationLocation = destination;
-  const transferts = await Transfert.find(query);
+  if(currency) query.currency=currency;
+  if(destination) query.destinationLocation=destination;
+  var transferts = await Transfert.find(query);
   res.json({ transferts });
 });
 
-// ================= EXPORTS =================
-// Excel
+// ================= EXPORT EXCEL =================
 app.get('/transferts/excel', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Transferts');
+  var transferts = await Transfert.find();
+  var workbook = new ExcelJS.Workbook();
+  var sheet = workbook.addWorksheet('Transferts');
   sheet.columns = [
     {header:'Code', key:'code'},
     {header:'Type', key:'userType'},
@@ -145,21 +184,21 @@ app.get('/transferts/excel', requireLogin, async(req,res)=>{
   await workbook.xlsx.write(res); res.end();
 });
 
-// Word
+// ================= EXPORT WORD =================
 app.get('/transferts/word', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find();
-  const doc = new Document();
+  var transferts = await Transfert.find();
+  var doc = new Document();
   transferts.forEach(function(t){
     doc.addSection({children:[
       new Paragraph({children:[new TextRun('Code: '+t.code+' Type: '+t.userType+' Expéditeur: '+t.senderFirstName+' '+t.senderLastName+' ('+t.senderPhone+') Destinataire: '+t.receiverFirstName+' '+t.receiverLastName+' ('+t.receiverPhone+') Montant: '+t.amount+' '+t.currency+' Frais: '+t.fees+' Reçu: '+t.recoveryAmount+' Statut: '+(t.retired?'Retiré':'Non retiré'))]})
     ]});
   });
-  const buffer = await Packer.toBuffer(doc);
+  var buffer = await Packer.toBuffer(doc);
   res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   res.setHeader('Content-Disposition','attachment; filename=transferts.docx');
   res.send(buffer);
 });
 
 // ================= START SERVER =================
-const PORT = process.env.PORT || 3000;
+var PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=>console.log('🚀 Serveur lancé sur http://localhost:'+PORT));
