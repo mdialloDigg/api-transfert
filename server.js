@@ -1,36 +1,42 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE AVEC GESTION DE STOCK PAR VILLE
+ * APP TRANSFERT – VERSION FINALE UNIQUE & STABLE
  ******************************************************************/
 
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
-const ExcelJS = require('exceljs');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+/* ================= SESSION ================= */
 app.use(session({
-  secret:'transfert-secret-final',
-  resave:false,
-  saveUninitialized:true
+  name: 'transfert.sid',
+  secret: 'transfert_secret_ultra_secure',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+/* ================= DATABASE ================= */
+/* ✅ CONNEXION STANDARD PROPRE */
+mongoose.connect('mongodb://127.0.0.1:27017/transfert', {
+  autoIndex: true
+})
+.then(() => console.log('✅ MongoDB connecté'))
+.catch(err => {
+  console.error('❌ Erreur MongoDB', err);
+  process.exit(1);
+});
 
-// ================= CONSTANTES =================
+/* ================= CONSTANTES ================= */
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 const currencies = ['GNF','EUR','USD','XOF'];
-const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
 
-// ================= SCHEMAS =================
+/* ================= SCHEMAS ================= */
 const transfertSchema = new mongoose.Schema({
-  userType:String,
   senderFirstName:String,
   senderLastName:String,
   senderPhone:String,
@@ -43,181 +49,186 @@ const transfertSchema = new mongoose.Schema({
   fees:Number,
   recoveryAmount:Number,
   currency:String,
-  recoveryMode:String,
   retired:{ type:Boolean, default:false },
-  retraitHistory:[{ date:Date, mode:String }],
   code:{ type:String, unique:true },
   createdAt:{ type:Date, default:Date.now }
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const authSchema = new mongoose.Schema({
-  username:String,
-  password:String,
-  role:{ type:String, default:'agent' }
+const userSchema = new mongoose.Schema({
+  username:{ type:String, unique:true },
+  password:String
 });
-const Auth = mongoose.model('Auth', authSchema);
+const User = mongoose.model('User', userSchema);
 
-// ======== STOCK SCHEMA ========
 const stockSchema = new mongoose.Schema({
   location:String,
   currency:String,
-  balance:{ type:Number, default:0 },
-  updatedAt:{ type:Date, default:Date.now }
+  balance:{ type:Number, default:0 }
 });
 stockSchema.index({ location:1, currency:1 }, { unique:true });
 const Stock = mongoose.model('Stock', stockSchema);
 
-// ================= UTILS =================
-async function generateUniqueCode(){
-  let code, exists=true;
-  while(exists){
+/* ================= UTILS ================= */
+async function generateCode(){
+  let code, exist=true;
+  while(exist){
     code = String.fromCharCode(65+Math.random()*26|0)+(100+Math.random()*900|0);
-    exists = await Transfert.findOne({code});
+    exist = await Transfert.findOne({code});
   }
   return code;
 }
-
 async function getStock(location,currency){
   let s = await Stock.findOne({location,currency});
-  if(!s) s = await new Stock({location,currency,balance:0}).save();
+  if(!s) s = await new Stock({location,currency}).save();
   return s;
 }
-
-// ================= AUTH =================
-const requireLogin = (req,res,next)=>{
+function auth(req,res,next){
   if(req.session.user) return next();
   res.redirect('/login');
-};
-function setPermissions(username){
-  if(username==='a') return { lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true };
-  return { lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true };
 }
 
-// ================= LOGIN =================
-app.get('/login',(req,res)=>{
-res.send(`<form method="post" style="max-width:300px;margin:100px auto">
-<h2>Connexion</h2>
-<input name="username" placeholder="Utilisateur" required><br><br>
-<input type="password" name="password" placeholder="Mot de passe" required><br><br>
-<button>Se connecter</button>
-</form>`);
-});
-
+/* ================= AUTH ================= */
+app.get('/login',(req,res)=>res.send(loginHTML()));
 app.post('/login',async(req,res)=>{
   const {username,password}=req.body;
-  let u=await Auth.findOne({username});
-  if(!u) u=await new Auth({username,password:bcrypt.hashSync(password,10)}).save();
-  if(!bcrypt.compareSync(password,u.password)) return res.send('Mot de passe incorrect');
-  req.session.user={username,permissions:setPermissions(username)};
-  res.redirect('/transferts/list');
+  let u = await User.findOne({username});
+  if(!u){
+    u = await new User({
+      username,
+      password:bcrypt.hashSync(password,10)
+    }).save();
+  }
+  if(!bcrypt.compareSync(password,u.password))
+    return res.send('Mot de passe incorrect');
+  req.session.user = username;
+  res.redirect('/transferts');
 });
 app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
 
-// ================= STOCK DEPOT =================
-app.get('/stock/depot',requireLogin,async(req,res)=>{
-  const stocks=await Stock.find().sort({location:1});
-res.send(`
-<h2>Dépôt de stock</h2>
-<form method="post">
-<select name="location">${locations.map(l=>`<option>${l}</option>`)}</select>
-<select name="currency">${currencies.map(c=>`<option>${c}</option>`)}</select>
-<input type="number" name="amount" placeholder="Montant" required>
-<button>Ajouter</button>
-</form>
-<h3>Stock actuel</h3>
-<table border="1">
-<tr><th>Ville</th><th>Devise</th><th>Solde</th></tr>
-${stocks.map(s=>`<tr><td>${s.location}</td><td>${s.currency}</td><td>${s.balance}</td></tr>`).join('')}
-</table>
-<a href="/transferts/list">Retour</a>
-`);
+/* ================= TRANSFERT FORM ================= */
+app.get('/transfert',auth,async(req,res)=>{
+  const t = req.query.code ? await Transfert.findOne({code:req.query.code}) : null;
+  const code = t ? t.code : await generateCode();
+  res.send(formHTML(t,code));
 });
-app.post('/stock/depot',requireLogin,async(req,res)=>{
-  const {location,currency,amount}=req.body;
-  const s=await getStock(location,currency);
-  s.balance+=Number(amount);
-  s.updatedAt=new Date();
+app.post('/transfert',auth,async(req,res)=>{
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  const recoveryAmount = amount - fees;
+  const exist = await Transfert.findOne({code:req.body.code});
+  if(exist)
+    await Transfert.updateOne({_id:exist._id},{...req.body,amount,fees,recoveryAmount});
+  else
+    await new Transfert({...req.body,amount,fees,recoveryAmount}).save();
+  res.redirect('/transferts');
+});
+
+/* ================= LISTE ================= */
+app.get('/transferts',auth,async(req,res)=>{
+  const list = await Transfert.find().sort({createdAt:-1});
+  res.send(listHTML(list));
+});
+
+/* ================= ACTIONS ================= */
+app.post('/retirer',auth,async(req,res)=>{
+  const t = await Transfert.findById(req.body.id);
+  const s = await getStock(t.destinationLocation,t.currency);
+  if(s.balance < t.recoveryAmount)
+    return res.json({error:`Stock insuffisant (${s.balance})`});
+  s.balance -= t.recoveryAmount;
+  t.retired = true;
+  await s.save(); await t.save();
+  res.json({ok:true,rest:s.balance});
+});
+app.post('/delete',auth,async(req,res)=>{
+  await Transfert.findByIdAndDelete(req.body.id);
+  res.json({ok:true});
+});
+
+/* ================= STOCK ================= */
+app.get('/stock',auth,async(req,res)=>{
+  res.send(stockHTML(await Stock.find()));
+});
+app.post('/stock',auth,async(req,res)=>{
+  const s = await getStock(req.body.location,req.body.currency);
+  s.balance += Number(req.body.amount);
   await s.save();
-  res.redirect('/stock/depot');
+  res.redirect('/stock');
 });
 
-// ================= TRANSFERT FORM =================
-app.get('/transferts/form',requireLogin,async(req,res)=>{
-  const t=req.query.code?await Transfert.findOne({code:req.query.code}):null;
-  const code=t?t.code:await generateUniqueCode();
-res.send(`
+/* ================= HTML ================= */
+function loginHTML(){return`
+<!DOCTYPE html><html><body>
+<h2>Connexion</h2>
 <form method="post">
-<input name="senderFirstName" placeholder="Prénom expéditeur" value="${t?.senderFirstName||''}">
-<input name="senderLastName" placeholder="Nom expéditeur" value="${t?.senderLastName||''}">
-<input name="senderPhone" placeholder="Téléphone expéditeur" value="${t?.senderPhone||''}">
-<select name="originLocation">${locations.map(l=>`<option ${t?.originLocation===l?'selected':''}>${l}</option>`)}</select>
+<input name="username" placeholder="Utilisateur">
+<input type="password" name="password" placeholder="Mot de passe">
+<button>Connexion</button>
+</form></body></html>`}
 
-<input name="receiverFirstName" placeholder="Prénom destinataire" value="${t?.receiverFirstName||''}">
-<input name="receiverLastName" placeholder="Nom destinataire" value="${t?.receiverLastName||''}">
-<input name="receiverPhone" placeholder="Téléphone destinataire" value="${t?.receiverPhone||''}">
-<select name="destinationLocation">${locations.map(l=>`<option ${t?.destinationLocation===l?'selected':''}>${l}</option>`)}</select>
-
-<input type="number" name="amount" placeholder="Montant" value="${t?.amount||''}">
-<input type="number" name="fees" placeholder="Frais" value="${t?.fees||''}">
+function formHTML(t,code){return`
+<h2>Transfert</h2>
+<form method="post">
+<input name="senderFirstName" placeholder="Expéditeur" value="${t?.senderFirstName||''}">
+<input name="receiverFirstName" placeholder="Destinataire" value="${t?.receiverFirstName||''}">
+<input name="amount" type="number" placeholder="Montant" value="${t?.amount||''}">
+<input name="fees" type="number" placeholder="Frais" value="${t?.fees||''}">
 <select name="currency">${currencies.map(c=>`<option ${t?.currency===c?'selected':''}>${c}</option>`)}</select>
+<select name="destinationLocation">${locations.map(l=>`<option ${t?.destinationLocation===l?'selected':''}>${l}</option>`)}</select>
 <input name="code" readonly value="${code}">
 <button>Enregistrer</button>
 </form>
-<a href="/transferts/list">Retour</a>
-`);
-});
+<a href="/transferts">Retour</a>`}
 
-app.post('/transferts/form',requireLogin,async(req,res)=>{
-  const amount=Number(req.body.amount),fees=Number(req.body.fees);
-  const recoveryAmount=amount-fees;
-  const exist=await Transfert.findOne({code:req.body.code});
-  if(exist) await Transfert.findByIdAndUpdate(exist._id,{...req.body,amount,fees,recoveryAmount});
-  else await new Transfert({...req.body,amount,fees,recoveryAmount}).save();
-  res.redirect('/transferts/list');
-});
-
-// ================= LISTE =================
-app.get('/transferts/list',requireLogin,async(req,res)=>{
-  const t=await Transfert.find().sort({createdAt:-1});
-res.send(`
+function listHTML(l){return`
 <h2>Transferts</h2>
-<a href="/transferts/form">Nouveau</a> |
-<a href="/stock/depot">Gestion Stock</a> |
-<a href="/logout">Déconnexion</a>
+<a href="/transfert">➕ Nouveau</a> | <a href="/stock">🏦 Stock</a> | <a href="/logout">🚪</a>
 <table border="1">
-<tr><th>Code</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Statut</th><th>Action</th></tr>
-${t.map(x=>`
-<tr>
+<tr><th>Code</th><th>Ville</th><th>Montant</th><th>Status</th><th>Actions</th></tr>
+${l.map(x=>`
+<tr data-id="${x._id}">
 <td>${x.code}</td>
 <td>${x.destinationLocation}</td>
-<td>${x.recoveryAmount}</td>
-<td>${x.currency}</td>
-<td>${x.retired?'Retiré':'Non retiré'}</td>
-<td>${!x.retired?`<button onclick="retirer('${x._id}')">Retirer</button>`:''}</td>
-</tr>`).join('')}
+<td>${x.recoveryAmount} ${x.currency}</td>
+<td>${x.retired?'Retiré':'En attente'}</td>
+<td>
+${!x.retired?'<button onclick="ret(this)">💰</button>':''}
+<button onclick="del(this)">❌</button>
+</td></tr>`).join('')}
 </table>
 <script>
-async function retirer(id){
- const r=await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode:'Espèces'})});
- const d=await r.json();
- if(d.error) alert(d.error);
- else alert('Retrait OK. Stock restant: '+d.remainingStock+' '+d.currency);
+async function ret(b){
+ const tr=b.closest('tr');
+ const r=await fetch('/retirer',{method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({id:tr.dataset.id})});
+ alert(JSON.stringify(await r.json()));
  location.reload();
 }
-</script>
-`);
-});
+async function del(b){
+ const tr=b.closest('tr');
+ await fetch('/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({id:tr.dataset.id})});
+ tr.remove();
+}
+</script>`}
 
-// ================= RETRAIT =================
-app.post('/transferts/retirer',requireLogin,async(req,res)=>{
-  const t=await Transfert.findById(req.body.id);
-  const s=await getStock(t.destinationLocation,t.currency);
-  if(s.balance<t.recoveryAmount) return res.send({error:'Stock insuffisant'});
-  s.balance-=t.recoveryAmount; await s.save();
-  t.retired=true; await t.save();
-  res.send({ok:true,remainingStock:s.balance,currency:s.currency});
-});
+function stockHTML(s){return`
+<h2>Stock</h2>
+<form method="post">
+<select name="location">${locations.map(l=>`<option>${l}</option>`)}</select>
+<select name="currency">${currencies.map(c=>`<option>${c}</option>`)}</select>
+<input name="amount" type="number">
+<button>Ajouter</button>
+</form>
+<table border="1">
+<tr><th>Ville</th><th>Devise</th><th>Solde</th></tr>
+${s.map(x=>`<tr><td>${x.location}</td><td>${x.currency}</td><td>${x.balance}</td></tr>`).join('')}
+</table>
+<a href="/transferts">Retour</a>`}
 
-// ================= SERVER =================
-app.listen(3000,()=>console.log('🚀 http://localhost:3000'));
+/* ================= SERVER ================= */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () =>
+  console.log(`🚀 Serveur lancé sur http://0.0.0.0:${PORT}`)
+);
