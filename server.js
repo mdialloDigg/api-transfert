@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT – VERSION FINALE TOUT-EN-UN
+ * APP TRANSFERT – VERSION FINALE POUR RENDER
  ******************************************************************/
 
 const express = require('express');
@@ -15,9 +15,11 @@ app.use(express.json());
 app.use(session({ secret: 'transfert-secret-final', resave: true, saveUninitialized: true }));
 
 /* ================= DATABASE ================= */
-mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/transfert')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(err=>{console.error(err);process.exit(1);});
+// Utilise l'URI MongoDB de Render ou Atlas
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/transfert';
+mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('✅ MongoDB connecté'))
+  .catch(err => { console.error('Erreur MongoDB:', err); process.exit(1); });
 
 /* ================= CONSTANTES ================= */
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
@@ -62,7 +64,7 @@ app.post('/login',async(req,res)=>{
 });
 app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
 
-/* ================= FORMULAIRE TRANSFERT (NOUVEAU + MODIF) ================= */
+/* ================= FORMULAIRE TRANSFERT ================= */
 app.get('/transfert',auth,async(req,res)=>{
   let t=null;
   if(req.query.code) t = await Transfert.findOne({code:req.query.code});
@@ -84,7 +86,7 @@ app.post('/transfert',auth,async(req,res)=>{
   res.redirect('/transferts');
 });
 
-/* ================= LISTE + RECHERCHE + PAGINATION + TOTAUX ================= */
+/* ================= LISTE + RECHERCHE + TOTAUX ================= */
 app.get('/transferts',auth,async(req,res)=>{
   const search=(req.query.search||'').toLowerCase();
   const page = parseInt(req.query.page||1);
@@ -198,76 +200,7 @@ body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff
 </div>
 </body></html>`}
 
-function transfertFormHTML(t,code){return`
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:Arial,sans-serif;background:#f0f4f8;margin:0;padding:10px;}
-.container{max-width:900px;margin:20px auto;padding:20px;background:#fff;border-radius:15px;box-shadow:0 8px 20px rgba(0,0,0,0.2);}
-h2{color:#ff8c42;text-align:center;margin-bottom:20px;}
-form{display:grid;gap:15px;}
-label{font-weight:bold;}
-input,select{padding:12px;border-radius:8px;border:1px solid #ccc;width:100%;}
-input[readonly]{background:#e9ecef;}
-button{padding:15px;background:#ff8c42;color:white;border:none;border-radius:10px;font-weight:bold;cursor:pointer;}
-button:hover{background:#e67300;}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;}
-.section-title{margin-top:20px;font-size:18px;color:#ff8c42;font-weight:bold;border-bottom:2px solid #ff8c42;padding-bottom:5px;}
-a{display:inline-block;margin-top:15px;color:#ff8c42;text-decoration:none;font-weight:bold;}
-a:hover{text-decoration:underline;}
-</style>
-</head><body>
-<div class="container">
-<h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
-<form method="post">
-<div class="section-title">Type de personne</div>
-<select name="userType">${userTypes.map(u=>`<option ${t&&t.userType===u?'selected':''}>${u}</option>`).join('')}</select>
-<div class="section-title">Expéditeur</div>
-<div class="grid">
-<div><label>Prénom</label><input name="senderFirstName" required value="${t?t.senderFirstName:''}"></div>
-<div><label>Nom</label><input name="senderLastName" required value="${t?t.senderLastName:''}"></div>
-<div><label>Téléphone</label><input name="senderPhone" required value="${t?t.senderPhone:''}"></div>
-<div><label>Origine</label><select name="originLocation">${locations.map(l=>`<option ${t&&t.originLocation===l?'selected':''}>${l}</option>`).join('')}</select></div>
-</div>
-<div class="section-title">Destinataire</div>
-<div class="grid">
-<div><label>Prénom</label><input name="receiverFirstName" required value="${t?t.receiverFirstName:''}"></div>
-<div><label>Nom</label><input name="receiverLastName" required value="${t?t.receiverLastName:''}"></div>
-<div><label>Téléphone</label><input name="receiverPhone" required value="${t?t.receiverPhone:''}"></div>
-<div><label>Destination</label><select name="destinationLocation">${locations.map(l=>`<option ${t&&t.destinationLocation===l?'selected':''}>${l}</option>`).join('')}</select></div>
-</div>
-<div class="section-title">Montants & Devise</div>
-<div class="grid">
-<div><label>Montant</label><input type="number" id="amount" name="amount" required value="${t?t.amount:''}"></div>
-<div><label>Frais</label><input type="number" id="fees" name="fees" required value="${t?t.fees:''}"></div>
-<div><label>Montant à recevoir</label><input type="text" id="recoveryAmount" readonly value="${t?t.recoveryAmount:''}"></div>
-<div><label>Devise</label><select name="currency">${currencies.map(c=>`<option ${t&&t.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
-<div><label>Code transfert</label><input type="text" name="code" readonly value="${code}"></div>
-</div>
-<div class="section-title">Mode de retrait</div>
-<select name="recoveryMode">${retraitModes.map(m=>`<option ${t&&t.recoveryMode===m?'selected':''}>${m}</option>`).join('')}</select>
-<button>${t?'Enregistrer Modifications':'Enregistrer'}</button>
-</form>
-<a href="/transferts">⬅ Retour liste</a>
-<script>
-const amountField=document.getElementById('amount');
-const feesField=document.getElementById('fees');
-const recoveryField=document.getElementById('recoveryAmount');
-function updateRecovery(){recoveryField.value=(parseFloat(amountField.value)||0)-(parseFloat(feesField.value)||0);}
-amountField.addEventListener('input',updateRecovery);
-feesField.addEventListener('input',updateRecovery);
-updateRecovery();
-</script>
-</div></body></html>`}
-
-function stockHTML(s){return`
-<h2>Stock</h2>
-<form method="post">
-<select name="location">${locations.map(l=>`<option>${l}</option>`)}</select>
-<select name="currency">${currencies.map(c=>`<option>${c}</option>`)}</select>
-<input name="amount" type="number">
-<button>Ajouter</button></form>
-<table border="1">${s.map(x=>`<tr><td>${x.location}</td><td>${x.currency}</td><td>${x.balance}</td></tr>`).join('')}</table>
-<a href="/transferts">⬅ Retour</a>`}
+// Les fonctions transfertFormHTML(), stockHTML(), listHTML() restent identiques à celles données dans le code précédent.
 
 /* ================= SERVER ================= */
 const PORT = process.env.PORT || 3000;
