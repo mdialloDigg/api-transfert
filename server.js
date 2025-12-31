@@ -2,15 +2,17 @@ const express=require('express');
 const mongoose=require('mongoose');
 const session=require('express-session');
 const bcrypt=require('bcryptjs');
-const PDFDocument=require('pdfkit');
-const ExcelJS=require('exceljs');
 const app=express();
 app.use(express.urlencoded({extended:true}));
 app.use(express.json());
 app.use(session({secret:'transfert-secret-final',resave:false,saveUninitialized:true}));
 
-const MONGO_URI=process.env.MONGO_URI||'mongodb://127.0.0.1:27017/transfert';
-mongoose.connect(MONGO_URI,{useNewUrlParser:true,useUnifiedTopology:true}).then(()=>console.log('MongoDB connected')).catch(console.error);
+const MONGO_URI=process.env.MONGO_URI;
+if(!MONGO_URI)console.error("⚠️  MONGO_URI non défini dans les variables d'environnement Render/Atlas");
+
+mongoose.connect(MONGO_URI,{useNewUrlParser:true,useUnifiedTopology:true})
+.then(()=>console.log('✅ MongoDB connecté'))
+.catch(err=>console.error(err));
 
 const transfertSchema=new mongoose.Schema({
   userType:{type:String,enum:['Client','Distributeur','Administrateur','Agence de transfert'],required:true},
@@ -51,8 +53,7 @@ body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff
 .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
 .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
 .login-container button:hover{background:#e67300;}
-</style>
-</head><body>
+</style></head><body>
 <div class="login-container">
 <h2>Connexion</h2>
 <form method="post">
@@ -74,11 +75,10 @@ app.post('/login',async(req,res)=>{
 
 app.get('/logout',(req,res)=>{req.session.destroy(()=>res.redirect('/login'));});
 
-// FORMULAIRE TRANSFERT / MODIFICATION
+// TRANSFERT FORMULAIRE
 app.get('/transferts/form',requireLogin,async(req,res)=>{
   if(!req.session.user.permissions.ecriture)return res.status(403).send('Accès refusé');
-  let t=null;
-  if(req.query.code)t=await Transfert.findOne({code:req.query.code});
+  let t=null;if(req.query.code)t=await Transfert.findOne({code:req.query.code});
   const code=t?t.code:await generateUniqueCode();
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -95,8 +95,7 @@ button:hover{background:#e67300;}
 .section-title{margin-top:20px;font-size:18px;color:#ff8c42;font-weight:bold;border-bottom:2px solid #ff8c42;padding-bottom:5px;}
 a{display:inline-block;margin-top:15px;color:#ff8c42;text-decoration:none;font-weight:bold;}
 a:hover{text-decoration:underline;}
-</style>
-</head><body>
+</style></head><body>
 <div class="container">
 <h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
 <form method="post" id="transfertForm">
@@ -146,7 +145,6 @@ updateRecovery();
 </div></body></html>`);
 });
 
-// POST FORMULAIRE TRANSFERT
 app.post('/transferts/form',requireLogin,async(req,res)=>{
   const amount=Number(req.body.amount||0);
   const fees=Number(req.body.fees||0);
@@ -158,5 +156,35 @@ app.post('/transferts/form',requireLogin,async(req,res)=>{
   res.redirect('/transferts/list');
 });
 
-// SERVER
-app.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
+app.get('/transferts/list',requireLogin,async(req,res)=>{
+  const transferts=await Transfert.find().sort({createdAt:-1});
+  const stocks=await Stock.find();
+  const stockMap={};stocks.forEach(s=>stockMap[s.location]=s.balances);
+  const totals={};
+  transferts.forEach(t=>{
+    if(!totals[t.destinationLocation])totals[t.destinationLocation]={};
+    if(!totals[t.destinationLocation][t.currency])totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
+    totals[t.destinationLocation][t.currency].amount+=t.amount;
+    totals[t.destinationLocation][t.currency].fees+=t.fees;
+    totals[t.destinationLocation][t.currency].recovery+=t.recoveryAmount;
+  });
+  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+th{background:#ff8c42;color:white;}
+</style></head><body>
+<h2>📋 Liste des transferts</h2>
+<div id="totaux"><h3>📊 Totaux par destination/devise</h3><table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
+for(let dest in totals){for(let curr in totals[dest]){
+  html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+}}
+html+='</tbody></table><h3>📦 Stock par ville/devise</h3><table><thead><tr><th>Ville</th><th>Devise</th><th>Montant restant</th></tr></thead><tbody>';
+for(let loc in stockMap){for(let [cur,val] of stockMap[loc].entries()){html+=`<tr><td>${loc}</td><td>${cur}</td><td>${val}</td></tr>`;}}
+html+='</tbody></table><a href="/transferts/form">➕ Nouveau Transfert</a> | <a href="/logout">🚪 Déconnexion</a></body></html>';
+res.send(html);
+});
+
+const PORT=process.env.PORT||3000;
+app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
