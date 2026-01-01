@@ -243,6 +243,7 @@ app.get('/transferts/list', requireLogin, async(req,res)=>{
   </select>
   <button type="submit">🔍 Filtrer</button>
   ${req.session.user.permissions.ecriture?'<a href="/transferts/form">➕ Nouveau</a>':''}
+  ${req.session.user.permissions.ecriture?'<a href="/transferts/form">➕ Nouveau Stock</a>':''}
   <a href="/transferts/pdf">📄 PDF</a><a href="/transferts/excel">📊 Excel</a><a href="/transferts/word">📝 Word</a>
   <a href="/logout">🚪 Déconnexion</a></form>`;
 
@@ -319,6 +320,120 @@ app.get('/transferts/print/:id', requireLogin, async(req,res)=>{
   </body></html>`);
 });
 
+// ================= LISTE TRANSFERTS AVEC AJAX =================
+app.get('/transferts/list', requireLogin, async(req,res)=>{
+  const { search='', status='all', page=1 } = req.query;
+  let transferts = await Transfert.find().sort({createdAt:-1});
+  const s = search.toLowerCase();
+  transferts = transferts.filter(t=>{
+    return t.code.toLowerCase().includes(s)
+      || t.senderFirstName.toLowerCase().includes(s)
+      || t.senderLastName.toLowerCase().includes(s)
+      || t.senderPhone.toLowerCase().includes(s)
+      || t.receiverFirstName.toLowerCase().includes(s)
+      || t.receiverLastName.toLowerCase().includes(s)
+      || t.receiverPhone.toLowerCase().includes(s);
+  });
+  if(status==='retire') transferts = transferts.filter(t=>t.retired);
+  else if(status==='non') transferts = transferts.filter(t=>!t.retired);
+  const limit=20;
+  const totalPages = Math.ceil(transferts.length/limit);
+  const paginated = transferts.slice((page-1)*limit,page*limit);
+
+  // Totaux par destination/devise
+  const totals = {};
+  paginated.forEach(t=>{
+    if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
+    if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0, fees:0, recovery:0};
+    totals[t.destinationLocation][t.currency].amount += t.amount;
+    totals[t.destinationLocation][t.currency].fees += t.fees;
+    totals[t.destinationLocation][t.currency].recovery += t.recoveryAmount;
+  });
+
+  // HTML avec AJAX pour suppression et retrait
+  let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+  body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+  table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+  th{background:#ff8c42;color:white;}
+  .retired{background:#fff3b0;}
+  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+  .modify{background:#28a745;}
+  .delete{background:#dc3545;}
+  .retirer{background:#ff9900;}
+  .imprimer{background:#17a2b8;}
+  a{margin-right:10px;text-decoration:none;color:#007bff;}
+  </style></head><body>
+  <h2>📋 Liste des transferts</h2>
+  <div id="totaux"><h3>📊 Totaux par destination/devise</h3><table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
+  for(let dest in totals){
+    for(let curr in totals[dest]){
+      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+    }
+  }
+  html+='</tbody></table></div>';
+  
+  html+=`<form id="filterForm"><input type="text" name="search" placeholder="Recherche..." value="${search}">
+  <select name="status">
+    <option value="all" ${status==='all'?'selected':''}>Tous</option>
+    <option value="retire" ${status==='retire'?'selected':''}>Retirés</option>
+    <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
+  </select>
+  <button type="submit">🔍 Filtrer</button>
+  ${req.session.user.permissions.ecriture?'<a href="/transferts/form">➕ Nouveau</a>':''}
+  <a href="/transferts/pdf">📄 PDF</a><a href="/transferts/excel">📊 Excel</a><a href="/transferts/word">📝 Word</a>
+  <a href="/logout">🚪 Déconnexion</a></form>`;
+
+  html+='<table><thead><tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+  paginated.forEach(t=>{
+    html+=`<tr class="${t.retired?'retired':''}" data-id="${t._id}">
+      <td>${t.code}</td>
+      <td>${t.userType}</td>
+      <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
+      <td>${t.originLocation}</td>
+      <td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
+      <td>${t.amount}</td>
+      <td>${t.fees}</td>
+      <td>${t.recoveryAmount}</td>
+      <td>${t.currency}</td>
+      <td>${t.retired?'Retiré':'Non retiré'}</td>
+      <td>
+        ${req.session.user.permissions.modification?`<a href="/transferts/form?code=${t.code}&search=${search}&status=${status}"><button class="modify">✏️ Modifier</button></a>`:''}
+        ${req.session.user.permissions.suppression?`<button class="delete">❌ Supprimer</button>`:''}
+        ${req.session.user.permissions.retrait && !t.retired?`<select class="retirementMode">${retraitModes.map(m=>`<option>${m}</option>`).join('')}</select><button class="retirer">💰 Retirer</button>`:''}
+        ${req.session.user.permissions.imprimer?`<a href="/transferts/print/${t._id}" target="_blank"><button class="imprimer">🖨 Imprimer</button></a>`:''}
+      </td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  html+='<div id="pagination">';
+  for(let i=1;i<=totalPages;i++) html+=`<a href="#" class="page" data-page="${i}">${i}</a> `;
+  html+='</div>';
+
+  html+=`<script>
+  async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+  document.querySelectorAll('.delete').forEach(btn=>btn.onclick=async()=>{if(confirm('❌ Confirmer?')){const tr=btn.closest('tr');await postData('/transferts/delete',{id:tr.dataset.id});tr.remove();}});
+  document.querySelectorAll('.retirer').forEach(btn=>btn.onclick=async()=>{const tr=btn.closest('tr');const mode=tr.querySelector('.retirementMode').value;await postData('/transferts/retirer',{id:tr.dataset.id,mode});tr.querySelector('td:nth-child(10)').innerText="Retiré";btn.remove();tr.querySelector('.retirementMode').remove();});
+  document.getElementById('filterForm').onsubmit=async(e)=>{e.preventDefault();const f=e.target;const s=f.search.value;const st=f.status.value;window.location.href='/transferts/list?search='+encodeURIComponent(s)+'&status='+st;};
+  document.querySelectorAll('.page').forEach(p=>p.onclick=e=>{e.preventDefault();const page=p.dataset.page;window.location.href='/transferts/list?search=${encodeURIComponent(search)}&status=${status}&page='+page;});
+  </script>`;
+  html+='</body></html>';
+  res.send(html);
+});
+
+// ================= RETRAIT / SUPPRESSION =================
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.retrait) return res.status(403).send('Accès refusé');
+  await Transfert.findByIdAndUpdate(req.body.id,{retired:true,recoveryMode:req.body.mode,$push:{retraitHistory:{date:new Date(),mode:req.body.mode}}});
+  res.send({ok:true});
+});
+app.post('/transferts/delete', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.suppression) return res.status(403).send('Accès refusé');
+  await Transfert.findByIdAndDelete(req.body.id);
+  res.send({ok:true});
+});
+
+
 // ================= EXPORT PDF =================
 app.get('/transferts/pdf', requireLogin, async(req,res)=>{
   const transferts = await Transfert.find().sort({createdAt:-1});
@@ -362,6 +477,8 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
   res.setHeader('Content-Disposition','attachment; filename="transferts.doc"');
   res.send(html);
 });
+
+
 
 // ================= SERVER =================
 app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
