@@ -1,13 +1,11 @@
 /******************************************************************
- * APP TRANSFERT – TOUT EN UN – RENDER READY – STOCK + AJAX
+ * APP TRANSFERT – TOUT EN UN – STABLE – RENDER READY
  ******************************************************************/
 
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
-const ExcelJS = require('exceljs');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -18,13 +16,19 @@ app.use(session({
   saveUninitialized: false
 }));
 
+/* ===================== CONFIG SAFE ===================== */
+
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error('❌ ERREUR: MONGO_URI non défini dans Render');
+}
+
 /* ===================== DATABASE ===================== */
 
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(MONGO_URI || '', { serverSelectionTimeoutMS: 5000 })
 .then(()=>console.log('✅ MongoDB connecté'))
 .catch(err=>{
-  console.error('❌ MongoDB erreur', err.message);
-  process.exit(1);
+  console.error('❌ MongoDB indisponible:', err.message);
 });
 
 /* ===================== SCHEMAS ===================== */
@@ -46,15 +50,14 @@ const transfertSchema = new mongoose.Schema({
   recoveryMode:String,
   retired:{type:Boolean,default:false},
   retraitHistory:[{date:Date,mode:String}],
-  code:{type:String,unique:true},
+  code:String,
   createdAt:{type:Date,default:Date.now}
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
   username:String,
-  password:String,
-  role:{type:String,default:'admin'}
+  password:String
 });
 const Auth = mongoose.model('Auth', authSchema);
 
@@ -122,7 +125,8 @@ if(!user){
     password:bcrypt.hashSync(req.body.password,10)
   }).save();
 }
-if(!bcrypt.compareSync(req.body.password,user.password)) return res.send('Mot de passe incorrect');
+if(!bcrypt.compareSync(req.body.password,user.password))
+  return res.send('Mot de passe incorrect');
 req.session.user={username:user.username};
 res.redirect('/transferts/list');
 });
@@ -200,18 +204,18 @@ else await new Transfert(data).save();
 res.redirect('/transferts/list');
 });
 
-/* ===================== LISTE + AJAX ===================== */
+/* ===================== LISTE ===================== */
 
 app.get('/transferts/list',requireLogin,async(req,res)=>{
-let list=await Transfert.find().sort({createdAt:-1});
+const list=await Transfert.find().sort({createdAt:-1});
 res.send(`
 <html><body>
-<h2>Liste des transferts</h2>
+<h2>📋 Liste des transferts</h2>
 <a href="/transferts/form">➕ Nouveau</a> | <a href="/logout">Déconnexion</a>
 <table border="1" cellpadding="5">
-<tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Statut</th><th>Actions</th></tr>
+<tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>
 ${list.map(t=>`
-<tr data-id="${t._id}">
+<tr>
 <td>${t.code}</td>
 <td>${t.senderFirstName}</td>
 <td>${t.receiverFirstName}</td>
@@ -220,16 +224,11 @@ ${list.map(t=>`
 <td>${t.retired?'Retiré':'Non retiré'}</td>
 <td>
 <a href="/transferts/form?code=${t.code}">✏️</a>
-<button onclick="del('${t._id}')">❌</button>
-${!t.retired?`<button onclick="ret('${t._id}')">💰</button>`:''}
+<button onclick="fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}'})}).then(()=>location.reload())">❌</button>
+${!t.retired?`<button onclick="fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}',mode:'Espèces'})}).then(()=>location.reload())">💰</button>`:''}
 </td>
 </tr>`).join('')}
 </table>
-
-<script>
-function del(id){fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(()=>location.reload())}
-function ret(id){fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode:'Espèces'})}).then(()=>location.reload())}
-</script>
 </body></html>
 `);
 });
@@ -240,6 +239,7 @@ app.post('/transferts/retirer',requireLogin,async(req,res)=>{
 await Transfert.findByIdAndUpdate(req.body.id,{retired:true,$push:{retraitHistory:{date:new Date(),mode:req.body.mode}}});
 res.send({ok:true});
 });
+
 app.post('/transferts/delete',requireLogin,async(req,res)=>{
 await Transfert.findByIdAndDelete(req.body.id);
 res.send({ok:true});
