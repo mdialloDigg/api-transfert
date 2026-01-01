@@ -2,8 +2,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
-const ExcelJS = require('exceljs');
 
 const app = express();
 app.use(express.urlencoded({extended:true}));
@@ -138,29 +136,57 @@ app.post('/transferts/form',requireLogin,async(req,res)=>{
   res.redirect('/transferts/list');
 });
 
-// ===== LISTE AJAX =====
+// ===== LISTE COMPLÈTE HTML =====
 app.get('/transferts/list',requireLogin,async(req,res)=>{
-  if(req.query.ajax){
-    const {search='',status='all',page=1}=req.query;
-    let transferts=await Transfert.find().sort({createdAt:-1});
-    const s=search.toLowerCase();
-    transferts=transferts.filter(t=>t.code.toLowerCase().includes(s)||t.senderFirstName.toLowerCase().includes(s)||t.senderLastName.toLowerCase().includes(s)||t.receiverFirstName.toLowerCase().includes(s)||t.receiverLastName.toLowerCase().includes(s));
-    if(status==='retire') transferts=transferts.filter(t=>t.retired);
-    else if(status==='non') transferts=transferts.filter(t=>!t.retired);
-    const limit=20;
-    const totalPages=Math.ceil(transferts.length/limit);
-    const paginated=transferts.slice((page-1)*limit,page*limit);
-    const totals={};
-    paginated.forEach(t=>{
-      if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-      if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={retire:0,nonRetire:0};
-      if(t.retired) totals[t.destinationLocation][t.currency].retire+=t.recoveryAmount;
-      else totals[t.destinationLocation][t.currency].nonRetire+=t.recoveryAmount;
-    });
-    return res.json({transferts:paginated,totals,page:Number(page),totalPages});
-  }
-  // HTML liste complet
-  res.sendFile(__dirname+'/transferts_list.html');
+  const transferts=await Transfert.find().sort({createdAt:-1});
+  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+th{background:#ff8c42;color:white;}
+.retired{background:#fff3b0;}
+button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+.modify{background:#28a745;}
+.delete{background:#dc3545;}
+.retirer{background:#ff9900;}
+.imprimer{background:#17a2b8;}
+a{margin-right:10px;text-decoration:none;color:#007bff;}
+</style></head><body>
+<h2>📋 Liste des transferts</h2>
+<a href="/transferts/form">➕ Nouveau Transfert</a>
+<a href="/stock/form">➕ Ajout Stock</a>
+<table><thead><tr>
+<th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th>
+<th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th>
+<th>Devise</th><th>Status</th><th>Actions</th>
+</tr></thead><tbody>`;
+  transferts.forEach(t=>{
+    html+=`<tr class="${t.retired?'retired':''}" data-id="${t._id}">
+<td>${t.code}</td>
+<td>${t.userType}</td>
+<td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
+<td>${t.originLocation}</td>
+<td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
+<td>${t.amount}</td>
+<td>${t.fees}</td>
+<td>${t.recoveryAmount}</td>
+<td>${t.currency}</td>
+<td>${t.retired?'Retiré':'Non retiré'}</td>
+<td>
+<button class="modify" onclick="window.location.href='/transferts/form?code=${t.code}'">✏️ Modifier</button>
+<button class="delete">❌ Supprimer</button>
+${!t.retired?`<select class="retirementMode">${retraitModes.map(m=>`<option>${m}</option>`).join('')}</select><button class="retirer">💰 Retirer</button>`:''}
+<button class="imprimer" onclick="window.open('/transferts/print/${t._id}','_blank')">🖨 Imprimer</button>
+</td></tr>`;
+  });
+  html+='</tbody></table>';
+  html+=`<script>
+async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+document.querySelectorAll('.delete').forEach(btn=>btn.onclick=async()=>{if(confirm('❌ Confirmer?')){const tr=btn.closest('tr');await postData('/transferts/delete',{id:tr.dataset.id});tr.remove();}});
+document.querySelectorAll('.retirer').forEach(btn=>btn.onclick=async()=>{const tr=btn.closest('tr');const mode=tr.querySelector('.retirementMode').value;await postData('/transferts/retirer',{id:tr.dataset.id,mode});tr.querySelector('td:nth-child(10)').innerText="Retiré";btn.remove();tr.querySelector('.retirementMode').remove();});
+</script>`;
+  html+='</body></html>';
+  res.send(html);
 });
 
 // ===== RETRAIT =====
@@ -177,7 +203,7 @@ app.post('/transferts/retirer',requireLogin,async(req,res)=>{
 // ===== SUPPRESSION =====
 app.post('/transferts/delete',requireLogin,async(req,res)=>{await Transfert.findByIdAndDelete(req.body.id);res.send({ok:true});});
 
-// ===== STOCK =====
+// ===== STOCK FORM =====
 app.get('/stock/form',requireLogin,(req,res)=>{
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
 body{font-family:Arial;background:#f0f4f8;padding:20px;}
