@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TOUT-EN-UN : TRANSFERTS + STOCK + AJAX + EXPORTS
+ * APP TRANSFERT + STOCK – VERSION FINALE COMPLÈTE (UN SEUL FICHIER)
  ******************************************************************/
 
 const express = require('express');
@@ -12,285 +12,331 @@ const ExcelJS = require('exceljs');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({ secret:'transfert-stock-secret', resave:false, saveUninitialized:true }));
+app.use(session({
+  secret:'transfert-stock-secret-final',
+  resave:false,
+  saveUninitialized:true
+}));
 
-// ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert_stock')
+/* ================= DATABASE ================= */
+mongoose.connect('mongodb://127.0.0.1:27017/transfert_stock')
 .then(()=>console.log('✅ MongoDB connecté'))
 .catch(console.error);
 
-// ================= SCHEMAS =================
+/* ================= SCHEMAS ================= */
+
+const stockSchema = new mongoose.Schema({
+  reference:{type:String,unique:true},
+  name:String,
+  quantity:Number,
+  price:Number,
+  createdAt:{type:Date,default:Date.now}
+});
+const Stock = mongoose.model('Stock',stockSchema);
+
+const transfertSchema = new mongoose.Schema({
+  userType:String,
+
+  senderFirstName:String,
+  senderLastName:String,
+  senderPhone:String,
+  originLocation:String,
+
+  receiverFirstName:String,
+  receiverLastName:String,
+  receiverPhone:String,
+  destinationLocation:String,
+
+  amount:Number,
+  fees:Number,
+  recoveryAmount:Number,
+  currency:String,
+
+  products:[{
+    productId:{type:mongoose.Schema.Types.ObjectId,ref:'Stock'},
+    name:String,
+    quantity:Number
+  }],
+
+  recoveryMode:String,
+  retired:{type:Boolean,default:false},
+  retraitHistory:[{date:Date,mode:String}],
+
+  code:{type:String,unique:true},
+  createdAt:{type:Date,default:Date.now}
+});
+const Transfert = mongoose.model('Transfert',transfertSchema);
+
 const authSchema = new mongoose.Schema({
   username:String,
   password:String,
-  role:{type:String, enum:['admin','agent'], default:'agent'}
+  role:{type:String,default:'agent'}
 });
-const Auth = mongoose.model('Auth', authSchema);
+const Auth = mongoose.model('Auth',authSchema);
 
-const stockSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  reference: { type: String, unique: true },
-  quantity: { type: Number, default: 0 },
-  price: { type: Number, default: 0 },
-  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default:'GNF' },
-  createdAt: { type: Date, default: Date.now }
-});
-const Stock = mongoose.model('Stock', stockSchema);
+/* ================= UTILS ================= */
 
-const transfertSchema = new mongoose.Schema({
-  userType: { type:String, enum:['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
-  senderFirstName:String, senderLastName:String, senderPhone:String, originLocation:String,
-  receiverFirstName:String, receiverLastName:String, receiverPhone:String, destinationLocation:String,
-  amount:Number, fees:Number, recoveryAmount:Number, currency:{ type:String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
-  recoveryMode:String,
-  retraitHistory:[{ date:Date, mode:String }],
-  retired:{ type:Boolean, default:false },
-  code:{ type:String, unique:true },
-  createdAt:{ type:Date, default: Date.now },
-  products:[{
-    productId: { type: mongoose.Schema.Types.ObjectId, ref:'Stock' },
-    name: String,
-    quantity: Number
-  }]
-});
-const Transfert = mongoose.model('Transfert', transfertSchema);
-
-// ================= UTIL =================
 async function generateUniqueCode(){
-  let code, exists = true;
+  let code, exists=true;
   while(exists){
-    const letter = String.fromCharCode(65 + Math.floor(Math.random()*26));
-    const number = Math.floor(100 + Math.random()*900);
-    code = `${letter}${number}`;
-    exists = await Transfert.findOne({ code }).exec();
+    code = String.fromCharCode(65+Math.random()*26|0)+(100+Math.random()*900|0);
+    exists = await Transfert.findOne({code});
   }
   return code;
 }
 
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
+const requireLogin=(req,res,next)=>{
+  if(req.session.user) return next();
+  res.redirect('/login');
+};
 
-// ================= AUTH =================
-const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
-function setPermissions(username){
-  if(username==='a') return { lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true };
-  if(username==='admin2') return { lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true };
-  return { lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true };
-}
+const locations=['France','Belgique','Conakry','Suisse','USA'];
+const currencies=['GNF','EUR','USD','XOF'];
+const retraitModes=['Espèces','Virement','Orange Money','Wave'];
 
-// ================= LOGIN =================
+/* ================= LOGIN ================= */
+
 app.get('/login',(req,res)=>{
-  res.send(`<html><body>
-    <h2>Connexion</h2>
-    <form method="post">
-      <input name="username" placeholder="Utilisateur" required>
-      <input type="password" name="password" placeholder="Mot de passe" required>
-      <button>Se connecter</button>
-    </form>
-  </body></html>`);
+res.send(`
+<html><head><style>
+body{margin:0;height:100vh;display:flex;justify-content:center;align-items:center;
+background:linear-gradient(135deg,#ff8c42,#ffa64d);font-family:Arial}
+.box{background:white;padding:40px;border-radius:20px;width:360px;text-align:center}
+input,button{width:100%;padding:15px;margin:10px 0;border-radius:10px;border:1px solid #ccc}
+button{background:#ff8c42;color:white;font-weight:bold;border:none}
+</style></head>
+<body>
+<div class="box">
+<h2>Connexion</h2>
+<form method="post">
+<input name="username" placeholder="Utilisateur" required>
+<input type="password" name="password" placeholder="Mot de passe" required>
+<button>Se connecter</button>
+</form>
+</div>
+</body></html>
+`);
 });
 
-app.post('/login', async(req,res)=>{
-  const { username, password } = req.body;
-  let user = await Auth.findOne({ username }).exec();
-  if(!user){ const hashed = bcrypt.hashSync(password,10); user = await new Auth({ username, password:hashed }).save(); }
-  if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-  req.session.user = { username:user.username, role:user.role, permissions:setPermissions(username) };
-  res.redirect('/dashboard');
+app.post('/login',async(req,res)=>{
+  let user = await Auth.findOne({username:req.body.username});
+  if(!user){
+    user = await new Auth({
+      username:req.body.username,
+      password:bcrypt.hashSync(req.body.password,10)
+    }).save();
+  }
+  if(!bcrypt.compareSync(req.body.password,user.password)){
+    return res.send('Mot de passe incorrect');
+  }
+  req.session.user=user;
+  res.redirect('/transferts/list');
 });
 
-app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
 
-// ================= DASHBOARD =================
-app.get('/dashboard', requireLogin, (req,res)=>{
-  res.send(`<html><body>
-    <h2>🏠 Dashboard</h2>
-    <a href="/transferts/list">📋 Liste des transferts</a><br>
-    <a href="/transferts/form">➕ Nouveau transfert</a><br>
-    <a href="/stock/list">📦 Liste des produits/stock</a><br>
-    <a href="/stock/form">➕ Ajouter produit</a><br>
+/* ================= STOCK ================= */
+
+app.get('/stock/list', requireLogin, async(req,res)=>{
+  const search=(req.query.search||'').toLowerCase();
+  let stocks = await Stock.find().sort({createdAt:-1});
+  stocks = stocks.filter(s =>
+    s.name.toLowerCase().includes(search) ||
+    s.reference.toLowerCase().includes(search)
+  );
+
+  let html=`<html><body style="font-family:Arial;background:#f4f6f9;padding:20px">
+  <h2>📦 Stock</h2>
+  <form>
+    <input name="search" placeholder="Recherche..." value="${req.query.search||''}">
+    <button>🔍</button>
+    <a href="/stock/form">➕ Nouveau</a>
+    <a href="/transferts/list">💰 Transferts</a>
     <a href="/logout">🚪 Déconnexion</a>
-  </body></html>`);
+  </form>
+  <table border="1" cellspacing="0" cellpadding="5" width="100%">
+  <tr><th>Réf</th><th>Nom</th><th>Qté</th><th>Prix</th><th>Actions</th></tr>`;
+
+  stocks.forEach(s=>{
+    html+=`<tr data-id="${s._id}">
+      <td>${s.reference}</td>
+      <td>${s.name}</td>
+      <td>${s.quantity}</td>
+      <td>${s.price}</td>
+      <td>
+        <a href="/stock/form?id=${s._id}">✏️</a>
+        <button class="del">❌</button>
+      </td>
+    </tr>`;
+  });
+
+  html+=`</table>
+  <script>
+  document.querySelectorAll('.del').forEach(b=>{
+    b.onclick=async()=>{
+      if(confirm('Supprimer ?')){
+        const id=b.closest('tr').dataset.id;
+        await fetch('/stock/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+        b.closest('tr').remove();
+      }
+    }
+  });
+  </script>
+  </body></html>`;
+  res.send(html);
 });
 
-// ================= STOCK CRUD =================
 app.get('/stock/form', requireLogin, async(req,res)=>{
-  let s=null; if(req.query.id) s = await Stock.findById(req.query.id).lean();
-  res.send(`<html><body>
-    <h2>${s?'✏️ Modifier':'➕ Nouveau'} Produit</h2>
-    <form method="post">
-      <input type="hidden" name="id" value="${s?s._id:''}">
-      <label>Nom:</label><input name="name" value="${s?s.name:''}" required><br>
-      <label>Référence:</label><input name="reference" value="${s?s.reference:''}" required><br>
-      <label>Quantité:</label><input type="number" name="quantity" value="${s?s.quantity:0}" min="0" required><br>
-      <label>Prix:</label><input type="number" name="price" value="${s?s.price:0}" min="0" required><br>
-      <label>Devise:</label>
-      <select name="currency">${currencies.map(c=>`<option ${s&&s.currency===c?'selected':''}>${c}</option>`).join('')}</select><br><br>
-      <button>${s?'Enregistrer Modifications':'Enregistrer'}</button>
-    </form>
-    <a href="/stock/list">⬅ Retour liste</a>
+  const s=req.query.id?await Stock.findById(req.query.id):{};
+  res.send(`<html><body style="font-family:Arial;padding:20px">
+  <h2>${s._id?'✏️ Modifier':'➕ Nouveau'} produit</h2>
+  <form method="post">
+    <input type="hidden" name="id" value="${s._id||''}">
+    <input name="reference" value="${s.reference||''}" placeholder="Référence" required><br>
+    <input name="name" value="${s.name||''}" placeholder="Nom" required><br>
+    <input type="number" name="quantity" value="${s.quantity||0}" placeholder="Quantité" required><br>
+    <input type="number" name="price" value="${s.price||0}" placeholder="Prix" required><br>
+    <button>💾 Enregistrer</button>
+  </form>
+  <a href="/stock/list">⬅ Retour</a>
   </body></html>`);
 });
 
 app.post('/stock/form', requireLogin, async(req,res)=>{
-  const {id,name,reference,quantity,price,currency} = req.body;
-  if(id) await Stock.findByIdAndUpdate(id,{name,reference,quantity,price,currency});
-  else await new Stock({name,reference,quantity,price,currency}).save();
+  if(req.body.id){
+    await Stock.findByIdAndUpdate(req.body.id,req.body);
+  } else {
+    await new Stock(req.body).save();
+  }
   res.redirect('/stock/list');
 });
 
-app.get('/stock/list', requireLogin, async(req,res)=>{
-  const { search='', minQty, maxQty } = req.query;
-  let query = {};
-  if(search) query.name = { $regex: search, $options: 'i' };
-  if(minQty) query.quantity = { ...query.quantity, $gte: Number(minQty) };
-  if(maxQty) query.quantity = { ...query.quantity, $lte: Number(maxQty) };
-  const stock = await Stock.find(query).lean();
-
-  let html='<html><body><h2>📦 Liste des produits/stock</h2>';
-  html+=`<form method="get">
-    <input name="search" placeholder="Nom produit..." value="${search}">
-    <input name="minQty" type="number" placeholder="Qté min" value="${minQty||''}">
-    <input name="maxQty" type="number" placeholder="Qté max" value="${maxQty||''}">
-    <button>🔍 Filtrer</button>
-  </form>`;
-  html+='<table border="1" cellspacing="0" cellpadding="5"><tr><th>Nom</th><th>Réf</th><th>Qté</th><th>Prix</th><th>Devise</th><th>Actions</th></tr>';
-  stock.forEach(s=>{
-    html+=`<tr>
-      <td>${s.name}</td>
-      <td>${s.reference}</td>
-      <td>${s.quantity}</td>
-      <td>${s.price}</td>
-      <td>${s.currency}</td>
-      <td>
-        <a href="/stock/form?id=${s._id}">✏️ Modifier</a>
-        <a href="#" onclick="fetch('/stock/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${s._id}'})}).then(()=>location.reload())">❌ Supprimer</a>
-      </td>
-    </tr>`;
-  });
-  html+='</table><a href="/dashboard">⬅ Retour dashboard</a></body></html>';
-  res.send(html);
-});
-
 app.post('/stock/delete', requireLogin, async(req,res)=>{
-  if(req.body.id) await Stock.findByIdAndDelete(req.body.id);
+  await Stock.findByIdAndDelete(req.body.id);
   res.send({ok:true});
 });
 
-// ================= TRANSFERT CRUD =================
-// Formulaire, ajout, modification, retrait, produits liés
-app.get('/transferts/form', requireLogin, async(req,res)=>{
-  let t=null; if(req.query.code) t = await Transfert.findOne({code:req.query.code}).populate('products.productId').lean();
-  const code = t?t.code:await generateUniqueCode();
-  const allStock = await Stock.find().lean();
+/* ================= TRANSFERTS ================= */
 
-  res.send(`<html><body>
-    <h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
-    <form method="post">
-      <input name="code" readonly value="${code}">
-      <label>Type de personne:</label>
-      <select name="userType">
-        <option ${t&&t.userType==='Client'?'selected':''}>Client</option>
-        <option ${t&&t.userType==='Distributeur'?'selected':''}>Distributeur</option>
-        <option ${t&&t.userType==='Administrateur'?'selected':''}>Administrateur</option>
-        <option ${t&&t.userType==='Agence de transfert'?'selected':''}>Agence de transfert</option>
-      </select><br>
-      <label>Expéditeur:</label><input name="senderFirstName" placeholder="Prénom" value="${t?t.senderFirstName:''}" required>
-      <input name="senderLastName" placeholder="Nom" value="${t?t.senderLastName:''}" required>
-      <input name="senderPhone" placeholder="Téléphone" value="${t?t.senderPhone:''}" required><br>
-      <label>Origine:</label><select name="originLocation">${locations.map(v=>`<option ${t&&t.originLocation===v?'selected':''}>${v}</option>`).join('')}</select><br>
-      <label>Destinataire:</label><input name="receiverFirstName" placeholder="Prénom" value="${t?t.receiverFirstName:''}" required>
-      <input name="receiverLastName" placeholder="Nom" value="${t?t.receiverLastName:''}" required>
-      <input name="receiverPhone" placeholder="Téléphone" value="${t?t.receiverPhone:''}" required><br>
-      <label>Destination:</label><select name="destinationLocation">${locations.map(v=>`<option ${t&&t.destinationLocation===v?'selected':''}>${v}</option>`).join('')}</select><br>
-      <label>Montant:</label><input type="number" name="amount" value="${t?t.amount:0}" required>
-      <label>Frais:</label><input type="number" name="fees" value="${t?t.fees:0}" required>
-      <label>Montant à recevoir:</label><input type="number" name="recoveryAmount" readonly value="${t?t.recoveryAmount:0}"><br>
-      <label>Devise:</label><select name="currency">${currencies.map(c=>`<option ${t&&t.currency===c?'selected':''}>${c}</option>`).join('')}</select><br>
-      <label>Mode de retrait:</label><select name="recoveryMode">${retraitModes.map(m=>`<option ${t&&t.recoveryMode===m?'selected':''}>${m}</option>`).join('')}</select><br>
-      <label>Produits:</label><br>
-      ${allStock.map(s=>`<input type="number" name="product_${s._id}" placeholder="Qté ${s.name}" value="${t&&t.products.find(p=>String(p.productId._id)===String(s._id))?t.products.find(p=>String(p.productId._id)===String(s._id)).quantity:0}"> ${s.name}<br>`).join('')}
-      <button>${t?'Enregistrer Modifications':'Enregistrer'}</button>
-    </form>
-    <a href="/transferts/list">⬅ Retour liste</a>
-    <script>
-      const amountField=document.querySelector('[name="amount"]');
-      const feesField=document.querySelector('[name="fees"]');
-      const recoveryField=document.querySelector('[name="recoveryAmount"]');
-      function updateRecovery(){recoveryField.value=(parseFloat(amountField.value)||0)-(parseFloat(feesField.value)||0);}
-      amountField.addEventListener('input',updateRecovery);
-      feesField.addEventListener('input',updateRecovery);
-      updateRecovery();
-    </script>
+app.get('/transferts/list', requireLogin, async(req,res)=>{
+  const search=(req.query.search||'').toLowerCase();
+  let trs=await Transfert.find().sort({createdAt:-1});
+  trs=trs.filter(t =>
+    t.code.toLowerCase().includes(search) ||
+    t.senderFirstName.toLowerCase().includes(search) ||
+    t.receiverFirstName.toLowerCase().includes(search)
+  );
+
+  let html=`<html><body style="font-family:Arial;background:#f4f6f9;padding:20px">
+  <h2>💰 Transferts</h2>
+  <form>
+    <input name="search" placeholder="Recherche..." value="${req.query.search||''}">
+    <button>🔍</button>
+    <a href="/transferts/form">➕ Nouveau</a>
+    <a href="/stock/list">📦 Stock</a>
+    <a href="/logout">🚪 Déconnexion</a>
+  </form>
+  <table border="1" width="100%">
+  <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Statut</th><th>Actions</th></tr>`;
+
+  trs.forEach(t=>{
+    html+=`<tr data-id="${t._id}">
+      <td>${t.code}</td>
+      <td>${t.senderFirstName}</td>
+      <td>${t.receiverFirstName}</td>
+      <td>${t.amount} ${t.currency}</td>
+      <td>${t.retired?'Retiré':'Non retiré'}</td>
+      <td>
+        <a href="/transferts/form?code=${t.code}">✏️</a>
+        ${!t.retired?'<button class="ret">💰</button>':''}
+        <button class="del">❌</button>
+      </td>
+    </tr>`;
+  });
+
+  html+=`</table>
+  <script>
+  document.querySelectorAll('.del').forEach(b=>{
+    b.onclick=async()=>{
+      if(confirm('Supprimer ?')){
+        const id=b.closest('tr').dataset.id;
+        await fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+        b.closest('tr').remove();
+      }
+    }
+  });
+  document.querySelectorAll('.ret').forEach(b=>{
+    b.onclick=async()=>{
+      const id=b.closest('tr').dataset.id;
+      await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode:'Espèces'})});
+      location.reload();
+    }
+  });
+  </script>
+  </body></html>`;
+  res.send(html);
+});
+
+app.get('/transferts/form', requireLogin, async(req,res)=>{
+  const t=req.query.code?await Transfert.findOne({code:req.query.code}):{};
+  const stocks=await Stock.find();
+  const code=t.code||await generateUniqueCode();
+
+  res.send(`<html><body style="font-family:Arial;padding:20px">
+  <h2>${t._id?'✏️ Modifier':'➕ Nouveau'} transfert</h2>
+  <form method="post">
+    <input type="hidden" name="code" value="${code}">
+    <input name="senderFirstName" value="${t.senderFirstName||''}" placeholder="Expéditeur" required><br>
+    <input name="receiverFirstName" value="${t.receiverFirstName||''}" placeholder="Destinataire" required><br>
+    <input type="number" name="amount" value="${t.amount||0}" placeholder="Montant" required><br>
+    <input type="number" name="fees" value="${t.fees||0}" placeholder="Frais" required><br>
+    <select name="currency">${currencies.map(c=>`<option>${c}</option>`).join('')}</select>
+
+    <h4>Produits</h4>
+    ${stocks.map(s=>`
+      ${s.name} (stock:${s.quantity})
+      <input type="number" name="product_${s._id}" value="0"><br>
+    `).join('')}
+
+    <button>💾 Enregistrer</button>
+  </form>
+  <a href="/transferts/list">⬅ Retour</a>
   </body></html>`);
 });
 
-// POST Transfert avec produits
 app.post('/transferts/form', requireLogin, async(req,res)=>{
-  const code = req.body.code || await generateUniqueCode();
-  const amount = Number(req.body.amount||0);
-  const fees = Number(req.body.fees||0);
-  const recoveryAmount = amount - fees;
-  const products = Object.keys(req.body).filter(k=>k.startsWith('product_')).map(k=>{
-    const qty = Number(req.body[k]);
-    if(qty>0) return { productId: k.replace('product_',''), quantity: qty };
-    return null;
-  }).filter(Boolean);
+  const amount=+req.body.amount, fees=+req.body.fees;
+  const products=[];
 
-  let existing = await Transfert.findOne({code});
-  if(existing) await Transfert.findByIdAndUpdate(existing._id,{...req.body, amount, fees, recoveryAmount, products});
-  else await new Transfert({...req.body, amount, fees, recoveryAmount, products, retraitHistory:[], code}).save();
+  for(const k in req.body){
+    if(k.startsWith('product_') && +req.body[k]>0){
+      const p=await Stock.findById(k.replace('product_',''));
+      p.quantity -= +req.body[k];
+      await p.save();
+      products.push({productId:p._id,name:p.name,quantity:+req.body[k]});
+    }
+  }
+
+  await Transfert.findOneAndUpdate(
+    {code:req.body.code},
+    {...req.body,amount,fees,recoveryAmount:amount-fees,products},
+    {upsert:true}
+  );
   res.redirect('/transferts/list');
 });
 
-// ================= TRANSFERT LISTE =================
-app.get('/transferts/list', requireLogin, async(req,res)=>{
-  const { search='', status='all' } = req.query;
-  let transferts = await Transfert.find().populate('products.productId').sort({createdAt:-1}).lean();
-  const s = search.toLowerCase();
-  transferts = transferts.filter(t=>{
-    return t.code.toLowerCase().includes(s)
-      || t.senderFirstName.toLowerCase().includes(s)
-      || t.senderLastName.toLowerCase().includes(s)
-      || t.receiverFirstName.toLowerCase().includes(s)
-      || t.receiverLastName.toLowerCase().includes(s);
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndUpdate(req.body.id,{
+    retired:true,
+    $push:{retraitHistory:{date:new Date(),mode:req.body.mode}}
   });
-  if(status==='retire') transferts = transferts.filter(t=>t.retired);
-  else if(status==='non') transferts = transferts.filter(t=>!t.retired);
-
-  let html='<html><body><h2>📋 Liste des transferts</h2>';
-  html+=`<form method="get"><input name="search" value="${search}" placeholder="Recherche...">
-         <select name="status"><option value="all" ${status==='all'?'selected':''}>Tous</option>
-         <option value="retire" ${status==='retire'?'selected':''}>Retirés</option>
-         <option value="non" ${status==='non'?'selected':''}>Non retirés</option></select>
-         <button>🔍 Filtrer</button></form>`;
-  html+='<table border="1" cellspacing="0" cellpadding="5"><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Produits</th><th>Status</th><th>Actions</th></tr>';
-  transferts.forEach(t=>{
-    html+=`<tr>
-      <td>${t.code}</td>
-      <td>${t.senderFirstName} ${t.senderLastName}</td>
-      <td>${t.receiverFirstName} ${t.receiverLastName}</td>
-      <td>${t.amount}</td>
-      <td>${t.fees}</td>
-      <td>${t.recoveryAmount}</td>
-      <td>${t.currency}</td>
-      <td>${t.products.map(p=>p.productId?`${p.productId.name}(${p.quantity})`:``).join(', ')}</td>
-      <td>${t.retired?'Retiré':'Non retiré'}</td>
-      <td>
-        <a href="/transferts/form?code=${t.code}">✏️ Modifier</a>
-        <a href="#" onclick="fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}'})}).then(()=>location.reload())">❌ Supprimer</a>
-      </td>
-    </tr>`;
-  });
-  html+='</table><a href="/dashboard">⬅ Retour dashboard</a></body></html>';
-  res.send(html);
-});
-
-app.post('/transferts/delete', requireLogin, async(req,res)=>{
-  if(req.body.id) await Transfert.findByIdAndDelete(req.body.id);
   res.send({ok:true});
 });
 
-// ================= SERVER =================
-app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
+app.post('/transferts/delete', requireLogin, async(req,res)=>{
+  await Transfert.findByIdAndDelete(req.body.id);
+  res.send({ok:true});
+});
+
+/* ================= SERVER ================= */
+app.listen(3000,()=>console.log('🚀 http://localhost:3000'));
