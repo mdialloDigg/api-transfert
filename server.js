@@ -6,134 +6,151 @@ const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 
 const app = express();
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({extended:true}));
 app.use(express.json());
-app.use(session({ secret: 'transfert-secret-final', resave: false, saveUninitialized: true }));
+app.use(session({secret:'transfert-secret-final',resave:false,saveUninitialized:true}));
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert', { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect(process.env.MONGODB_URI||'mongodb://127.0.0.1:27017/transfert')
+.then(()=>console.log('MongoDB connecté'))
+.catch(console.error);
 
 const transfertSchema = new mongoose.Schema({
-  userType: { type: String, enum: ['Client','Distributeur','Administrateur','Agence de transfert'], required: true },
-  senderFirstName: String, senderLastName: String, senderPhone: String, originLocation: String,
-  receiverFirstName: String, receiverLastName: String, receiverPhone: String, destinationLocation: String,
-  amount: Number, fees: Number, recoveryAmount: Number, currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' },
-  recoveryMode: String, retraitHistory: [{ date: Date, mode: String }], retired: { type: Boolean, default: false },
-  code: { type: String, unique: true }, createdAt: { type: Date, default: Date.now }
+  userType:{type:String,enum:['Client','Distributeur','Administrateur','Agence de transfert'],required:true},
+  senderFirstName:String,senderLastName:String,senderPhone:String,originLocation:String,
+  receiverFirstName:String,receiverLastName:String,receiverPhone:String,destinationLocation:String,
+  amount:Number,fees:Number,recoveryAmount:Number,currency:{type:String,enum:['GNF','EUR','USD','XOF'],default:'GNF'},
+  recoveryMode:String,retraitHistory:[{date:Date,mode:String}],retired:{type:Boolean,default:false},
+  code:{type:String,unique:true},createdAt:{type:Date,default:Date.now}
 });
-const Transfert = mongoose.model('Transfert', transfertSchema);
+const Transfert = mongoose.model('Transfert',transfertSchema);
 
-const authSchema = new mongoose.Schema({ username: String, password: String, role: { type: String, enum: ['admin','agent'], default:'agent' } });
-const Auth = mongoose.model('Auth', authSchema);
+const authSchema = new mongoose.Schema({username:String,password:String,role:{type:String,enum:['admin','agent'],default:'agent'}});
+const Auth = mongoose.model('Auth',authSchema);
 
-async function generateUniqueCode() {
-  let code, exists=true;
+async function generateUniqueCode(){
+  let code, exists = true;
   while(exists){
     const letter = String.fromCharCode(65+Math.floor(Math.random()*26));
-    const number = Math.floor(100 + Math.random()*900);
+    const number = Math.floor(100+Math.random()*900);
     code = `${letter}${number}`;
-    exists = await Transfert.findOne({code});
+    exists = await Transfert.findOne({code}).exec();
   }
   return code;
+}
+
+const requireLogin = (req,res,next)=>{if(req.session.user)return next();res.redirect('/login');};
+function setPermissions(username){
+  if(username==='a') return {lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true};
+  if(username==='admin2') return {lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true};
+  return {lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true};
 }
 
 const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
 const currencies = ['GNF','EUR','USD','XOF'];
 const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
 
-const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
-function setPermissions(username){
-  if(username==='admin') return {lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true};
-  return {lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true};
-}
-
-// ================= LOGIN =================
 app.get('/login',(req,res)=>{
-  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-    body{margin:0;font-family:Arial;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
-    .login-container{background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:360px;text-align:center;}
-    .login-container h2{margin-bottom:30px;font-size:26px;color:#ff8c42;}
-    .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
-    .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;}
-    .login-container button:hover{background:#e67300;}
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
+  .login-container{background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:360px;text-align:center;}
+  .login-container h2{margin-bottom:30px;font-size:26px;color:#ff8c42;}
+  .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
+  .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
+  .login-container button:hover{background:#e67300;}
   </style></head><body>
   <div class="login-container"><h2>Connexion</h2>
-  <form method="post"><input name="username" placeholder="Utilisateur" required><input type="password" name="password" placeholder="Mot de passe" required><button>Se connecter</button></form>
-  </div></body></html>`);
+  <form method="post"><input name="username" placeholder="Utilisateur" required>
+  <input type="password" name="password" placeholder="Mot de passe" required>
+  <button>Se connecter</button></form></div></body></html>`);
 });
 
-app.post('/login', async(req,res)=>{
+app.post('/login',async(req,res)=>{
   const {username,password}=req.body;
-  let user = await Auth.findOne({username});
-  if(!user){ const hashed = bcrypt.hashSync(password,10); user = await new Auth({username,password:hashed}).save(); }
+  let user=await Auth.findOne({username}).exec();
+  if(!user){const hashed=bcrypt.hashSync(password,10);user=await new Auth({username,password:hashed}).save();}
   if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-  req.session.user = {username:user.username, role:user.role, permissions:setPermissions(username)};
-  res.redirect('/transferts/list');
+  req.session.user={username:user.username,role:user.role,permissions:setPermissions(username)};
+  res.redirect('/transferts');
 });
 
-app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+app.get('/logout',(req,res)=>{req.session.destroy(()=>res.redirect('/login'));});
 
-// ================= FORMULAIRE TRANSFERT =================
-app.get('/transferts/form',requireLogin,async(req,res)=>{
-  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
-  let t=null; if(req.query.code) t = await Transfert.findOne({code:req.query.code});
-  const code = t?t.code:await generateUniqueCode();
-  let html='<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;background:#f0f4f8;margin:0;padding:10px;}.container{max-width:900px;margin:20px auto;padding:20px;background:#fff;border-radius:15px;}label{font-weight:bold;display:block;margin-top:10px;}input,select{padding:10px;width:100%;border-radius:6px;border:1px solid #ccc;}button{margin-top:15px;padding:12px;background:#ff8c42;color:white;border:none;border-radius:8px;cursor:pointer;}</style></head><body><div class="container">';
-  html+=`<h2>${t?'Modifier':'Nouveau'} Transfert</h2><form method="post">`;
-  html+=`<label>Code</label><input name="code" value="${code}" readonly>`;
-  html+=`<label>Type</label><select name="userType">${['Client','Distributeur','Administrateur','Agence de transfert'].map(u=>`<option ${t&&t.userType===u?'selected':''}>${u}</option>`).join('')}</select>`;
-  html+=`<label>Expéditeur Prénom</label><input name="senderFirstName" value="${t?t.senderFirstName:''}" required>`;
-  html+=`<label>Expéditeur Nom</label><input name="senderLastName" value="${t?t.senderLastName:''}" required>`;
-  html+=`<label>Expéditeur Téléphone</label><input name="senderPhone" value="${t?t.senderPhone:''}" required>`;
-  html+=`<label>Origine</label><select name="originLocation">${locations.map(l=>`<option ${t&&t.originLocation===l?'selected':''}>${l}</option>`).join('')}</select>`;
-  html+=`<label>Destinataire Prénom</label><input name="receiverFirstName" value="${t?t.receiverFirstName:''}" required>`;
-  html+=`<label>Destinataire Nom</label><input name="receiverLastName" value="${t?t.receiverLastName:''}" required>`;
-  html+=`<label>Destinataire Téléphone</label><input name="receiverPhone" value="${t?t.receiverPhone:''}" required>`;
-  html+=`<label>Destination</label><select name="destinationLocation">${locations.map(l=>`<option ${t&&t.destinationLocation===l?'selected':''}>${l}</option>`).join('')}</select>`;
-  html+=`<label>Montant</label><input type="number" id="amount" name="amount" value="${t?t.amount:''}" required>`;
-  html+=`<label>Frais</label><input type="number" id="fees" name="fees" value="${t?t.fees:''}" required>`;
-  html+=`<label>Montant à recevoir</label><input type="text" id="recoveryAmount" name="recoveryAmount" readonly value="${t?t.recoveryAmount:''}">`;
-  html+=`<label>Devise</label><select name="currency">${currencies.map(c=>`<option ${t&&t.currency===c?'selected':''}>${c}</option>`).join('')}</select>`;
-  html+=`<label>Mode de retrait</label><select name="recoveryMode">${retraitModes.map(r=>`<option ${t&&t.recoveryMode===r?'selected':''}>${r}</option>`).join('')}</select>`;
-  html+=`<button>${t?'Enregistrer Modifications':'Enregistrer'}</button></form>`;
-  html+='<a href="/transferts/list">⬅ Retour liste</a>';
-  html+=`<script>
-    const amountField=document.getElementById('amount');
-    const feesField=document.getElementById('fees');
-    const recoveryField=document.getElementById('recoveryAmount');
-    function updateRecovery(){recoveryField.value=(parseFloat(amountField.value)||0)-(parseFloat(feesField.value)||0);}
-    amountField.addEventListener('input',updateRecovery);
-    feesField.addEventListener('input',updateRecovery);
-    updateRecovery();
-  </script></div></body></html>`;
-  res.send(html);
+app.get('/transferts',requireLogin,async(req,res)=>{
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}th{background:#ff8c42;color:white;}
+  .retired{background:#fff3b0;}
+  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+  .modify{background:#28a745;}.delete{background:#dc3545;}.retirer{background:#ff9900;}.imprimer{background:#17a2b8;}
+  input,select{padding:6px;margin-right:5px;}
+  </style></head><body>
+  <h2>📋 Liste des transferts</h2>
+  <button onclick="showForm()">➕ Nouveau</button>
+  <input id="searchInput" placeholder="Recherche...">
+  <button onclick="loadList()">🔍</button>
+  <div id="totaux"></div>
+  <div id="formContainer" style="display:none;"></div>
+  <div id="listContainer"></div>
+  <script>
+  const locations=${JSON.stringify(locations)};
+  const currencies=${JSON.stringify(currencies)};
+  const retraitModes=${JSON.stringify(retraitModes)};
+  async function loadList(){
+    const search=document.getElementById('searchInput').value;
+    const res=await fetch('/transferts/ajax/list?search='+encodeURIComponent(search));
+    const data=await res.json();
+    renderList(data);
+  }
+  function renderList({transferts,totaux,permissions}){
+    let tHTML='<h3>📊 Totaux</h3><table><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr>';
+    for(let dest in totaux){for(let curr in totaux[dest]){
+      tHTML+='<tr><td>'+dest+'</td><td>'+curr+'</td><td>'+totaux[dest][curr].amount+'</td><td>'+totaux[dest][curr].fees+'</td><td>'+totaux[dest][curr].recovery+'</td></tr>';
+    }} tHTML+='</table>';
+    document.getElementById('totaux').innerHTML=tHTML;
+    let html='<table><tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Téléphone</th><th>Origine</th><th>Destinataire</th><th>Téléphone</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>';
+    transferts.forEach(t=>{
+      html+='<tr class="'+(t.retired?'retired':'')+'" data-id="'+t._id+'">'+
+      '<td>'+t.code+'</td><td>'+t.userType+'</td>'+
+      '<td>'+t.senderFirstName+' '+t.senderLastName+'</td><td>'+t.senderPhone+'</td><td>'+t.originLocation+'</td>'+
+      '<td>'+t.receiverFirstName+' '+t.receiverLastName+'</td><td>'+t.receiverPhone+'</td><td>'+t.destinationLocation+'</td>'+
+      '<td>'+t.amount+'</td><td>'+t.fees+'</td><td>'+t.recoveryAmount+'</td><td>'+t.currency+'</td>'+
+      '<td>'+(t.retired?'Retiré':'Non retiré')+'</td><td>'+
+      (permissions.modification?'<button class="modify" onclick="editTransfer(\\''+t.code+'\\')">✏️ Modifier</button>':'')+
+      (permissions.suppression?'<button class="delete" onclick="deleteTransfer(\\''+t._id+'\\')">❌ Supprimer</button>':'')+
+      (permissions.retrait&&!t.retired?'<select class="retirementMode">'+retraitModes.map(m=>'<option>'+m+'</option>').join('')+'</select><button class="retirer" onclick="retirer(\\''+t._id+'\\')">💰 Retirer</button>':'')+
+      (permissions.imprimer?'<button onclick="window.open(\\'/transferts/print/'+t._id+'\\',\'_blank\')">🖨 Imprimer</button>':'')+
+      '</td></tr>';
+    });
+    html+='</table>';
+    document.getElementById('listContainer').innerHTML=html;
+  }
+  function showForm(code=''){
+    fetch('/transferts/ajax/form?code='+code).then(r=>r.text()).then(html=>{
+      document.getElementById('formContainer').style.display='block';
+      document.getElementById('formContainer').innerHTML=html;
+    });
+  }
+  async function saveForm(event){
+    event.preventDefault();
+    const data=new FormData(event.target);
+    const obj={}; data.forEach((v,k)=>obj[k]=v);
+    await fetch('/transferts/ajax/form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+    document.getElementById('formContainer').style.display='none';
+    loadList();
+  }
+  async function deleteTransfer(id){if(confirm('Confirmer?')){await fetch('/transferts/ajax/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadList();}}
+  async function retirer(id){const tr=document.querySelector('tr[data-id="'+id+'"]');const mode=tr.querySelector('.retirementMode').value;await fetch('/transferts/ajax/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});loadList();}
+  function editTransfer(code){showForm(code);}
+  loadList();
+  </script></body></html>`);
 });
 
-// ================= POST FORMULAIRE =================
-app.post('/transferts/form',requireLogin,async(req,res)=>{
-  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
-  const amount=Number(req.body.amount||0);
-  const fees=Number(req.body.fees||0);
-  const recoveryAmount=amount-fees;
-  const code=req.body.code||await generateUniqueCode();
-  let existing=await Transfert.findOne({code});
-  if(existing) await Transfert.findByIdAndUpdate(existing._id,{...req.body, amount, fees, recoveryAmount});
-  else await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory:[], code}).save();
-  res.redirect('/transferts/list');
-});
-
-// ================= LISTE =================
-app.get('/transferts/list',requireLogin,async(req,res)=>{
-  const search=(req.query.search||'').toLowerCase();
-  let transferts = await Transfert.find().sort({createdAt:-1});
-  transferts = transferts.filter(t=>{
-    return t.code.toLowerCase().includes(search)
-      || t.senderFirstName.toLowerCase().includes(search)
-      || t.senderLastName.toLowerCase().includes(search)
-      || t.senderPhone.toLowerCase().includes(search)
-      || t.receiverFirstName.toLowerCase().includes(search)
-      || t.receiverLastName.toLowerCase().includes(search)
-      || t.receiverPhone.toLowerCase().includes(search);
-  });
+// Routes AJAX
+app.get('/transferts/ajax/list',requireLogin,async(req,res)=>{
+  let {search=''}=req.query;
+  let transferts=await Transfert.find().sort({createdAt:-1});
+  const s=search.toLowerCase();
+  transferts=transferts.filter(t=>t.code.toLowerCase().includes(s)||t.senderFirstName.toLowerCase().includes(s)||t.senderLastName.toLowerCase().includes(s)||t.senderPhone.toLowerCase().includes(s)||t.receiverFirstName.toLowerCase().includes(s)||t.receiverLastName.toLowerCase().includes(s)||t.receiverPhone.toLowerCase().includes(s));
   const totals={};
   transferts.forEach(t=>{
     if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
@@ -142,97 +159,82 @@ app.get('/transferts/list',requireLogin,async(req,res)=>{
     totals[t.destinationLocation][t.currency].fees+=t.fees;
     totals[t.destinationLocation][t.currency].recovery+=t.recoveryAmount;
   });
-
-  let html='<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:Arial;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:5px;} th{background:#ff8c42;color:white;} .retired{background:#fff3b0;} button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;} .delete{background:#dc3545;} .retirer{background:#ff9900;} .imprimer{background:#17a2b8;}</style></head><body>';
-  html+='<h2>📋 Liste des transferts</h2>';
-
-  html+='<h3>Totaux par destination/devise</h3><table><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr>';
-  for(let dest in totals){
-    for(let cur in totals[dest]){
-      html+=`<tr><td>${dest}</td><td>${cur}</td><td>${totals[dest][cur].amount}</td><td>${totals[dest][cur].fees}</td><td>${totals[dest][cur].recovery}</td></tr>`;
-    }
-  }
-  html+='</table>';
-
-  html+=`<input type="text" id="search" placeholder="Recherche..."><button id="filter">🔍 Filtrer</button><a href="/transferts/form">➕ Nouveau</a><a href="/logout">🚪 Déconnexion</a>`;
-  html+='<table><thead><tr><th>Code</th><th>Type</th><th>Expéditeur</th><th>Origine</th><th>Destinataire</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
-  transferts.forEach(t=>{
-    html+=`<tr class="${t.retired?'retired':''}" data-id="${t._id}">
-      <td>${t.code}</td><td>${t.userType}</td>
-      <td>${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</td>
-      <td>${t.originLocation}</td>
-      <td>${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</td>
-      <td>${t.destinationLocation}</td>
-      <td>${t.amount}</td><td>${t.fees}</td><td>${t.recoveryAmount}</td>
-      <td>${t.currency}</td><td>${t.retired?'Retiré':'Non retiré'}</td>
-      <td>
-        ${req.session.user.permissions.retrait && !t.retired?`<select class="retirementMode">${retraitModes.map(m=>`<option>${m}</option>`).join('')}</select><button class="retirer">💰 Retirer</button>`:''}
-        ${req.session.user.permissions.suppression?'<button class="delete">❌ Supprimer</button>':''}
-        ${req.session.user.permissions.imprimer?`<a href="/transferts/print/${t._id}" target="_blank"><button class="imprimer">🖨️ Imprimer</button></a>`:''}
-      </td>
-    </tr>`;
-  });
-  html+='</tbody></table>';
-  html+=`<button id="exportPDF">📄 Export PDF</button> <button id="exportExcel">📊 Export Excel</button>`;
-  html+=`<script>
-    document.getElementById('filter').onclick = ()=>{window.location='/transferts/list?search='+encodeURIComponent(document.getElementById('search').value)};
-    document.querySelectorAll('.delete').forEach(b=>b.onclick=async()=>{if(confirm('Supprimer ?')){const tr=b.closest('tr');await fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:tr.dataset.id})});tr.remove();}});
-    document.querySelectorAll('.retirer').forEach(b=>b.onclick=async()=>{const tr=b.closest('tr');const mode=tr.querySelector('.retirementMode').value;await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:tr.dataset.id,mode})});tr.querySelector('td:nth-child(11)').innerText='Retiré';b.remove();tr.querySelector('.retirementMode').remove();});
-    document.getElementById('exportPDF').onclick = ()=>{window.open('/transferts/export/pdf')};
-    document.getElementById('exportExcel').onclick = ()=>{window.open('/transferts/export/excel')};
-  </script>`;
-  html+='</body></html>';
-  res.send(html);
+  res.json({transferts,totaux:totals,permissions:req.session.user.permissions});
 });
 
-// ================= AJAX =================
-app.post('/transferts/delete',requireLogin,async(req,res)=>{await Transfert.findByIdAndDelete(req.body.id);res.send({ok:true});});
-app.post('/transferts/retirer',requireLogin,async(req,res)=>{await Transfert.findByIdAndUpdate(req.body.id,{retired:true,recoveryMode:req.body.mode,$push:{retraitHistory:{date:new Date(),mode:req.body.mode}}});res.send({ok:true});});
+app.get('/transferts/ajax/form',requireLogin,async(req,res)=>{
+  let t=null; if(req.query.code)t=await Transfert.findOne({code:req.query.code});
+  const code=t?t.code:await generateUniqueCode();
+  res.send(`<form onsubmit="saveForm(event)">
+  <input name="code" value="${code}" readonly><label>Type</label><select name="userType">${['Client','Distributeur','Administrateur','Agence de transfert'].map(v=>`<option ${t&&t.userType===v?'selected':''}>${v}</option>`).join('')}</select>
+  <label>Expéditeur Prénom</label><input name="senderFirstName" value="${t?t.senderFirstName:''}" required>
+  <label>Expéditeur Nom</label><input name="senderLastName" value="${t?t.senderLastName:''}" required>
+  <label>Expéditeur Téléphone</label><input name="senderPhone" value="${t?t.senderPhone:''}" required>
+  <label>Origine</label><select name="originLocation">${locations.map(v=>`<option ${t&&t.originLocation===v?'selected':''}>${v}</option>`).join('')}</select>
+  <label>Destinataire Prénom</label><input name="receiverFirstName" value="${t?t.receiverFirstName:''}" required>
+  <label>Destinataire Nom</label><input name="receiverLastName" value="${t?t.receiverLastName:''}" required>
+  <label>Destinataire Téléphone</label><input name="receiverPhone" value="${t?t.receiverPhone:''}" required>
+  <label>Destination</label><select name="destinationLocation">${locations.map(v=>`<option ${t&&t.destinationLocation===v?'selected':''}>${v}</option>`).join('')}</select>
+  <label>Montant</label><input type="number" name="amount" value="${t?t.amount:''}" required>
+  <label>Frais</label><input type="number" name="fees" value="${t?t.fees:''}" required>
+  <label>Montant à recevoir</label><input type="number" name="recoveryAmount" value="${t?t.recoveryAmount:''}" readonly>
+  <label>Devise</label><select name="currency">${currencies.map(c=>`<option ${t&&t.currency===c?'selected':''}>${c}</option>`).join('')}</select>
+  <label>Mode de retrait</label><select name="recoveryMode">${retraitModes.map(m=>`<option ${t&&t.recoveryMode===m?'selected':''}>${m}</option>`).join('')}</select>
+  <button>Enregistrer</button></form>`);
+});
 
-// ================= EXPORT PDF =================
-app.get('/transferts/export/pdf',requireLogin,async(req,res)=>{
-  const transferts = await Transfert.find();
-  const doc = new PDFDocument({margin:30,size:'A4'});
-  res.setHeader('Content-disposition','attachment; filename=transferts.pdf');
-  res.setHeader('Content-type','application/pdf');
-  doc.text('Liste des transferts', {align:'center', underline:true});
-  transferts.forEach(t=>{
-    doc.moveDown(0.2).text(`${t.code} | ${t.senderFirstName} ${t.senderLastName} -> ${t.receiverFirstName} ${t.receiverLastName} | ${t.amount} ${t.currency} | ${t.retired?'Retiré':'Non retiré'}`);
-  });
+app.post('/transferts/ajax/form',requireLogin,async(req,res)=>{
+  const amount=Number(req.body.amount||0);const fees=Number(req.body.fees||0);
+  const recoveryAmount=amount-fees; const code=req.body.code||await generateUniqueCode();
+  let existing=await Transfert.findOne({code});
+  if(existing) await Transfert.findByIdAndUpdate(existing._id,{...req.body,amount,fees,recoveryAmount});
+  else await new Transfert({...req.body,amount,fees,recoveryAmount,code,retraitHistory:[]}).save();
+  res.json({ok:true});
+});
+
+app.post('/transferts/ajax/delete',requireLogin,async(req,res)=>{
+  if(!req.session.user.permissions.suppression) return res.status(403).send('Accès refusé');
+  await Transfert.findByIdAndDelete(req.body.id);res.json({ok:true});
+});
+
+app.post('/transferts/ajax/retirer',requireLogin,async(req,res)=>{
+  if(!req.session.user.permissions.retrait) return res.status(403).send('Accès refusé');
+  await Transfert.findByIdAndUpdate(req.body.id,{retired:true,recoveryMode:req.body.mode,$push:{retraitHistory:{date:new Date(),mode:req.body.mode}}});
+  res.json({ok:true});
+});
+
+app.get('/transferts/print/:id',requireLogin,async(req,res)=>{
+  const t=await Transfert.findById(req.params.id);if(!t)return res.send('Transfert introuvable');
+  res.send(`<html><body><h3>💰 Transfert</h3><p>Code: ${t.code}</p>
+  <p>Exp: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
+  <p>Dest: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
+  <p>Montant: ${t.amount} ${t.currency}</p><p>Frais: ${t.fees}</p><p>Reçu: ${t.recoveryAmount}</p>
+  <p>Status: ${t.retired?'Retiré':'Non retiré'}</p><button onclick="window.print()">🖨 Imprimer</button></body></html>`);
+});
+
+app.get('/transferts/pdf',requireLogin,async(req,res)=>{
+  const transferts=await Transfert.find().sort({createdAt:-1});
+  const doc=new PDFDocument({margin:30,size:'A4'});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','attachment; filename="transferts.pdf"');
   doc.pipe(res);
+  doc.fontSize(18).text('Liste des transferts',{align:'center'}).moveDown();
+  transferts.forEach(t=>doc.fontSize(12).text(`${t.code} - ${t.senderFirstName} ${t.senderLastName} -> ${t.receiverFirstName} ${t.receiverLastName} : ${t.amount} ${t.currency} [${t.retired?'Retiré':'Non retiré'}]`));
   doc.end();
 });
 
-// ================= EXPORT EXCEL =================
-app.get('/transferts/export/excel',requireLogin,async(req,res)=>{
-  const transferts = await Transfert.find();
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Transferts');
-  sheet.addRow(['Code','Type','Expéditeur','Origine','Destinataire','Destination','Montant','Frais','Reçu','Devise','Status']);
-  transferts.forEach(t=>{
-    sheet.addRow([t.code,t.userType,`${t.senderFirstName} ${t.senderLastName}`,t.originLocation,`${t.receiverFirstName} ${t.receiverLastName}`,t.destinationLocation,t.amount,t.fees,t.recoveryAmount,t.currency,t.retired?'Retiré':'Non retiré']);
-  });
+app.get('/transferts/excel',requireLogin,async(req,res)=>{
+  const transferts=await Transfert.find().sort({createdAt:-1});
+  const workbook=new ExcelJS.Workbook();
+  const sheet=workbook.addWorksheet('Transferts');
+  sheet.columns=[{header:'Code',key:'code'},{header:'Expéditeur',key:'exp'},{header:'Destinataire',key:'dest'},
+    {header:'Montant',key:'amount'},{header:'Frais',key:'fees'},{header:'Reçu',key:'recovery'},{header:'Devise',key:'currency'},{header:'Status',key:'status'}];
+  transferts.forEach(t=>sheet.addRow({code:t.code,exp:t.senderFirstName+' '+t.senderLastName,dest:t.receiverFirstName+' '+t.receiverLastName,
+    amount:t.amount,fees:t.fees,recovery:t.recoveryAmount,currency:t.currency,status:t.retired?'Retiré':'Non retiré'}));
   res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
+  res.setHeader('Content-Disposition','attachment; filename="transferts.xlsx"');
   await workbook.xlsx.write(res);
   res.end();
 });
 
-// ================= PRINT =================
-app.get('/transferts/print/:id',requireLogin,async(req,res)=>{
-  const t = await Transfert.findById(req.params.id);
-  if(!t) return res.send('Transfert introuvable');
-  res.send(`<html><body><h2>Transfert ${t.code}</h2>
-  <p>Expéditeur: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
-  <p>Destinataire: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
-  <p>Origine: ${t.originLocation}</p>
-  <p>Destination: ${t.destinationLocation}</p>
-  <p>Montant: ${t.amount}</p>
-  <p>Frais: ${t.fees}</p>
-  <p>Montant à recevoir: ${t.recoveryAmount}</p>
-  <p>Devise: ${t.currency}</p>
-  <p>Mode de retrait: ${t.recoveryMode}</p>
-  <button onclick="window.print()">🖨️ Imprimer</button></body></html>`);
-});
-
-app.listen(process.env.PORT||3000,()=>console.log('Server running'));
+app.listen(process.env.PORT||3000,()=>console.log('Serveur démarré'));
