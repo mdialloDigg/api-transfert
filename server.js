@@ -1,7 +1,3 @@
-/******************************************************************
- * APP TRANSFERT – TOUT EN UN – STABLE – RENDER READY
- ******************************************************************/
-
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -10,26 +6,30 @@ const bcrypt = require('bcryptjs');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
 app.use(session({
-  secret: 'transfert-secret-final',
+  secret: 'transfert-secret',
   resave: false,
   saveUninitialized: false
 }));
 
-/* ===================== CONFIG SAFE ===================== */
+/* ===================== SAFE MONGO ===================== */
 
+let mongoConnected = false;
 const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error('❌ ERREUR: MONGO_URI non défini dans Render');
+
+if (MONGO_URI) {
+  mongoose.connect(MONGO_URI)
+    .then(() => {
+      mongoConnected = true;
+      console.log('✅ MongoDB connecté');
+    })
+    .catch(err => {
+      console.error('❌ MongoDB erreur:', err.message);
+    });
+} else {
+  console.warn('⚠️ MONGO_URI absent — mode maintenance');
 }
-
-/* ===================== DATABASE ===================== */
-
-mongoose.connect(MONGO_URI || '', { serverSelectionTimeoutMS: 5000 })
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(err=>{
-  console.error('❌ MongoDB indisponible:', err.message);
-});
 
 /* ===================== SCHEMAS ===================== */
 
@@ -49,43 +49,24 @@ const transfertSchema = new mongoose.Schema({
   currency:String,
   recoveryMode:String,
   retired:{type:Boolean,default:false},
-  retraitHistory:[{date:Date,mode:String}],
   code:String,
   createdAt:{type:Date,default:Date.now}
 });
-const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
   username:String,
   password:String
 });
+
+const Transfert = mongoose.model('Transfert', transfertSchema);
 const Auth = mongoose.model('Auth', authSchema);
 
-const stockSchema = new mongoose.Schema({
-  location:String,
-  currency:String,
-  balance:{type:Number,default:0}
-});
-const Stock = mongoose.model('Stock', stockSchema);
+/* ===================== MIDDLEWARE ===================== */
 
-/* ===================== CONSTANTES ===================== */
-
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
-
-/* ===================== UTILS ===================== */
-
-async function generateCode(){
-  let code, ok=false;
-  while(!ok){
-    code = String.fromCharCode(65+Math.random()*26|0)+(100+Math.random()*900|0);
-    ok = !(await Transfert.findOne({code}));
+const requireLogin = (req,res,next)=>{
+  if(!mongoConnected){
+    return res.send('<h2>⚠️ Maintenance : base de données indisponible</h2>');
   }
-  return code;
-}
-
-const requireLogin=(req,res,next)=>{
   if(req.session.user) return next();
   res.redirect('/login');
 };
@@ -94,126 +75,58 @@ const requireLogin=(req,res,next)=>{
 
 app.get('/login',(req,res)=>{
 res.send(`
-<html><head>
+<!DOCTYPE html>
+<html>
+<head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{margin:0;font-family:Arial;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
-.box{background:#fff;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.3);width:90%;max-width:360px}
+body{margin:0;height:100vh;display:flex;justify-content:center;align-items:center;background:linear-gradient(135deg,#ff8c42,#ffa64d);font-family:Arial}
+.box{background:#fff;padding:40px;border-radius:20px;width:90%;max-width:350px}
 h2{text-align:center;color:#ff8c42}
 input,button{width:100%;padding:15px;margin-top:12px;border-radius:10px;font-size:16px}
-input{border:1px solid #ccc}
-button{border:none;background:#ff8c42;color:white;font-weight:bold}
+button{background:#ff8c42;color:#fff;border:none;font-weight:bold}
 </style>
-</head><body>
+</head>
+<body>
 <div class="box">
 <h2>Connexion</h2>
+${!mongoConnected?'<p style="color:red">Base indisponible</p>':''}
 <form method="post">
 <input name="username" placeholder="Utilisateur" required>
 <input type="password" name="password" placeholder="Mot de passe" required>
-<button>Se connecter</button>
+<button>Connexion</button>
 </form>
 </div>
-</body></html>
+</body>
+</html>
 `);
 });
 
 app.post('/login',async(req,res)=>{
-let user = await Auth.findOne({username:req.body.username});
-if(!user){
-  user = await new Auth({
-    username:req.body.username,
-    password:bcrypt.hashSync(req.body.password,10)
-  }).save();
-}
-if(!bcrypt.compareSync(req.body.password,user.password))
-  return res.send('Mot de passe incorrect');
-req.session.user={username:user.username};
-res.redirect('/transferts/list');
+  if(!mongoConnected) return res.send('Base indisponible');
+  let user = await Auth.findOne({username:req.body.username});
+  if(!user){
+    user = await new Auth({
+      username:req.body.username,
+      password:bcrypt.hashSync(req.body.password,10)
+    }).save();
+  }
+  if(!bcrypt.compareSync(req.body.password,user.password)){
+    return res.send('Mot de passe incorrect');
+  }
+  req.session.user = {username:user.username};
+  res.redirect('/transferts');
 });
 
-app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
+/* ===================== TRANSFERT ===================== */
 
-/* ===================== FORM TRANSFERT ===================== */
-
-app.get('/transferts/form',requireLogin,async(req,res)=>{
-const t=req.query.code?await Transfert.findOne({code:req.query.code}):null;
-const code=t?t.code:await generateCode();
+app.get('/transferts',requireLogin,async(req,res)=>{
+const list = await Transfert.find().sort({createdAt:-1});
 res.send(`
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:Arial;background:#f0f4f8;padding:10px}
-.container{max-width:900px;margin:auto;background:white;padding:20px;border-radius:15px}
-h2{text-align:center;color:#ff8c42}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
-input,select,button{padding:12px;border-radius:8px;border:1px solid #ccc;width:100%}
-button{background:#ff8c42;color:white;border:none;font-weight:bold}
-</style></head><body>
-<div class="container">
-<h2>${t?'Modifier':'Nouveau'} Transfert</h2>
-<form method="post">
-<input type="hidden" name="code" value="${code}">
-<select name="userType">
-<option>Client</option><option>Distributeur</option><option>Administrateur</option><option>Agence de transfert</option>
-</select>
-
-<h3>Expéditeur</h3>
-<div class="grid">
-<input name="senderFirstName" placeholder="Prénom" value="${t?.senderFirstName||''}" required>
-<input name="senderLastName" placeholder="Nom" value="${t?.senderLastName||''}" required>
-<input name="senderPhone" placeholder="Téléphone" value="${t?.senderPhone||''}" required>
-<select name="originLocation">${locations.map(l=>`<option ${t?.originLocation===l?'selected':''}>${l}</option>`).join('')}</select>
-</div>
-
-<h3>Destinataire</h3>
-<div class="grid">
-<input name="receiverFirstName" placeholder="Prénom" value="${t?.receiverFirstName||''}" required>
-<input name="receiverLastName" placeholder="Nom" value="${t?.receiverLastName||''}" required>
-<input name="receiverPhone" placeholder="Téléphone" value="${t?.receiverPhone||''}" required>
-<select name="destinationLocation">${locations.map(l=>`<option ${t?.destinationLocation===l?'selected':''}>${l}</option>`).join('')}</select>
-</div>
-
-<h3>Montants</h3>
-<div class="grid">
-<input type="number" id="amount" name="amount" value="${t?.amount||0}">
-<input type="number" id="fees" name="fees" value="${t?.fees||0}">
-<input id="recovery" readonly>
-<select name="currency">${currencies.map(c=>`<option ${t?.currency===c?'selected':''}>${c}</option>`).join('')}</select>
-</div>
-
-<select name="recoveryMode">${retraitModes.map(m=>`<option>${m}</option>`).join('')}</select>
-<button>Enregistrer</button>
-</form>
-<a href="/transferts/list">⬅ Retour</a>
-</div>
-
-<script>
-const a=document.getElementById('amount'),f=document.getElementById('fees'),r=document.getElementById('recovery');
-function u(){r.value=(+a.value||0)-(+f.value||0)}a.oninput=f.oninput=u;u();
-</script>
-</body></html>
-`);
-});
-
-app.post('/transferts/form',requireLogin,async(req,res)=>{
-const amount=+req.body.amount,fees=+req.body.fees;
-const recoveryAmount=amount-fees;
-const data={...req.body,amount,fees,recoveryAmount};
-let t=await Transfert.findOne({code:req.body.code});
-if(t) await Transfert.findByIdAndUpdate(t._id,data);
-else await new Transfert(data).save();
-res.redirect('/transferts/list');
-});
-
-/* ===================== LISTE ===================== */
-
-app.get('/transferts/list',requireLogin,async(req,res)=>{
-const list=await Transfert.find().sort({createdAt:-1});
-res.send(`
-<html><body>
-<h2>📋 Liste des transferts</h2>
-<a href="/transferts/form">➕ Nouveau</a> | <a href="/logout">Déconnexion</a>
+<h2>Transferts</h2>
+<a href="/form">➕ Nouveau</a> | <a href="/logout">Déconnexion</a>
 <table border="1" cellpadding="5">
-<tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>
+<tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Statut</th><th>Actions</th></tr>
 ${list.map(t=>`
 <tr>
 <td>${t.code}</td>
@@ -221,31 +134,58 @@ ${list.map(t=>`
 <td>${t.receiverFirstName}</td>
 <td>${t.amount}</td>
 <td>${t.currency}</td>
-<td>${t.retired?'Retiré':'Non retiré'}</td>
+<td>${t.retired?'Retiré':'En attente'}</td>
 <td>
-<a href="/transferts/form?code=${t.code}">✏️</a>
-<button onclick="fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}'})}).then(()=>location.reload())">❌</button>
-${!t.retired?`<button onclick="fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}',mode:'Espèces'})}).then(()=>location.reload())">💰</button>`:''}
+<a href="/form?code=${t.code}">✏️</a>
+<button onclick="fetch('/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}'})}).then(()=>location.reload())">❌</button>
+${!t.retired?`<button onclick="fetch('/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}'})}).then(()=>location.reload())">💰</button>`:''}
 </td>
-</tr>`).join('')}
+</tr>
+`).join('')}
 </table>
-</body></html>
 `);
 });
 
-/* ===================== AJAX ===================== */
+app.get('/form',requireLogin,async(req,res)=>{
+const t = req.query.code ? await Transfert.findOne({code:req.query.code}) : null;
+res.send(`
+<h2>${t?'Modifier':'Nouveau'} Transfert</h2>
+<form method="post">
+<input name="code" value="${t?.code||Math.random().toString(36).substring(2,6).toUpperCase()}" required>
+<input name="senderFirstName" placeholder="Prénom expéditeur" value="${t?.senderFirstName||''}" required>
+<input name="receiverFirstName" placeholder="Prénom destinataire" value="${t?.receiverFirstName||''}" required>
+<input type="number" name="amount" placeholder="Montant" value="${t?.amount||0}">
+<input type="number" name="fees" placeholder="Frais" value="${t?.fees||0}">
+<select name="currency"><option>EUR</option><option>USD</option><option>GNF</option></select>
+<button>Enregistrer</button>
+</form>
+<a href="/transferts">⬅ Retour</a>
+`);
+});
 
-app.post('/transferts/retirer',requireLogin,async(req,res)=>{
-await Transfert.findByIdAndUpdate(req.body.id,{retired:true,$push:{retraitHistory:{date:new Date(),mode:req.body.mode}}});
+app.post('/form',requireLogin,async(req,res)=>{
+const amount=+req.body.amount, fees=+req.body.fees;
+const recoveryAmount = amount-fees;
+const data = {...req.body,amount,fees,recoveryAmount};
+const exist = await Transfert.findOne({code:req.body.code});
+if(exist) await Transfert.updateOne({_id:exist._id},data);
+else await new Transfert(data).save();
+res.redirect('/transferts');
+});
+
+app.post('/retirer',requireLogin,async(req,res)=>{
+await Transfert.updateOne({_id:req.body.id},{retired:true});
 res.send({ok:true});
 });
 
-app.post('/transferts/delete',requireLogin,async(req,res)=>{
-await Transfert.findByIdAndDelete(req.body.id);
+app.post('/delete',requireLogin,async(req,res)=>{
+await Transfert.deleteOne({_id:req.body.id});
 res.send({ok:true});
 });
+
+app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/login')));
 
 /* ===================== SERVER ===================== */
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT,'0.0.0.0',()=>console.log(`🚀 Serveur lancé sur ${PORT}`));
+const PORT = process.env.PORT || 10000;
+app.listen(PORT,'0.0.0.0',()=>console.log('🚀 Serveur lancé sur',PORT));
