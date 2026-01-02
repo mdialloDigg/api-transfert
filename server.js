@@ -584,15 +584,20 @@ app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-.form-container{max-width:500px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
-input,select,button{width:100%;padding:12px;margin-bottom:10px;font-size:16px;border-radius:8px;border:1px solid #ccc;}
-button{background:#ff8c42;color:white;border:none;cursor:pointer;}
+.form-container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+input,select,button{padding:10px;margin-bottom:10px;font-size:16px;border-radius:8px;border:1px solid #ccc;}
+button{background:#ff8c42;color:white;border:none;cursor:pointer;margin-right:5px;}
+.row{display:flex;gap:10px;margin-bottom:5px;}
+.row input, .row select{flex:1;}
 </style>
 </head>
 <body>
 <div class="form-container">
-<h2>➕ Nouveau Stock</h2>
+<h2>➕ Nouveau Stock (Plusieurs)</h2>
+
 <form id="newStockForm">
+<div id="stockRows">
+<div class="row">
 <input name="sender" placeholder="Expéditeur" required>
 <input name="destination" placeholder="Destination" required>
 <input type="number" name="amount" placeholder="Montant" required>
@@ -602,37 +607,67 @@ button{background:#ff8c42;color:white;border:none;cursor:pointer;}
 <option>USD</option>
 <option>XOF</option>
 </select>
+<button type="button" class="removeRowBtn">❌</button>
+</div>
+</div>
+<button type="button" id="addRowBtn">+ Ajouter une ligne</button>
 <button type="button" id="validerBtn">Valider</button>
 </form>
 <a href="/transferts/stock">⬅ Retour liste Stock</a>
 </div>
 
 <script>
-document.getElementById('validerBtn').onclick = async () => {
-  const form = document.getElementById('newStockForm');
-  const payload = {
-    sender: form.sender.value.trim(),
-    destination: form.destination.value.trim(),
-    amount: Number(form.amount.value),
-    currency: form.currency.value
-  };
-  if(!payload.sender || !payload.destination || !payload.amount){
-    alert('Veuillez remplir tous les champs !');
-    return;
-  }
+const stockRows = document.getElementById('stockRows');
+
+// Ajouter une nouvelle ligne
+document.getElementById('addRowBtn').onclick = ()=>{
+  const div = document.createElement('div');
+  div.className = 'row';
+  div.innerHTML = \`
+    <input name="sender" placeholder="Expéditeur" required>
+    <input name="destination" placeholder="Destination" required>
+    <input type="number" name="amount" placeholder="Montant" required>
+    <select name="currency">
+      <option>GNF</option>
+      <option>EUR</option>
+      <option>USD</option>
+      <option>XOF</option>
+    </select>
+    <button type="button" class="removeRowBtn">❌</button>
+  \`;
+  stockRows.appendChild(div);
+  attachRemove(div.querySelector('.removeRowBtn'));
+};
+
+// Supprimer une ligne
+function attachRemove(btn){
+  btn.onclick = ()=> btn.closest('.row').remove();
+}
+document.querySelectorAll('.removeRowBtn').forEach(attachRemove);
+
+// Valider toutes les lignes
+document.getElementById('validerBtn').onclick = async ()=>{
+  const rows = document.querySelectorAll('#stockRows .row');
+  const payload = [];
+  rows.forEach(r=>{
+    const sender = r.querySelector('input[name="sender"]').value.trim();
+    const destination = r.querySelector('input[name="destination"]').value.trim();
+    const amount = Number(r.querySelector('input[name="amount"]').value);
+    const currency = r.querySelector('select[name="currency"]').value;
+    if(sender && destination && amount) payload.push({sender,destination,amount,currency});
+  });
+  if(payload.length === 0){ alert('Veuillez remplir au moins une ligne valide !'); return; }
+
   try{
-    const res = await fetch('/transferts/stock',{
+    const res = await fetch('/transferts/stock/multi', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
+      body:JSON.stringify({stocks:payload})
     });
     const data = await res.json();
     if(data.ok) window.location.href = '/transferts/stock';
     else alert('Erreur ajout stock');
-  } catch(err){
-    console.error(err);
-    alert('Erreur réseau');
-  }
+  } catch(err){ console.error(err); alert('Erreur réseau'); }
 };
 </script>
 </body>
@@ -641,29 +676,26 @@ document.getElementById('validerBtn').onclick = async () => {
 });
 
 
-app.post('/transferts/stock', requireLogin, async (req,res)=>{
+
+app.post('/transferts/stock/multi', requireLogin, async (req,res)=>{
   try{
-    const { sender,destination,amount,currency } = req.body;
-    if(!sender || !destination || !amount || !currency) return res.send({ok:false});
-    await new Stock({sender,destination,amount,currency}).save();
+    const stocks = req.body.stocks;
+    if(!Array.isArray(stocks) || stocks.length===0) return res.send({ok:false});
+    const docs = stocks.map(s=>{
+      return {
+        sender: s.sender,
+        destination: s.destination,
+        amount: s.amount,
+        currency: s.currency
+      };
+    });
+    await Stock.insertMany(docs);
     res.send({ok:true});
   } catch(err){
     console.error(err);
     res.send({ok:false});
   }
 });
-
-
-app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  try{
-    await Stock.findByIdAndDelete(req.params.id);
-    res.send({ok:true});
-  } catch(err){
-    console.error(err);
-    res.send({ok:false});
-  }
-});
-
 
 
 
