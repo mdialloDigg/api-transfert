@@ -493,9 +493,8 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 
 
 
-
-// GET page stock
-app.get('/transferts/stock', requireLogin, async (req,res)=>{
+// ================= STOCK – PAGE =================
+app.get('/transferts/stock', requireLogin, async(req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
   res.send(`
 <html>
@@ -510,7 +509,7 @@ th{background:#ff8c42;color:white;}
 button{padding:6px 12px;margin-right:5px;border:none;border-radius:6px;cursor:pointer;}
 #validerBtn{background:#28a745;color:white;}
 #modifierBtn{background:#ffc107;color:white;display:none;}
-#stockFormContainer{display:none;margin-bottom:20px;}
+#stockFormContainer{display:none;margin-top:20px;}
 </style>
 </head>
 <body>
@@ -666,6 +665,35 @@ app.delete('/transferts/stock/:id', requireLogin, async (req,res)=>{
   await Stock.findByIdAndDelete(req.params.id);
   const stocks = await Stock.find().sort({createdAt:-1});
   res.json({ ok:true, stock:stocks });
+});
+
+// ================= RETRAIT avec diminution stock =================
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.retrait) return res.status(403).send('Accès refusé');
+
+  const transfert = await Transfert.findById(req.body.id);
+  if(!transfert || transfert.retired) return res.status(400).send('Transfert invalide');
+
+  // Marquer le transfert comme retiré
+  transfert.retired = true;
+  transfert.recoveryMode = req.body.mode;
+  transfert.retraitHistory.push({date:new Date(), mode:req.body.mode});
+  await transfert.save();
+
+  // ----------------- Diminuer le stock -----------------
+  const stock = await Stock.findOne({
+    sender: transfert.senderFirstName, 
+    destination: transfert.destinationLocation,
+    currency: transfert.currency
+  });
+
+  if(stock){
+    stock.amount -= transfert.amount;
+    if(stock.amount < 0) stock.amount = 0;
+    await stock.save();
+  }
+
+  res.send({ok:true, stock: await Stock.find().sort({createdAt:-1})});
 });
 
 // ================= SERVER =================
