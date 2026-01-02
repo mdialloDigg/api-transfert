@@ -34,7 +34,7 @@ const authSchema = new mongoose.Schema({ username:String, password:String, role:
 const Auth = mongoose.model('Auth', authSchema);
 
 const stockSchema = new mongoose.Schema({
-  sender:String, destination:String, amount:Number, currency:{ type:String, default:'GNF' }, createdAt:{ type:Date, default:Date.now }
+  code:{ type:String, unique:true },sender:String, destination:String, amount:Number, currency:{ type:String, default:'GNF' }, createdAt:{ type:Date, default:Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
 
@@ -251,10 +251,10 @@ app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   const data = req.body;
   if(data._id){
-    await Stock.findByIdAndUpdate(data._id,{...data});
+    await Stock.findByIdAndUpdate(data.code,{...data});
   } else {
     const code = data.code || await generateUniqueCode();
-    await new StockHistory({...data, _id, StockHistory:[]}).save();
+    await new StockHistory({...data, code, StockHistory:[]}).save();
   }
   res.json({ok:true});
 });
