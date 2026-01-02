@@ -577,6 +577,230 @@ document.querySelectorAll('.deleteBtn').forEach(btn=>{
 
 
 
+app.post('/transferts/stock/multi', requireLogin, async (req, res) => {
+  try {
+    const stocks = req.body.stocks;
+    if (!Array.isArray(stocks) || stocks.length === 0) return res.status(400).send({ ok: false, msg: 'Aucune ligne à ajouter' });
+
+    const docs = stocks.map(s => {
+      return {
+        sender: s.sender,
+        destination: s.destination,
+        amount: Number(s.amount),  // s'assurer que c'est bien un nombre
+        currency: s.currency
+      };
+    });
+
+    // Vérifier que toutes les lignes sont valides
+    for (let d of docs) {
+      if (!d.sender || !d.destination || !d.amount || !d.currency) {
+        return res.status(400).send({ ok: false, msg: 'Champs manquants dans au moins une ligne' });
+      }
+    }
+
+    await Stock.insertMany(docs);
+    res.send({ ok: true });
+  } catch (err) {
+    console.error('Erreur ajout multiple stock:', err);
+    res.status(500).send({ ok: false, msg: 'Erreur serveur' });
+  }
+});
+
+
+
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
+  const stocks = await Stock.find().sort({createdAt:-1});
+
+  // Totaux par devise
+  const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
+  stocks.forEach(s => totals[s.currency] += s.amount);
+
+  let html = `<html><head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+  body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+  table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+  th{background:#ff8c42;color:white;}
+  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+  .modify{background:#28a745;}
+  .delete{background:#dc3545;}
+  </style>
+  </head><body>
+  <h2>📦 Stock</h2>
+  <div><strong>Totaux :</strong> GNF:${totals.GNF} | EUR:${totals.EUR} | USD:${totals.USD} | XOF:${totals.XOF}</div>
+  <a href="/transferts/stock/nouveau"><button>➕ Nouveau Stock</button></a>
+  <table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead><tbody>`;
+
+  stocks.forEach(s=>{
+    html += `<tr data-id="${s._id}">
+      <td>${s.sender}</td>
+      <td>${s.destination}</td>
+      <td>${s.amount}</td>
+      <td>${s.currency}</td>
+      <td>
+        <button class="modify">✏️ Modifier</button>
+        <button class="delete">❌ Supprimer</button>
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>
+  <a href="/transferts/list">⬅ Retour Liste Transferts</a>
+  <script>
+  async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+  document.querySelectorAll('.delete').forEach(btn=>{
+    btn.onclick=async()=>{
+      if(confirm('❌ Confirmer suppression?')){
+        const tr=btn.closest('tr');
+        const id=tr.dataset.id;
+        await postData('/transferts/stock/delete',{id});
+        tr.remove();
+      }
+    };
+  });
+  document.querySelectorAll('.modify').forEach(btn=>{
+    btn.onclick=()=>{
+      const tr=btn.closest('tr');
+      const id=tr.dataset.id;
+      window.location.href='/transferts/stock/modifier/'+id;
+    };
+  });
+  </script>
+  </body></html>`;
+  res.send(html);
+});
+
+
+
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
+  const stocks = await Stock.find().sort({createdAt:-1});
+
+  // Totaux par devise
+  const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
+  stocks.forEach(s => totals[s.currency] += s.amount);
+
+  let html = `<html><head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+  body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+  table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+  th{background:#ff8c42;color:white;}
+  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+  .modify{background:#28a745;}
+  .delete{background:#dc3545;}
+  </style>
+  </head><body>
+  <h2>📦 Stock</h2>
+  <div><strong>Totaux :</strong> GNF:${totals.GNF} | EUR:${totals.EUR} | USD:${totals.USD} | XOF:${totals.XOF}</div>
+  <a href="/transferts/stock/nouveau"><button>➕ Nouveau Stock</button></a>
+  <table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead><tbody>`;
+
+  stocks.forEach(s=>{
+    html += `<tr data-id="${s._id}">
+      <td>${s.sender}</td>
+      <td>${s.destination}</td>
+      <td>${s.amount}</td>
+      <td>${s.currency}</td>
+      <td>
+        <button class="modify">✏️ Modifier</button>
+        <button class="delete">❌ Supprimer</button>
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>
+  <a href="/transferts/list">⬅ Retour Liste Transferts</a>
+  <script>
+  async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+  document.querySelectorAll('.delete').forEach(btn=>{
+    btn.onclick=async()=>{
+      if(confirm('❌ Confirmer suppression?')){
+        const tr=btn.closest('tr');
+        const id=tr.dataset.id;
+        await postData('/transferts/stock/delete',{id});
+        tr.remove();
+      }
+    };
+  });
+  document.querySelectorAll('.modify').forEach(btn=>{
+    btn.onclick=()=>{
+      const tr=btn.closest('tr');
+      const id=tr.dataset.id;
+      window.location.href='/transferts/stock/modifier/'+id;
+    };
+  });
+  </script>
+  </body></html>`;
+  res.send(html);
+});
+
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
+  const stocks = await Stock.find().sort({createdAt:-1});
+
+  // Totaux par devise
+  const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
+  stocks.forEach(s => totals[s.currency] += s.amount);
+
+  let html = `<html><head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+  body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+  table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+  th{background:#ff8c42;color:white;}
+  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+  .modify{background:#28a745;}
+  .delete{background:#dc3545;}
+  </style>
+  </head><body>
+  <h2>📦 Stock</h2>
+  <div><strong>Totaux :</strong> GNF:${totals.GNF} | EUR:${totals.EUR} | USD:${totals.USD} | XOF:${totals.XOF}</div>
+  <a href="/transferts/stock/nouveau"><button>➕ Nouveau Stock</button></a>
+  <table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead><tbody>`;
+
+  stocks.forEach(s=>{
+    html += `<tr data-id="${s._id}">
+      <td>${s.sender}</td>
+      <td>${s.destination}</td>
+      <td>${s.amount}</td>
+      <td>${s.currency}</td>
+      <td>
+        <button class="modify">✏️ Modifier</button>
+        <button class="delete">❌ Supprimer</button>
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>
+  <a href="/transferts/list">⬅ Retour Liste Transferts</a>
+  <script>
+  async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+  document.querySelectorAll('.delete').forEach(btn=>{
+    btn.onclick=async()=>{
+      if(confirm('❌ Confirmer suppression?')){
+        const tr=btn.closest('tr');
+        const id=tr.dataset.id;
+        await postData('/transferts/stock/delete',{id});
+        tr.remove();
+      }
+    };
+  });
+  document.querySelectorAll('.modify').forEach(btn=>{
+    btn.onclick=()=>{
+      const tr=btn.closest('tr');
+      const id=tr.dataset.id;
+      window.location.href='/transferts/stock/modifier/'+id;
+    };
+  });
+  </script>
+  </body></html>`;
+  res.send(html);
+});
+
+
+
 app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
   res.send(`
 <html>
@@ -594,7 +818,6 @@ button{background:#ff8c42;color:white;border:none;cursor:pointer;margin-right:5p
 <body>
 <div class="form-container">
 <h2>➕ Nouveau Stock (Plusieurs)</h2>
-
 <form id="newStockForm">
 <div id="stockRows">
 <div class="row">
@@ -602,10 +825,7 @@ button{background:#ff8c42;color:white;border:none;cursor:pointer;margin-right:5p
 <input name="destination" placeholder="Destination" required>
 <input type="number" name="amount" placeholder="Montant" required>
 <select name="currency">
-<option>GNF</option>
-<option>EUR</option>
-<option>USD</option>
-<option>XOF</option>
+<option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
 </select>
 <button type="button" class="removeRowBtn">❌</button>
 </div>
@@ -615,59 +835,41 @@ button{background:#ff8c42;color:white;border:none;cursor:pointer;margin-right:5p
 </form>
 <a href="/transferts/stock">⬅ Retour liste Stock</a>
 </div>
-
 <script>
-const stockRows = document.getElementById('stockRows');
-
-// Ajouter une nouvelle ligne
-document.getElementById('addRowBtn').onclick = ()=>{
-  const div = document.createElement('div');
-  div.className = 'row';
-  div.innerHTML = \`
+const stockRows=document.getElementById('stockRows');
+document.getElementById('addRowBtn').onclick=()=>{
+  const div=document.createElement('div'); div.className='row';
+  div.innerHTML=\`
     <input name="sender" placeholder="Expéditeur" required>
     <input name="destination" placeholder="Destination" required>
     <input type="number" name="amount" placeholder="Montant" required>
     <select name="currency">
-      <option>GNF</option>
-      <option>EUR</option>
-      <option>USD</option>
-      <option>XOF</option>
+      <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
     </select>
-    <button type="button" class="removeRowBtn">❌</button>
-  \`;
+    <button type="button" class="removeRowBtn">❌</button>\`;
   stockRows.appendChild(div);
   attachRemove(div.querySelector('.removeRowBtn'));
 };
-
-// Supprimer une ligne
-function attachRemove(btn){
-  btn.onclick = ()=> btn.closest('.row').remove();
-}
+function attachRemove(btn){btn.onclick=()=>btn.closest('.row').remove();}
 document.querySelectorAll('.removeRowBtn').forEach(attachRemove);
 
-// Valider toutes les lignes
-document.getElementById('validerBtn').onclick = async ()=>{
-  const rows = document.querySelectorAll('#stockRows .row');
-  const payload = [];
+document.getElementById('validerBtn').onclick=async()=>{
+  const rows=document.querySelectorAll('#stockRows .row');
+  const payload=[];
   rows.forEach(r=>{
-    const sender = r.querySelector('input[name="sender"]').value.trim();
-    const destination = r.querySelector('input[name="destination"]').value.trim();
-    const amount = Number(r.querySelector('input[name="amount"]').value);
-    const currency = r.querySelector('select[name="currency"]').value;
-    if(sender && destination && amount) payload.push({sender,destination,amount,currency});
+    const sender=r.querySelector('input[name="sender"]').value.trim();
+    const destination=r.querySelector('input[name="destination"]').value.trim();
+    const amount=parseFloat(r.querySelector('input[name="amount"]').value);
+    const currency=r.querySelector('select[name="currency"]').value;
+    if(sender && destination && !isNaN(amount) && amount>0) payload.push({sender,destination,amount,currency});
   });
-  if(payload.length === 0){ alert('Veuillez remplir au moins une ligne valide !'); return; }
-
+  if(payload.length===0){alert('Remplir au moins une ligne'); return;}
   try{
-    const res = await fetch('/transferts/stock/multi', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({stocks:payload})
-    });
-    const data = await res.json();
-    if(data.ok) window.location.href = '/transferts/stock';
+    const res=await fetch('/transferts/stock/multi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stocks:payload})});
+    const data=await res.json();
+    if(data.ok) window.location.href='/transferts/stock';
     else alert('Erreur ajout stock');
-  } catch(err){ console.error(err); alert('Erreur réseau'); }
+  }catch(err){console.error(err);alert('Erreur réseau');}
 };
 </script>
 </body>
@@ -676,26 +878,24 @@ document.getElementById('validerBtn').onclick = async ()=>{
 });
 
 
-
 app.post('/transferts/stock/multi', requireLogin, async (req,res)=>{
   try{
-    const stocks = req.body.stocks;
-    if(!Array.isArray(stocks) || stocks.length===0) return res.send({ok:false});
-    const docs = stocks.map(s=>{
-      return {
-        sender: s.sender,
-        destination: s.destination,
-        amount: s.amount,
-        currency: s.currency
-      };
-    });
+    const stocks=req.body.stocks;
+    if(!Array.isArray(stocks) || stocks.length===0) return res.status(400).send({ok:false,msg:'Aucune ligne'});
+    const docs=stocks.map(s=>({sender:s.sender,destination:s.destination,amount:Number(s.amount),currency:s.currency}));
     await Stock.insertMany(docs);
     res.send({ok:true});
-  } catch(err){
-    console.error(err);
-    res.send({ok:false});
-  }
+  }catch(err){ console.error(err); res.status(500).send({ok:false,msg:'Erreur serveur'}); }
 });
+
+
+app.post('/transferts/stock/delete', requireLogin, async(req,res)=>{
+  try{
+    await Stock.findByIdAndDelete(req.body.id);
+    res.send({ok:true});
+  }catch(err){ console.error(err); res.send({ok:false}); }
+});
+
 
 
 
