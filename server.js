@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION TOUT-EN-UN
+ * APP TRANSFERT + STOCKS – VERSION TOUT-EN-UN AVEC MODAL STOCK
  ******************************************************************/
 
 const express = require('express');
@@ -61,10 +61,6 @@ function setPermissions(username){
   return { lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true };
 }
 
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
-
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -105,7 +101,6 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
   const stockHistory = await StockHistory.find().sort({date:-1});
 
-  // Filtrage recherche
   const s = search.toLowerCase();
   let transferts = transfertsRaw.filter(t=>{
     return t.code.toLowerCase().includes(s)
@@ -119,7 +114,6 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   if(status==='retire') transferts = transferts.filter(t=>t.retired);
   else if(status==='non') transferts = transferts.filter(t=>!t.retired);
 
-  // Totaux par destination/devise
   const totals = {};
   transferts.forEach(t=>{
     if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
@@ -189,6 +183,23 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   });
   html+='</table>';
 
+  // ==== Modal Stock HTML ====
+  html += `
+  <div id="stockModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+    <div style="background:white;padding:20px;border-radius:10px;min-width:300px;position:relative;">
+      <h3 id="modalTitle">Nouveau Stock</h3>
+      <input id="modalSender" placeholder="Expéditeur" style="width:100%;margin:5px 0;padding:8px;">
+      <input id="modalDestination" placeholder="Destination" style="width:100%;margin:5px 0;padding:8px;">
+      <input id="modalAmount" type="number" placeholder="Montant" style="width:100%;margin:5px 0;padding:8px;">
+      <div style="text-align:right;margin-top:10px;">
+        <button onclick="closeStockModal()" style="margin-right:5px;background:#dc3545;color:white;padding:5px 10px;border:none;border-radius:5px;">Annuler</button>
+        <button onclick="saveStock()" style="background:#28a745;color:white;padding:5px 10px;border:none;border-radius:5px;">Enregistrer</button>
+      </div>
+      <input type="hidden" id="modalStockId">
+    </div>
+  </div>
+  `;
+
   // ==== Scripts ====
   html+=`<script>
   async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
@@ -197,11 +208,6 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     const sender = prompt('Expéditeur'); const receiver = prompt('Destinataire');
     const amount = parseFloat(prompt('Montant')); const currency = prompt('Devise','GNF');
     if(sender && receiver && amount) postData('/transferts/form',{senderFirstName:sender,receiverFirstName:receiver,amount,fees:0,recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());
-  }
-
-  function newStock(){
-    const sender = prompt('Expéditeur'); const destination = prompt('Destination');
-    const amount = parseFloat(prompt('Montant')); if(sender && destination && amount) postData('/stocks/new',{sender,destination,amount}).then(()=>location.reload());
   }
 
   async function editTransfert(id){
@@ -219,13 +225,50 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     const mode=prompt('Mode de retrait','Espèces'); if(mode){await postData('/transferts/retirer',{id,mode}); location.reload();}
   }
 
+  // ==== Modal Stock Scripts ====
+  const modal = document.getElementById('stockModal');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalSender = document.getElementById('modalSender');
+  const modalDestination = document.getElementById('modalDestination');
+  const modalAmount = document.getElementById('modalAmount');
+  const modalStockId = document.getElementById('modalStockId');
+
+  function openStockModal(stock = null){
+    if(stock){
+      modalTitle.textContent = 'Modifier Stock';
+      modalSender.value = stock.sender;
+      modalDestination.value = stock.destination;
+      modalAmount.value = stock.amount;
+      modalStockId.value = stock._id;
+    } else {
+      modalTitle.textContent = 'Nouveau Stock';
+      modalSender.value = '';
+      modalDestination.value = '';
+      modalAmount.value = '';
+      modalStockId.value = '';
+    }
+    modal.style.display = 'flex';
+  }
+
+  function closeStockModal(){ modal.style.display = 'none'; }
+
+  async function saveStock(){
+    const sender = modalSender.value.trim();
+    const destination = modalDestination.value.trim();
+    const amount = parseFloat(modalAmount.value);
+    if(!sender || !destination || isNaN(amount)){ alert('Remplissez tous les champs'); return; }
+    const data = {_id: modalStockId.value || undefined, sender, destination, amount};
+    await postData('/stocks/new', data);
+    closeStockModal();
+    location.reload();
+  }
+
   async function editStock(id){
     const s = await (await fetch('/stocks/get/'+id)).json();
-    const sender = prompt('Expéditeur',s.sender)||s.sender;
-    const destination = prompt('Destination',s.destination)||s.destination;
-    const amount = parseFloat(prompt('Montant',s.amount))||s.amount;
-    await postData('/stocks/new',{_id:s._id,sender,destination,amount}); location.reload();
+    openStockModal(s);
   }
+
+  function newStock(){ openStockModal(); }
 
   async function deleteStock(id){
     if(confirm('Supprimer stock ?')){await postData('/stocks/delete',{id}); location.reload();}
