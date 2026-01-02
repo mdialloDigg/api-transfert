@@ -863,6 +863,7 @@ document.querySelectorAll('.removeRowBtn').forEach(attachRemove);
 `);
 });
 
+
 <script>
 document.getElementById('validerBtn').addEventListener('click', async () => {
   const rows = document.querySelectorAll('#stockRows .row');
