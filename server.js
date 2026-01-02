@@ -6,72 +6,70 @@ const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const PDFDocument = require('pdfkit');
-const ExcelJS = require('exceljs');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({ secret:'transfert-secret-final', resave:false, saveUninitialized:true }));
+app.use(session({ secret: 'transfert-secret-final', resave: false, saveUninitialized: true }));
 
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(err=>{ console.error('❌ Erreur MongoDB:', err.message); process.exit(1); });
+  .then(() => console.log('✅ MongoDB connecté'))
+  .catch(err => { console.error('❌ Erreur MongoDB:', err.message); process.exit(1); });
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
-  userType:{ type:String, enum:['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
-  senderFirstName:String, senderLastName:String, senderPhone:String, originLocation:String,
-  receiverFirstName:String, receiverLastName:String, receiverPhone:String, destinationLocation:String,
-  amount:Number, fees:Number, recoveryAmount:Number, currency:{ type:String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
-  recoveryMode:String, retraitHistory:[{ date:Date, mode:String }], retired:{ type:Boolean, default:false },
-  code:{ type:String, unique:true }, createdAt:{ type:Date, default:Date.now }
+  userType: { type: String, enum: ['Client', 'Distributeur', 'Administrateur', 'Agence de transfert'], required: true },
+  senderFirstName: String, senderLastName: String, senderPhone: String, originLocation: String,
+  receiverFirstName: String, receiverLastName: String, receiverPhone: String, destinationLocation: String,
+  amount: Number, fees: Number, recoveryAmount: Number, currency: { type: String, enum: ['GNF', 'EUR', 'USD', 'XOF'], default: 'GNF' },
+  recoveryMode: String, retraitHistory: [{ date: Date, mode: String }], retired: { type: Boolean, default: false },
+  code: { type: String, unique: true }, createdAt: { type: Date, default: Date.now }
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const authSchema = new mongoose.Schema({ username:String, password:String, role:{type:String, enum:['admin','agent'], default:'agent'} });
+const authSchema = new mongoose.Schema({ username: String, password: String, role: { type: String, enum: ['admin', 'agent'], default: 'agent' } });
 const Auth = mongoose.model('Auth', authSchema);
 
 const stockSchema = new mongoose.Schema({
-  code:{ type:String, unique:true },sender:String, destination:String, amount:Number, currency:{ type:String, default:'GNF' }, createdAt:{ type:Date, default:Date.now }
+  code: { type: String, unique: true }, sender: String, destination: String, amount: Number, currency: { type: String, default: 'GNF' }, createdAt: { type: Date, default: Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
 
 const stockHistorySchema = new mongoose.Schema({
-  action:String, stockId:mongoose.Schema.Types.ObjectId, sender:String, destination:String, amount:Number, currency:String, date:{ type:Date, default:Date.now }
+  action: String, stockId: mongoose.Schema.Types.ObjectId, sender: String, destination: String, amount: Number, currency: String, date: { type: Date, default: Date.now }
 });
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
 // ================= UTILS =================
-async function generateUniqueCode(){
+async function generateUniqueCode() {
   let code, exists = true;
-  while(exists){
-    const letter = String.fromCharCode(65 + Math.floor(Math.random()*26));
-    const number = Math.floor(100 + Math.random()*900);
+  while (exists) {
+    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    const number = Math.floor(100 + Math.random() * 900);
     code = `${letter}${number}`;
-    exists = await Transfert.findOne({ code });
+    exists = await Transfert.findOne({ code }) || await Stock.findOne({ code });
   }
   return code;
 }
 
-const requireLogin = (req,res,next)=>{
-  if(req.session.user) return next();
+const requireLogin = (req, res, next) => {
+  if (req.session.user) return next();
   res.redirect('/login');
 };
 
-function setPermissions(username){
-  if(username==='a') return { lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true };
-  if(username==='admin2') return { lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true };
-  return { lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true };
+function setPermissions(username) {
+  if (username === 'a') return { lecture: true, ecriture: false, retrait: true, modification: false, suppression: false, imprimer: true };
+  if (username === 'admin2') return { lecture: true, ecriture: true, retrait: false, modification: true, suppression: true, imprimer: true };
+  return { lecture: true, ecriture: true, retrait: true, modification: true, suppression: true, imprimer: true };
 }
 
-const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies = ['GNF','EUR','USD','XOF'];
-const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
+const locations = ['France', 'Belgique', 'Conakry', 'Suisse', 'Atlanta', 'New York', 'Allemagne'];
+const currencies = ['GNF', 'EUR', 'USD', 'XOF'];
+const retraitModes = ['Espèces', 'Virement', 'Orange Money', 'Wave'];
 
 // ================= LOGIN =================
-app.get('/login',(req,res)=>{
+app.get('/login', (req, res) => {
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
@@ -92,27 +90,26 @@ app.get('/login',(req,res)=>{
   </body></html>`);
 });
 
-app.post('/login', async(req,res)=>{
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   let user = await Auth.findOne({ username });
-  if(!user){ const hashed = bcrypt.hashSync(password,10); user = await new Auth({ username, password:hashed }).save(); }
-  if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-  req.session.user = { username:user.username, role:user.role, permissions:setPermissions(username) };
+  if (!user) { const hashed = bcrypt.hashSync(password, 10); user = await new Auth({ username, password: hashed }).save(); }
+  if (!bcrypt.compareSync(password, user.password)) return res.send('Mot de passe incorrect');
+  req.session.user = { username: user.username, role: user.role, permissions: setPermissions(username) };
   res.redirect('/dashboard');
 });
 
-app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+app.get('/logout', (req, res) => { req.session.destroy(() => res.redirect('/login')); });
 
 // ================= DASHBOARD =================
-app.get('/dashboard', requireLogin, async(req,res)=>{
-  const { search='', status='all' } = req.query;
-  const transfertsRaw = await Transfert.find().sort({createdAt:-1});
-  const stocks = await Stock.find().sort({createdAt:-1});
-  const stockHistory = await StockHistory.find().sort({date:-1});
+app.get('/dashboard', requireLogin, async (req, res) => {
+  const { search = '', status = 'all' } = req.query;
+  const transfertsRaw = await Transfert.find().sort({ createdAt: -1 });
+  const stocks = await Stock.find().sort({ createdAt: -1 });
+  const stockHistory = await StockHistory.find().sort({ date: -1 });
 
-  // Filtrage recherche
   const s = search.toLowerCase();
-  let transferts = transfertsRaw.filter(t=>{
+  let transferts = transfertsRaw.filter(t => {
     return t.code.toLowerCase().includes(s)
       || t.senderFirstName.toLowerCase().includes(s)
       || t.senderLastName.toLowerCase().includes(s)
@@ -121,20 +118,18 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       || t.receiverLastName.toLowerCase().includes(s)
       || t.receiverPhone.toLowerCase().includes(s);
   });
-  if(status==='retire') transferts = transferts.filter(t=>t.retired);
-  else if(status==='non') transferts = transferts.filter(t=>!t.retired);
+  if (status === 'retire') transferts = transferts.filter(t => t.retired);
+  else if (status === 'non') transferts = transferts.filter(t => !t.retired);
 
-  // Totaux par destination/devise
   const totals = {};
-  transferts.forEach(t=>{
-    if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-    if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0, fees:0, recovery:0};
+  transferts.forEach(t => {
+    if (!totals[t.destinationLocation]) totals[t.destinationLocation] = {};
+    if (!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency] = { amount: 0, fees: 0, recovery: 0 };
     totals[t.destinationLocation][t.currency].amount += t.amount;
     totals[t.destinationLocation][t.currency].fees += t.fees;
     totals[t.destinationLocation][t.currency].recovery += t.recoveryAmount;
   });
 
-  // HTML
   let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
   body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
@@ -154,50 +149,48 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   <form method="get" action="/dashboard">
     <input type="text" name="search" placeholder="Recherche..." value="${search}">
     <select name="status">
-      <option value="all" ${status==='all'?'selected':''}>Tous</option>
-      <option value="retire" ${status==='retire'?'selected':''}>Retirés</option>
-      <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
+      <option value="all" ${status === 'all' ? 'selected' : ''}>Tous</option>
+      <option value="retire" ${status === 'retire' ? 'selected' : ''}>Retirés</option>
+      <option value="non" ${status === 'non' ? 'selected' : ''}>Non retirés</option>
     </select>
     <button type="submit">🔍 Filtrer</button>
-    ${req.session.user.permissions.ecriture?'<button type="button" onclick="newTransfert()">➕ Nouveau Transfert</button>':''}
+    ${req.session.user.permissions.ecriture ? '<button type="button" onclick="newTransfert()">➕ Nouveau Transfert</button>' : ''}
   </form>
   <h4>Totaux par destination/devise</h4>
   <table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
-  for(let dest in totals){
-    for(let curr in totals[dest]){
-      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+
+  for (let dest in totals) {
+    for (let curr in totals[dest]) {
+      html += `<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
     }
   }
-  html+='</tbody></table>';
 
-  html+='<table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>';
-  transferts.forEach(t=>{
-    html+=`<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName}</td><td>${t.receiverFirstName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired?'Retiré':'Non retiré'}</td>
-    <td><button class="modify" onclick="editTransfert('${t._id}')">✏️</button><button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
-    ${!t.retired?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}</td></tr>`;
+  html += `</tbody></table><table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+  transferts.forEach(t => {
+    html += `<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName}</td><td>${t.receiverFirstName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired ? 'Retiré' : 'Non retiré'}</td>
+    <td>
+      <button class="modify" onclick="editTransfert('${t._id}')">✏️</button>
+      <button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
+      ${!t.retired ? `<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
+    </td></tr>`;
   });
-  html+='</table>';
 
-  html+=`<h3>Stocks</h3>
-  ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
-  <table><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
-  stocks.forEach(s=>{
-    html+=`<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td><td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`;
+  html += `</table><h3>Stocks</h3>
+    ${req.session.user.permissions.ecriture ? '<button type="button" onclick="newStock()">➕ Nouveau Stock</button>' : ''}
+    <table><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+
+  stocks.forEach(s => {
+    html += `<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td>
+      <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`;
   });
-  html+='</table>';
 
-  html+='<h3>Historique Stocks</h3><table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>';
-<td><button class="modify" onclick="editTransfert('${t._id}')">✏️</button><button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
-
-  stockHistory.forEach(h=>{
-    html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
+  html += `</table><h3>Historique Stocks</h3><table><tr><th>Date</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+  stockHistory.forEach(h => {
+    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
   });
-  html+='</table>';
+  html += `</table>`;
 
-
- 
-
-  html+=`<script>
+  html += `<script>
   async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
   function newTransfert(){
@@ -219,62 +212,60 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   async function deleteStock(id){if(confirm('Supprimer stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
   </script>`;
 
-  html+='</body></html>';
+  html += '</body></html>';
   res.send(html);
 });
 
 // ================= TRANSFERT ROUTES =================
-app.post('/transferts/form', requireLogin, async(req,res)=>{
+app.post('/transferts/form', requireLogin, async (req, res) => {
   const data = req.body;
-  if(data._id){
-    await Transfert.findByIdAndUpdate(data._id,{...data});
+  if (data._id) {
+    await Transfert.findByIdAndUpdate(data._id, { ...data });
   } else {
     const code = data.code || await generateUniqueCode();
-    await new Transfert({...data, code, retraitHistory:[]}).save();
+    await new Transfert({ ...data, code, retraitHistory: [] }).save();
   }
-  res.json({ok:true});
+  res.json({ ok: true });
 });
 
-app.post('/transferts/delete', requireLogin, async(req,res)=>{
+app.post('/transferts/delete', requireLogin, async (req, res) => {
   await Transfert.findByIdAndDelete(req.body.id);
-  res.json({ok:true});
+  res.json({ ok: true });
 });
 
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  const {id,mode} = req.body;
-  await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
-  res.json({ok:true});
+app.post('/transferts/retirer', requireLogin, async (req, res) => {
+  const { id, mode } = req.body;
+  await Transfert.findByIdAndUpdate(id, { retired: true, $push: { retraitHistory: { date: new Date(), mode } } });
+  res.json({ ok: true });
 });
 
-app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
+app.get('/transferts/get/:id', requireLogin, async (req, res) => {
   const t = await Transfert.findById(req.params.id);
   res.json(t);
 });
 
 // ================= STOCK ROUTES =================
-
-app.post('/stocks/new', requireLogin, async(req,res)=>{
+app.post('/stocks/new', requireLogin, async (req, res) => {
   const data = req.body;
-  if(data.code){
-    await Stock.findByIdAndUpdate(data.code,{...data});
+  if (data._id) {
+    await Stock.findByIdAndUpdate(data._id, { ...data });
   } else {
     const code = data.code || await generateUniqueCode();
-    await new StockHistory({...data, code, StockHistory:[]}).save();
+    await new Stock({ ...data, code }).save();
   }
-  res.json({ok:true});
+  res.json({ ok: true });
 });
 
-
-app.post('/stocks/delete', requireLogin, async(req,res)=>{
+app.post('/stocks/delete', requireLogin, async (req, res) => {
   const s = await Stock.findByIdAndDelete(req.body.id);
-  if(s) await new StockHistory({action:'Suppression', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
-  res.json({ok:true});
+  if (s) await new StockHistory({ action: 'Suppression', stockId: s._id, sender: s.sender, destination: s.destination, amount: s.amount, currency: s.currency }).save();
+  res.json({ ok: true });
 });
 
-app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
+app.get('/stocks/get/:id', requireLogin, async (req, res) => {
   const s = await Stock.findById(req.params.id);
   res.json(s);
 });
 
 // ================= SERVER =================
-app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
+app.listen(process.env.PORT || 3000, () => console.log('🚀 Serveur lancé sur http://localhost:3000'));
