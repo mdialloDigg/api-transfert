@@ -186,11 +186,16 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   });
   html+='</table>';
 
-  html+='<h3>Historique Stocks</h3><table><tr><th>Date</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>';
+  html+='<h3>Historique Stocks</h3><table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>';
+<td><button class="modify" onclick="editTransfert('${t._id}')">✏️</button><button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
+
   stockHistory.forEach(h=>{
     html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
   });
   html+='</table>';
+
+
+ 
 
   html+=`<script>
   async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
