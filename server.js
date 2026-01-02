@@ -8,14 +8,13 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
-
+const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({ secret: 'secret', resave: false, saveUninitialized: true }));
 
 
-const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({ secret:'transfert-secret-final', resave:false, saveUninitialized:true }));
