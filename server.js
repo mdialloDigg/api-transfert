@@ -491,6 +491,51 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
   res.send(html);
 });
 
+
+
+document.getElementById('validerBtn').addEventListener('click', async () => {
+  const rows = document.querySelectorAll('#stockRows .row');
+  const payload = [];
+
+  rows.forEach(r => {
+    const sender = r.querySelector('input[name="sender"]')?.value.trim();
+    const destination = r.querySelector('input[name="destination"]')?.value.trim();
+    const amount = parseFloat(r.querySelector('input[name="amount"]')?.value);
+    const currency = r.querySelector('select[name="currency"]')?.value;
+
+    if (sender && destination && !isNaN(amount) && amount > 0 && currency) {
+      payload.push({ sender, destination, amount, currency });
+    }
+  });
+
+  if (payload.length === 0) {
+    alert('Remplir au moins une ligne valide');
+    return;
+  }
+
+  try {
+    const res = await fetch('/transferts/stock/multi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stocks: payload })
+    });
+
+    if (!res.ok) throw new Error('Erreur serveur');
+
+    const data = await res.json();
+
+    if (data.ok) {
+      window.location.href = '/transferts/stock';
+    } else {
+      alert(data.message || 'Erreur ajout stock');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Erreur réseau');
+  }
+});
+
+
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   try {
     const stocks = await Stock.find().sort({createdAt:-1});
@@ -579,30 +624,31 @@ document.querySelectorAll('.deleteBtn').forEach(btn=>{
 
 app.post('/transferts/stock/multi', requireLogin, async (req, res) => {
   try {
-    const stocks = req.body.stocks;
-    if (!Array.isArray(stocks) || stocks.length === 0) return res.status(400).send({ ok: false, msg: 'Aucune ligne à ajouter' });
-
-    const docs = stocks.map(s => {
-      return {
-        sender: s.sender,
-        destination: s.destination,
-        amount: Number(s.amount),  // s'assurer que c'est bien un nombre
-        currency: s.currency
-      };
-    });
-
-    // Vérifier que toutes les lignes sont valides
-    for (let d of docs) {
-      if (!d.sender || !d.destination || !d.amount || !d.currency) {
-        return res.status(400).send({ ok: false, msg: 'Champs manquants dans au moins une ligne' });
-      }
+    if (!req.session.user.permissions.ecriture) {
+      return res.status(403).json({ ok: false, message: 'Accès refusé' });
     }
 
-    await Stock.insertMany(docs);
-    res.send({ ok: true });
+    const { stocks } = req.body;
+
+    if (!Array.isArray(stocks) || stocks.length === 0) {
+      return res.json({ ok: false, message: 'Aucun stock reçu' });
+    }
+
+    for (const s of stocks) {
+      await Stock.create({
+        sender: s.sender,
+        destination: s.destination,
+        amount: s.amount,
+        currency: s.currency,
+        createdBy: req.session.user._id,
+        createdAt: new Date()
+      });
+    }
+
+    res.json({ ok: true });
   } catch (err) {
-    console.error('Erreur ajout multiple stock:', err);
-    res.status(500).send({ ok: false, msg: 'Erreur serveur' });
+    console.error(err);
+    res.status(500).json({ ok: false, message: 'Erreur serveur' });
   }
 });
 
@@ -853,29 +899,53 @@ document.getElementById('addRowBtn').onclick=()=>{
 function attachRemove(btn){btn.onclick=()=>btn.closest('.row').remove();}
 document.querySelectorAll('.removeRowBtn').forEach(attachRemove);
 
-document.getElementById('validerBtn').onclick=async()=>{
-  const rows=document.querySelectorAll('#stockRows .row');
-  const payload=[];
-  rows.forEach(r=>{
-    const sender=r.querySelector('input[name="sender"]').value.trim();
-    const destination=r.querySelector('input[name="destination"]').value.trim();
-    const amount=parseFloat(r.querySelector('input[name="amount"]').value);
-    const currency=r.querySelector('select[name="currency"]').value;
-    if(sender && destination && !isNaN(amount) && amount>0) payload.push({sender,destination,amount,currency});
-  });
-  if(payload.length===0){alert('Remplir au moins une ligne'); return;}
-  try{
-    const res=await fetch('/transferts/stock/multi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stocks:payload})});
-    const data=await res.json();
-    if(data.ok) window.location.href='/transferts/stock';
-    else alert('Erreur ajout stock');
-  }catch(err){console.error(err);alert('Erreur réseau');}
-};
+
 </script>
 </body>
 </html>
 `);
+});document.getElementById('validerBtn').addEventListener('click', async () => {
+  const rows = document.querySelectorAll('#stockRows .row');
+  const payload = [];
+
+  rows.forEach(r => {
+    const sender = r.querySelector('input[name="sender"]')?.value.trim();
+    const destination = r.querySelector('input[name="destination"]')?.value.trim();
+    const amount = parseFloat(r.querySelector('input[name="amount"]')?.value);
+    const currency = r.querySelector('select[name="currency"]')?.value;
+
+    if (sender && destination && !isNaN(amount) && amount > 0 && currency) {
+      payload.push({ sender, destination, amount, currency });
+    }
+  });
+
+  if (payload.length === 0) {
+    alert('Remplir au moins une ligne valide');
+    return;
+  }
+
+  try {
+    const res = await fetch('/transferts/stock/multi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stocks: payload })
+    });
+
+    if (!res.ok) throw new Error('Erreur serveur');
+
+    const data = await res.json();
+
+    if (data.ok) {
+      window.location.href = '/transferts/stock';
+    } else {
+      alert(data.message || 'Erreur ajout stock');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Erreur réseau');
+  }
 });
+
 
 
 app.post('/transferts/stock/multi', requireLogin, async (req,res)=>{
