@@ -491,8 +491,6 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
   res.send(html);
 });
 
-
-
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   try {
     const stocks = await Stock.find().sort({createdAt:-1});
@@ -569,6 +567,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
 });
 
 
+
 app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
   res.send(`<html>
   <head>
@@ -630,13 +629,13 @@ app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
   </html>`);
 });
 
+
 app.post('/transferts/stock', requireLogin, async (req,res)=>{
   const { sender,destination,amount,currency } = req.body;
   if(!sender || !destination || !amount || !currency) return res.send({ok:false});
   await new Stock({sender,destination,amount,currency}).save();
   res.send({ok:true});
 });
-
 
 app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
   try{
@@ -647,6 +646,10 @@ app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
     res.send({ok:false});
   }
 });
+
+
+
+
 
 
 // ================= SERVER =================
