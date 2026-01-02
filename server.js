@@ -492,18 +492,6 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 
-
-
-// ================= STOCK =================
-const stockSchema = new mongoose.Schema({
-  sender: String,
-  destination: String,
-  amount: Number,
-  currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
-  createdAt: { type: Date, default: Date.now }
-});
-const Stock = mongoose.model('Stock', stockSchema);
-
 // Page stock
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
