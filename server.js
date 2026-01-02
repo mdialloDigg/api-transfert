@@ -70,6 +70,8 @@ async function generateUniqueCode(){
 
 // ================= AUTH =================
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
+global.requireLogin = requireLogin;
+
 function setPermissions(username){
   if(username==='a') return { lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true };
   if(username==='admin2') return { lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true };
