@@ -255,7 +255,7 @@ app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
 
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   const data = req.body;
-  if(data._id){
+  if(data.code){
     await Stock.findByIdAndUpdate(data.code,{...data});
   } else {
     const code = data.code || await generateUniqueCode();
