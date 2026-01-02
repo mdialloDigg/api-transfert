@@ -491,7 +491,6 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
   res.send(html);
 });
 
-// ================= STOCK =================
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
   const currencies = ['GNF','EUR','USD','XOF'];
@@ -516,7 +515,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
   <body>
     <h2>📦 Gestion du Stock</h2>
 
-    <button id="showFormBtn">➕ Nouveau Stock</button>
+    <button id="showFormBtn">➕ Ajouter Nouveau Stock</button>
     <a href="/transferts/list" class="button-link">⬅ Retour aux transferts</a>
     <a href="/logout" class="button-link">🚪 Déconnexion</a>
 
@@ -549,7 +548,6 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
       const validerBtn = document.getElementById('validerBtn');
       const modifierBtn = document.getElementById('modifierBtn');
 
-      // Rendu dynamique
       function renderStock(){
         stockBody.innerHTML = '';
         stocks.forEach(s=>{
@@ -606,7 +604,6 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
         stockForm.id.value='';
       };
 
-      // Ajouter nouveau stock
       validerBtn.onclick = async ()=>{
         const payload = {
           sender: stockForm.sender.value,
@@ -624,11 +621,11 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
           stocks = data.stock;
           renderStock();
           stockForm.reset();
-          stockFormContainer.style.display='none';
+          // Formulaire reste ouvert pour ajouter un autre stock
+          stockForm.sender.focus();
         }
       };
 
-      // Modifier stock existant
       modifierBtn.onclick = async ()=>{
         const id = stockForm.id.value;
         if(!id) return alert('Aucun stock sélectionné');
@@ -648,7 +645,6 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
           stocks = data.stock;
           renderStock();
           stockForm.reset();
-          stockFormContainer.style.display='none';
           validerBtn.style.display='inline-block';
           modifierBtn.style.display='none';
           formTitle.innerText = '➕ Nouveau Stock';
@@ -658,29 +654,6 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
   </body>
   </html>
   `);
-});
-
-// ================= POST STOCK =================
-app.post('/transferts/stock', requireLogin, async(req,res)=>{
-  const { sender,destination,amount,currency } = req.body;
-  await new Stock({ sender,destination,amount,currency }).save();
-  const stocks = await Stock.find().sort({createdAt:-1});
-  res.json({ ok:true, stock: stocks });
-});
-
-// ================= PUT STOCK =================
-app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  const { sender,destination,amount,currency } = req.body;
-  await Stock.findByIdAndUpdate(req.params.id,{ sender,destination,amount,currency });
-  const stocks = await Stock.find().sort({createdAt:-1});
-  res.json({ ok:true, stock: stocks });
-});
-
-// ================= DELETE STOCK =================
-app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  await Stock.findByIdAndDelete(req.params.id);
-  const stocks = await Stock.find().sort({createdAt:-1});
-  res.json({ ok:true, stock: stocks });
 });
 
 
