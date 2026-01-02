@@ -666,6 +666,128 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
 });
 
 
+<script>
+const modal = document.getElementById('modal');
+const formModifier = document.getElementById('form-modifier');
+
+// Met à jour les totaux
+function updateTotals() {
+  const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
+  document.querySelectorAll('#table-stock tbody tr').forEach(tr=>{
+    const amount = parseFloat(tr.querySelector('.amount').textContent) || 0;
+    const currency = tr.querySelector('.currency').textContent;
+    totals[currency] += amount;
+  });
+  document.getElementById('totaux').innerHTML =
+    'Totaux : GNF:' + totals.GNF +
+    ' | EUR:' + totals.EUR +
+    ' | USD:' + totals.USD +
+    ' | XOF:' + totals.XOF;
+}
+
+// ================= AJOUTER =================
+document.getElementById('form-ajout').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const f = e.target;
+  const data = {
+    sender: f.sender.value,
+    destination: f.destination.value,
+    amount: parseFloat(f.amount.value),
+    currency: f.currency.value
+  };
+
+  try {
+    const res = await fetch('/transferts/stock/ajouter', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(data)
+    });
+    const stock = await res.json();
+
+    // Crée la ligne dynamiquement
+    const tr = document.createElement('tr');
+    tr.dataset.id = stock._id;
+    tr.innerHTML = `
+      <td class="sender">${stock.sender}</td>
+      <td class="destination">${stock.destination}</td>
+      <td class="amount">${stock.amount}</td>
+      <td class="currency">${stock.currency}</td>
+      <td>
+        <button class="action-btn modifier">✏️ Modifier</button>
+        <button class="action-btn supprimer">❌ Supprimer</button>
+      </td>`;
+    document.querySelector('#table-stock tbody').prepend(tr);
+    f.reset();
+    updateTotals();
+  } catch(err) {
+    alert('Erreur ajout stock: ' + err.message);
+  }
+});
+
+// ================= MODALE =================
+document.getElementById('close-modal').onclick = ()=> modal.style.display='none';
+
+// Event delegation pour modifier et supprimer
+document.querySelector('#table-stock tbody').addEventListener('click', e=>{
+  const tr = e.target.closest('tr');
+  const id = tr?.dataset.id;
+  if(!tr) return;
+
+  // ========== SUPPRIMER ==========
+  if(e.target.classList.contains('supprimer')){
+    if(!confirm('Confirmer suppression?')) return;
+    fetch('/transferts/stock/supprimer', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({id})
+    }).then(()=>{
+      tr.remove();
+      updateTotals();
+    });
+  }
+
+  // ========== MODIFIER ==========
+  if(e.target.classList.contains('modifier')){
+    formModifier.sender.value = tr.querySelector('.sender').textContent;
+    formModifier.destination.value = tr.querySelector('.destination').textContent;
+    formModifier.amount.value = tr.querySelector('.amount').textContent;
+    formModifier.currency.value = tr.querySelector('.currency').textContent;
+    formModifier.id.value = id;
+    modal.style.display='flex';
+  }
+});
+
+// ================= ENVOI MODIFICATION =================
+formModifier.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const id = formModifier.id.value;
+  const data = {
+    sender: formModifier.sender.value,
+    destination: formModifier.destination.value,
+    amount: parseFloat(formModifier.amount.value),
+    currency: formModifier.currency.value
+  };
+
+  try {
+    const res = await fetch('/transferts/stock/modifier/' + id, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(data)
+    });
+    const stock = await res.json();
+    const tr = document.querySelector(`#table-stock tbody tr[data-id="${id}"]`);
+    tr.querySelector('.sender').textContent = stock.sender;
+    tr.querySelector('.destination').textContent = stock.destination;
+    tr.querySelector('.amount').textContent = stock.amount;
+    tr.querySelector('.currency').textContent = stock.currency;
+    updateTotals();
+    modal.style.display='none';
+  } catch(err) {
+    alert('Erreur modification: ' + err.message);
+  }
+});
+</script>
+
 
 // ================= SERVER =================
 app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
