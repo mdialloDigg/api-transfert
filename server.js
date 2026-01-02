@@ -10,8 +10,6 @@ const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 
 
-const Stock = require('./models/Stock'); // ton modèle
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({ secret: 'secret', resave: false, saveUninitialized: true }));
