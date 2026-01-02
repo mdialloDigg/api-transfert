@@ -33,6 +33,18 @@ const Transfert = mongoose.model('Transfert', transfertSchema);
 const authSchema = new mongoose.Schema({ username:String, password:String, role:{type:String, enum:['admin','agent'], default:'agent'} });
 const Auth = mongoose.model('Auth', authSchema);
 
+
+// ================= STOCK =================
+const stockSchema = new mongoose.Schema({
+  sender: String,
+  destination: String,
+  amount: Number,
+  currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Stock = mongoose.model('Stock', stockSchema);
+
+
 // ================= UTIL =================
 async function generateUniqueCode(){
   let code, exists = true;
