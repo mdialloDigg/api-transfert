@@ -50,11 +50,6 @@ const stockSchema = new mongoose.Schema({
 const Stock = mongoose.model('Stock', stockSchema);
 
 
-// Middleware de vérification de session
-function requireLogin(req,res,next){
-  if(req.session && req.session.user) return next();
-  res.status(401).send('Non autorisé');
-}
 
 // ================= UTIL =================
 async function generateUniqueCode(){
