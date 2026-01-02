@@ -1,164 +1,252 @@
 /******************************************************************
- * SERVER.JS – VERSION FINALE STABLE
- * - Pas de crash si MONGO_URI absent
- * - Pas de MemoryStore warning
- * - Un seul fichier
+ * APP TRANSFERT + GESTION DE STOCKS – VERSION FINALE
  ******************************************************************/
 
 const express = require('express');
 const mongoose = require('mongoose');
-const bodyParser = require('body-parser');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
+const bcrypt = require('bcryptjs');
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI;
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(session({
+  secret:'transfert-secret-final',
+  resave:false,
+  saveUninitialized:true
+}));
 
-/* ===================== MIDDLEWARE BASIQUE ===================== */
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// ================= DATABASE =================
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
+.then(()=>console.log('✅ MongoDB connecté'))
+.catch(console.error);
 
-/* ===================== ÉTAT GLOBAL ===================== */
-let mongoReady = false;
+// ================= SCHEMAS =================
 
-/* ===================== MONGODB (SANS CRASH) ===================== */
-if (typeof MONGO_URI === 'string' && MONGO_URI.trim() !== '') {
-  mongoose.connect(MONGO_URI, {
-    serverSelectionTimeoutMS: 5000
-  })
-  .then(() => {
-    mongoReady = true;
-    console.log('✅ MongoDB connecté');
+// ----- TRANSFERT -----
+const transfertSchema = new mongoose.Schema({
+  userType:String,
+  senderFirstName:String,
+  senderLastName:String,
+  senderPhone:String,
+  originLocation:String,
+  receiverFirstName:String,
+  receiverLastName:String,
+  receiverPhone:String,
+  destinationLocation:String,
+  amount:Number,
+  fees:Number,
+  recoveryAmount:Number,
+  currency:String,
+  recoveryMode:String,
+  retraitHistory:[{ date:Date, mode:String }],
+  retired:{ type:Boolean, default:false },
+  code:{ type:String, unique:true },
+  createdAt:{ type:Date, default:Date.now }
+});
+const Transfert = mongoose.model('Transfert', transfertSchema);
 
-    /* ✅ SESSION UNIQUEMENT SI MONGO OK */
-    app.use(session({
-      secret: 'render-secret-final',
-      resave: false,
-      saveUninitialized: false,
-      store: MongoStore.create({ mongoUrl: MONGO_URI })
-    }));
-  })
-  .catch(err => {
-    console.error('❌ MongoDB erreur :', err.message);
-  });
-} else {
-  console.warn('⚠️ MONGO_URI non défini — application lancée sans base de données');
-}
+// ----- AUTH -----
+const authSchema = new mongoose.Schema({
+  username:String,
+  password:String,
+  role:{type:String, default:'agent'}
+});
+const Auth = mongoose.model('Auth', authSchema);
 
-/* ===================== MODÈLES ===================== */
-let Stock;
+// ----- STOCK -----
+const stockSchema = new mongoose.Schema({
+  sender:String,
+  destination:String,
+  amount:Number,
+  currency:{ type:String, default:'GNF' },
+  createdAt:{ type:Date, default:Date.now }
+});
+const Stock = mongoose.model('Stock', stockSchema);
 
-if (mongoReady || MONGO_URI) {
-  const stockSchema = new mongoose.Schema({
-    sender: String,
-    destination: String,
-    amount: Number,
-    currency: String,
-    createdAt: { type: Date, default: Date.now }
-  });
+// ----- HISTORIQUE STOCK -----
+const stockHistorySchema = new mongoose.Schema({
+  action:String, // AJOUT | MODIFICATION | SUPPRESSION
+  stockId:mongoose.Schema.Types.ObjectId,
+  sender:String,
+  destination:String,
+  amount:Number,
+  currency:String,
+  date:{ type:Date, default:Date.now }
+});
+const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
-  Stock = mongoose.model('Stock', stockSchema);
-}
-
-/* ===================== ROUTES ===================== */
-
-/* ---- PAGE PRINCIPALE ---- */
-app.get('/', async (req, res) => {
-  if (!mongoReady) {
-    return res.send(`
-      <h1>⚠️ Configuration requise</h1>
-      <p>La variable <b>MONGO_URI</b> n’est pas définie.</p>
-      <p>👉 Render → Environment → Add Environment Variable</p>
-      <pre>MONGO_URI = mongodb+srv://user:password@cluster.mongodb.net/db</pre>
-    `);
+// ================= UTILS =================
+async function generateUniqueCode(){
+  let code, exists = true;
+  while(exists){
+    const letter = String.fromCharCode(65 + Math.floor(Math.random()*26));
+    const number = Math.floor(100 + Math.random()*900);
+    code = `${letter}${number}`;
+    exists = await Transfert.findOne({ code });
   }
+  return code;
+}
 
-  const stocks = await Stock.find();
+const requireLogin = (req,res,next)=>{
+  if(req.session.user) return next();
+  res.redirect('/login');
+};
 
+// ================= LOGIN =================
+app.get('/login',(req,res)=>{
   res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Stocks</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: Arial; padding: 15px; }
-    input, button { padding: 8px; margin: 4px; }
-    table { width: 100%; border-collapse: collapse; }
-    td, th { border: 1px solid #ccc; padding: 6px; }
-  </style>
-</head>
-<body>
+  <h2>Connexion</h2>
+  <form method="post">
+    <input name="username" placeholder="Utilisateur" required>
+    <input type="password" name="password" placeholder="Mot de passe" required>
+    <button>Connexion</button>
+  </form>`);
+});
 
-<h2>📦 Stocks</h2>
+app.post('/login', async(req,res)=>{
+  const { username, password } = req.body;
+  let user = await Auth.findOne({ username });
+  if(!user){
+    user = await new Auth({
+      username,
+      password:bcrypt.hashSync(password,10)
+    }).save();
+  }
+  if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
+  req.session.user = user;
+  res.redirect('/transferts/list');
+});
 
-<table>
-  <tr>
-    <th>Sender</th>
-    <th>Destination</th>
-    <th>Amount</th>
-    <th>Currency</th>
-  </tr>
-  ${stocks.map(s => `
-    <tr>
+app.get('/logout',(req,res)=>{
+  req.session.destroy(()=>res.redirect('/login'));
+});
+
+// ================= TRANSFERTS (LISTE MINIMALE) =================
+app.get('/transferts/list', requireLogin, async(req,res)=>{
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  let html = `<h2>📋 Transferts</h2>
+  <a href="/stocks">📦 Stocks</a> | <a href="/logout">🚪 Déconnexion</a>
+  <table border="1" cellpadding="5">
+  <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+  transferts.forEach(t=>{
+    html+=`<tr>
+      <td>${t.code}</td>
+      <td>${t.senderFirstName} ${t.senderLastName}</td>
+      <td>${t.destinationLocation}</td>
+      <td>${t.amount} ${t.currency}</td>
+    </tr>`;
+  });
+  html+='</table>';
+  res.send(html);
+});
+
+// ===================== STOCKS =====================
+
+// ----- LISTE + HISTORIQUE -----
+app.get('/stocks', requireLogin, async(req,res)=>{
+  const stocks = await Stock.find().sort({createdAt:-1});
+  const history = await StockHistory.find().sort({date:-1});
+
+  let html = `<h2>📦 Gestion des stocks</h2>
+  <a href="/stocks/new">➕ Nouveau stock</a> | <a href="/transferts/list">⬅ Retour</a>
+
+  <h3>Stocks</h3>
+  <table border="1" cellpadding="5">
+  <tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
+  stocks.forEach(s=>{
+    html+=`<tr>
       <td>${s.sender}</td>
       <td>${s.destination}</td>
       <td>${s.amount}</td>
       <td>${s.currency}</td>
-    </tr>
-  `).join('')}
-</table>
-
-<h3>➕ Ajouter un stock</h3>
-<input id="sender" placeholder="Sender">
-<input id="destination" placeholder="Destination">
-<input id="amount" placeholder="Amount" type="number">
-<input id="currency" placeholder="Currency">
-<button onclick="addStock()">Ajouter</button>
-
-<script>
-async function addStock() {
-  const res = await fetch('/stock', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sender: sender.value,
-      destination: destination.value,
-      amount: Number(amount.value),
-      currency: currency.value
-    })
+      <td>
+        <a href="/stocks/edit/${s._id}">✏️</a>
+        <a href="/stocks/delete/${s._id}" onclick="return confirm('Supprimer ?')">❌</a>
+      </td>
+    </tr>`;
   });
-  const data = await res.json();
-  alert(data.message);
-  if (data.ok) location.reload();
-}
-</script>
+  html+=`</table>
 
-</body>
-</html>
-  `);
+  <h3>📜 Historique des stocks</h3>
+  <table border="1" cellpadding="5">
+  <tr><th>Date</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+  history.forEach(h=>{
+    html+=`<tr>
+      <td>${h.date.toLocaleString()}</td>
+      <td>${h.action}</td>
+      <td>${h.sender}</td>
+      <td>${h.destination}</td>
+      <td>${h.amount} ${h.currency}</td>
+    </tr>`;
+  });
+  html+=`</table>`;
+  res.send(html);
 });
 
-/* ---- API AJOUT STOCK ---- */
-app.post('/stock', async (req, res) => {
-  if (!mongoReady) {
-    return res.json({
-      ok: false,
-      message: 'Base de données non connectée'
-    });
-  }
-
-  try {
-    await Stock.create(req.body);
-    res.json({ ok: true, message: 'Stock ajouté' });
-  } catch (err) {
-    res.json({ ok: false, message: err.message });
-  }
+// ----- AJOUT -----
+app.get('/stocks/new', requireLogin,(req,res)=>{
+  res.send(`
+  <h2>➕ Nouveau stock</h2>
+  <form method="post">
+    Expéditeur <input name="sender" required><br>
+    Destination <input name="destination" required><br>
+    Montant <input type="number" name="amount" required><br>
+    Devise <input name="currency" value="GNF"><br>
+    <button>Enregistrer</button>
+  </form>`);
 });
 
-/* ===================== SERVER ===================== */
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+app.post('/stocks/new', requireLogin, async(req,res)=>{
+  const stock = await new Stock(req.body).save();
+  await new StockHistory({
+    action:'AJOUT',
+    stockId:stock._id,
+    ...req.body
+  }).save();
+  res.redirect('/stocks');
 });
+
+// ----- MODIFICATION -----
+app.get('/stocks/edit/:id', requireLogin, async(req,res)=>{
+  const s = await Stock.findById(req.params.id);
+  res.send(`
+  <h2>✏️ Modifier stock</h2>
+  <form method="post">
+    Expéditeur <input name="sender" value="${s.sender}"><br>
+    Destination <input name="destination" value="${s.destination}"><br>
+    Montant <input type="number" name="amount" value="${s.amount}"><br>
+    Devise <input name="currency" value="${s.currency}"><br>
+    <button>Modifier</button>
+  </form>`);
+});
+
+app.post('/stocks/edit/:id', requireLogin, async(req,res)=>{
+  await Stock.findByIdAndUpdate(req.params.id, req.body);
+  await new StockHistory({
+    action:'MODIFICATION',
+    stockId:req.params.id,
+    ...req.body
+  }).save();
+  res.redirect('/stocks');
+});
+
+// ----- SUPPRESSION -----
+app.get('/stocks/delete/:id', requireLogin, async(req,res)=>{
+  const s = await Stock.findById(req.params.id);
+  await Stock.findByIdAndDelete(req.params.id);
+  await new StockHistory({
+    action:'SUPPRESSION',
+    stockId:s._id,
+    sender:s.sender,
+    destination:s.destination,
+    amount:s.amount,
+    currency:s.currency
+  }).save();
+  res.redirect('/stocks');
+});
+
+// ================= SERVER =================
+app.listen(3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
