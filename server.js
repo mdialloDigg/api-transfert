@@ -491,51 +491,163 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
   res.send(html);
 });
 
-function renderStock() {
-  // Calcul des totaux
-  var totals = {};
-  stocks.forEach(function(s){
-    if(!totals[s.destination]) totals[s.destination] = {GNF:0,EUR:0,USD:0,XOF:0};
-    totals[s.destination][s.currency] += s.amount;
-  });
+// ================= STOCK =================
+app.get('/transferts/stock', requireLogin, async (req, res) => {
+  const stocks = await Stock.find().sort({ createdAt: -1 });
+  const currencies = ['GNF','EUR','USD','XOF'];
 
-  // Totaux
-  totalsTbody.innerHTML = '';
-  for(var dest in totals){
-    var row = document.createElement('tr');
-    row.innerHTML = '<td>' + dest + '</td>'
-                  + '<td>' + totals[dest].GNF + '</td>'
-                  + '<td>' + totals[dest].EUR + '</td>'
-                  + '<td>' + totals[dest].USD + '</td>'
-                  + '<td>' + totals[dest].XOF + '</td>';
-    totalsTbody.appendChild(row);
-  }
+  const html = `
+  <html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+      table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+      th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+      th{background:#ff8c42;color:white;}
+      button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
+      input,select{padding:6px;border-radius:6px;border:1px solid #ccc;margin-bottom:10px;}
+      #stockFormContainer{margin-bottom:20px;padding:15px;background:white;border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,0.1);}
+    </style>
+  </head>
+  <body>
+    <h2>📦 Gestion du Stock</h2>
 
-  // Tableau stock
-  stockBody.innerHTML = '';
-  stocks.forEach(function(s){
-    var tr = document.createElement('tr');
-    tr.dataset.id = s._id;
-    tr.innerHTML = '<td>' + s.sender + '</td>'
-                 + '<td>' + s.destination + '</td>'
-                 + '<td>' + s.amount + '</td>'
-                 + '<td>' + s.currency + '</td>'
-                 + '<td><button class="deleteBtn">❌ Supprimer</button></td>';
-    stockBody.appendChild(tr);
-  });
+    <h3>📊 Totaux par destination et devise</h3>
+    <table id="totaux">
+      <thead>
+        <tr><th>Destination</th>${currencies.map(c => `<th>${c}</th>`).join('')}</tr>
+      </thead>
+      <tbody></tbody>
+    </table>
 
-  // Suppression dynamique
-  document.querySelectorAll('.deleteBtn').forEach(function(btn){
-    btn.onclick = async function(){
-      if(confirm('Confirmer suppression?')){
-        var tr = btn.closest('tr');
-        var res = await fetch('/transferts/stock/' + tr.dataset.id, { method: 'DELETE' });
-        var data = await res.json();
-        if(data.ok){ stocks = data.stock; renderStock(); }
+    <button id="showFormBtn">➕ Ajouter un nouveau stock</button>
+
+    <div id="stockFormContainer" style="display:none;">
+      <form id="stockForm">
+        <h3>➕ Nouveau Stock</h3>
+        <input name="sender" placeholder="Expéditeur" required>
+        <input name="destination" placeholder="Destination" required>
+        <input type="number" name="amount" placeholder="Montant" required>
+        <select name="currency">${currencies.map(c => `<option>${c}</option>`).join('')}</select>
+        <button>Enregistrer</button>
+      </form>
+    </div>
+
+    <h3>Liste du stock</h3>
+    <table id="stockTable">
+      <thead>
+        <tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script>
+      let stocks = ${JSON.stringify(stocks)};
+      const stockBody = document.querySelector('#stockTable tbody');
+      const totalsTbody = document.querySelector('#totaux tbody');
+      const stockForm = document.getElementById('stockForm');
+      const stockFormContainer = document.getElementById('stockFormContainer');
+      const showFormBtn = document.getElementById('showFormBtn');
+
+      function renderStock(){
+        // Calcul des totaux
+        const totals = {};
+        stocks.forEach(s => {
+          if(!totals[s.destination]) totals[s.destination] = {GNF:0,EUR:0,USD:0,XOF:0};
+          totals[s.destination][s.currency] += s.amount;
+        });
+
+        // Mettre à jour le tableau des totaux
+        totalsTbody.innerHTML = '';
+        for(const dest in totals){
+          const row = document.createElement('tr');
+          row.innerHTML = '<td>' + dest + '</td>'
+                        + '<td>' + totals[dest].GNF + '</td>'
+                        + '<td>' + totals[dest].EUR + '</td>'
+                        + '<td>' + totals[dest].USD + '</td>'
+                        + '<td>' + totals[dest].XOF + '</td>';
+          totalsTbody.appendChild(row);
+        }
+
+        // Mettre à jour le tableau du stock
+        stockBody.innerHTML = '';
+        stocks.forEach(s => {
+          const tr = document.createElement('tr');
+          tr.dataset.id = s._id;
+          tr.innerHTML = '<td>' + s.sender + '</td>'
+                       + '<td>' + s.destination + '</td>'
+                       + '<td>' + s.amount + '</td>'
+                       + '<td>' + s.currency + '</td>'
+                       + '<td><button class="deleteBtn">❌ Supprimer</button></td>';
+          stockBody.appendChild(tr);
+        });
+
+        // Suppression dynamique
+        document.querySelectorAll('.deleteBtn').forEach(btn => {
+          btn.onclick = async function(){
+            if(confirm('Confirmer suppression?')){
+              const tr = btn.closest('tr');
+              const res = await fetch('/transferts/stock/' + tr.dataset.id, { method: 'DELETE' });
+              const data = await res.json();
+              if(data.ok){ stocks = data.stock; renderStock(); }
+            }
+          }
+        });
       }
-    };
-  });
-}
+
+      renderStock();
+
+      // Afficher / masquer formulaire
+      showFormBtn.onclick = function(){
+        stockFormContainer.style.display = stockFormContainer.style.display === 'none' ? 'block' : 'none';
+      };
+
+      // Ajouter un nouveau stock
+      stockForm.onsubmit = async function(e){
+        e.preventDefault();
+        const f = e.target;
+        const data = {
+          sender: f.sender.value,
+          destination: f.destination.value,
+          amount: Number(f.amount.value),
+          currency: f.currency.value
+        };
+        const res = await fetch('/transferts/stock',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if(result.ok){
+          stocks = result.stock;
+          renderStock();
+          f.reset();
+          stockFormContainer.style.display = 'none';
+        }
+      };
+    </script>
+  </body>
+  </html>
+  `;
+
+  res.send(html);
+});
+
+// ================= POST STOCK =================
+app.post('/transferts/stock', requireLogin, async(req,res) => {
+  const { sender,destination,amount,currency } = req.body;
+  await new Stock({ sender,destination,amount,currency }).save();
+  const stocks = await Stock.find().sort({createdAt:-1});
+  res.json({ ok:true, stock: stocks });
+});
+
+// ================= DELETE STOCK =================
+app.delete('/transferts/stock/:id', requireLogin, async(req,res) => {
+  await Stock.findByIdAndDelete(req.params.id);
+  const stocks = await Stock.find().sort({createdAt:-1});
+  res.json({ ok:true, stock: stocks });
+});
 
 
 
