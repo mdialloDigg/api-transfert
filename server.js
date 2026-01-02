@@ -1,168 +1,164 @@
 /******************************************************************
- * APP STOCK + TRANSFERT
- * FINAL – UN SEUL FICHIER – RENDER SAFE – NODE 20
+ * SERVER.JS – VERSION FINALE STABLE
+ * - Pas de crash si MONGO_URI absent
+ * - Pas de MemoryStore warning
+ * - Un seul fichier
  ******************************************************************/
 
 const express = require('express');
 const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
-const bodyParser = require('body-parser');
-const PDFDocument = require('pdfkit');
-const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGO_URI;
 
-/* ===================== MIDDLEWARE ===================== */
+/* ===================== MIDDLEWARE BASIQUE ===================== */
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-/* ===================== SESSION (SAFE PROD) ===================== */
-app.use(session({
-  secret: 'render-secret',
-  resave: false,
-  saveUninitialized: false,
-  store: MONGO_URI
-    ? MongoStore.create({ mongoUrl: MONGO_URI })
-    : undefined
-}));
-
-/* ===================== MONGODB (NO CRASH) ===================== */
+/* ===================== ÉTAT GLOBAL ===================== */
 let mongoReady = false;
 
-if (MONGO_URI) {
-  mongoose.set('bufferCommands', false);
-  mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
-    .then(() => {
-      mongoReady = true;
-      console.log('✅ MongoDB connecté');
-    })
-    .catch(err => {
-      console.error('❌ MongoDB ERROR:', err.message);
-    });
+/* ===================== MONGODB (SANS CRASH) ===================== */
+if (typeof MONGO_URI === 'string' && MONGO_URI.trim() !== '') {
+  mongoose.connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 5000
+  })
+  .then(() => {
+    mongoReady = true;
+    console.log('✅ MongoDB connecté');
+
+    /* ✅ SESSION UNIQUEMENT SI MONGO OK */
+    app.use(session({
+      secret: 'render-secret-final',
+      resave: false,
+      saveUninitialized: false,
+      store: MongoStore.create({ mongoUrl: MONGO_URI })
+    }));
+  })
+  .catch(err => {
+    console.error('❌ MongoDB erreur :', err.message);
+  });
 } else {
-  console.warn('⚠️ MONGO_URI non défini – mode sans base activé');
+  console.warn('⚠️ MONGO_URI non défini — application lancée sans base de données');
 }
 
-/* ===================== MODELS (SI DB OK) ===================== */
-let Auth, Stock, Transfer;
+/* ===================== MODÈLES ===================== */
+let Stock;
 
-if (MONGO_URI) {
-  Auth = mongoose.model('Auth', new mongoose.Schema({
-    username: { type: String, unique: true },
-    password: String
-  }));
-
-  Stock = mongoose.model('Stock', new mongoose.Schema({
+if (mongoReady || MONGO_URI) {
+  const stockSchema = new mongoose.Schema({
     sender: String,
     destination: String,
     amount: Number,
     currency: String,
     createdAt: { type: Date, default: Date.now }
-  }));
+  });
 
-  Transfer = mongoose.model('Transfer', new mongoose.Schema({
-    sender: String,
-    receiver: String,
-    amount: Number,
-    currency: String,
-    code: String,
-    createdAt: { type: Date, default: Date.now }
-  }));
+  Stock = mongoose.model('Stock', stockSchema);
 }
 
-/* ===================== MIDDLEWARE DB CHECK ===================== */
-const requireDB = (req, res, next) => {
-  if (!mongoReady) {
-    return res.send(`
-      <h2>❌ Base de données non configurée</h2>
-      <p>Ajoute <b>MONGO_URI</b> dans Render → Environment</p>
-    `);
-  }
-  next();
-};
+/* ===================== ROUTES ===================== */
 
-/* ===================== AUTH ===================== */
-const auth = (req, res, next) => {
-  if (req.session.user) return next();
-  res.redirect('/login');
-};
-
-app.get('/login', (req, res) => {
-  if (!mongoReady) return res.redirect('/');
-  res.send(`
-    <h2>Connexion</h2>
-    <form method="post">
-      <input name="username" required placeholder="Utilisateur"><br>
-      <input name="password" required placeholder="Mot de passe"><br>
-      <button>Connexion</button>
-    </form>
-  `);
-});
-
-app.post('/login', requireDB, async (req, res) => {
-  let user = await Auth.findOne({ username: req.body.username });
-  if (!user) user = await Auth.create(req.body);
-  req.session.user = user;
-  res.redirect('/');
-});
-
-/* ===================== DASHBOARD ===================== */
+/* ---- PAGE PRINCIPALE ---- */
 app.get('/', async (req, res) => {
   if (!mongoReady) {
     return res.send(`
-      <h1>⚠️ Application en attente</h1>
-      <p>MONGO_URI n'est pas défini.</p>
-      <p>Ajoute-le dans <b>Render → Environment</b></p>
+      <h1>⚠️ Configuration requise</h1>
+      <p>La variable <b>MONGO_URI</b> n’est pas définie.</p>
+      <p>👉 Render → Environment → Add Environment Variable</p>
+      <pre>MONGO_URI = mongodb+srv://user:password@cluster.mongodb.net/db</pre>
     `);
   }
 
   const stocks = await Stock.find();
-  const transfers = await Transfer.find();
 
   res.send(`
-<h2>Stocks</h2>
-<ul>${stocks.map(s => `<li>${s.sender} → ${s.destination}</li>`).join('')}</ul>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Stocks</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial; padding: 15px; }
+    input, button { padding: 8px; margin: 4px; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 6px; }
+  </style>
+</head>
+<body>
 
-<h2>Transferts</h2>
-<ul>${transfers.map(t => `<li>${t.code} : ${t.amount} ${t.currency}</li>`).join('')}</ul>
+<h2>📦 Stocks</h2>
 
-<a href="/export/pdf">PDF</a> | <a href="/export/excel">Excel</a>
+<table>
+  <tr>
+    <th>Sender</th>
+    <th>Destination</th>
+    <th>Amount</th>
+    <th>Currency</th>
+  </tr>
+  ${stocks.map(s => `
+    <tr>
+      <td>${s.sender}</td>
+      <td>${s.destination}</td>
+      <td>${s.amount}</td>
+      <td>${s.currency}</td>
+    </tr>
+  `).join('')}
+</table>
+
+<h3>➕ Ajouter un stock</h3>
+<input id="sender" placeholder="Sender">
+<input id="destination" placeholder="Destination">
+<input id="amount" placeholder="Amount" type="number">
+<input id="currency" placeholder="Currency">
+<button onclick="addStock()">Ajouter</button>
+
+<script>
+async function addStock() {
+  const res = await fetch('/stock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sender: sender.value,
+      destination: destination.value,
+      amount: Number(amount.value),
+      currency: currency.value
+    })
+  });
+  const data = await res.json();
+  alert(data.message);
+  if (data.ok) location.reload();
+}
+</script>
+
+</body>
+</html>
   `);
 });
 
-/* ===================== API ===================== */
-app.post('/transfer', requireDB, auth, async (req, res) => {
-  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-  await Transfer.create({ sender: 'Client', receiver: 'Agence', amount: 100, currency: 'GNF', code });
-  res.json({ ok: true });
-});
+/* ---- API AJOUT STOCK ---- */
+app.post('/stock', async (req, res) => {
+  if (!mongoReady) {
+    return res.json({
+      ok: false,
+      message: 'Base de données non connectée'
+    });
+  }
 
-/* ===================== EXPORT PDF ===================== */
-app.get('/export/pdf', requireDB, auth, async (req, res) => {
-  const doc = new PDFDocument();
-  res.setHeader('Content-Disposition', 'attachment; filename=transferts.pdf');
-  doc.pipe(res);
-  (await Transfer.find()).forEach(t =>
-    doc.text(`${t.code} - ${t.amount} ${t.currency}`)
-  );
-  doc.end();
-});
-
-/* ===================== EXPORT EXCEL ===================== */
-app.get('/export/excel', requireDB, auth, async (req, res) => {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Transferts');
-  ws.addRow(['Code', 'Amount', 'Currency']);
-  (await Transfer.find()).forEach(t => ws.addRow([t.code, t.amount, t.currency]));
-  res.setHeader('Content-Disposition', 'attachment; filename=transferts.xlsx');
-  await wb.xlsx.write(res);
-  res.end();
+  try {
+    await Stock.create(req.body);
+    res.json({ ok: true, message: 'Stock ajouté' });
+  } catch (err) {
+    res.json({ ok: false, message: err.message });
+  }
 });
 
 /* ===================== SERVER ===================== */
 app.listen(PORT, () => {
-  console.log('🚀 Serveur actif sur le port ' + PORT);
+  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
 });
