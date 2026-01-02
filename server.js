@@ -269,13 +269,13 @@ app.post('/stocks/new', requireLogin, async (req, res) => {
     await Stock.findByIdAndUpdate(data._id, { ...data });
   } else {
     const code = data.code || await generateUniqueCode();
-    await new Stock({ ...data, code }).save();
+    await new StockHistory({ ...data, code }).save();
   }
   res.json({ ok: true });
 });
 
 app.post('/stocks/delete', requireLogin, async (req, res) => {
-  const s = await Stock.findByIdAndDelete(req.body.id);
+  const s = await StockHistory.findByIdAndDelete(req.body.id);
   if (s) {
     await new StockHistory({
       action: 'Suppression',
