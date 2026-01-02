@@ -493,300 +493,242 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 
 
 
-// ================== STOCK (AJAX + MODALE STYLÉE) ==================
-app.get('/transferts/stock', requireLogin, async (req,res)=>{
+
+// Liste des stocks
+app.get('/transferts/stock', requireLogin, async (req, res) => {
   const stocks = await Stock.find().sort({createdAt:-1});
+
   const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
   stocks.forEach(s => totals[s.currency] += s.amount);
 
-  let html = `
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #f9f9f9; }
-    h2, h3 { color: #333; }
-    #totaux { margin-bottom: 20px; font-weight: bold; }
-    form { margin-bottom: 20px; display:flex; flex-wrap: wrap; gap: 10px; }
-    input, select { padding: 8px; border-radius: 5px; border: 1px solid #ccc; flex: 1; min-width: 120px; }
-    button { padding: 8px 12px; border:none; border-radius:5px; cursor:pointer; background:#007bff; color:white; transition: 0.2s; }
-    button:hover { background:#0056b3; }
-    table { width: 100%; border-collapse: collapse; background: white; }
-    th, td { padding: 10px; text-align:center; border-bottom:1px solid #ddd; }
-    th { background: #007bff; color:white; }
-    tr:hover { background:#f1f1f1; }
-    .action-btn { padding:5px 8px; font-size:14px; }
-    .modifier { background:#ffc107; color:#333; }
-    .modifier:hover { background:#e0a800; }
-    .supprimer { background:#dc3545; }
-    .supprimer:hover { background:#c82333; }
-    /* MODALE */
-    #modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
-      background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:1000; }
-    #modal-content { background:white; padding:20px; border-radius:10px; min-width:300px; position:relative;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-    #modal-content h3 { margin-top:0; }
-    #close-modal { background:#6c757d; margin-left:10px; }
-    #close-modal:hover { background:#5a6268; }
-  </style>
-
-  <h2>📦 Stock</h2>
-  <div id="totaux">
-    Totaux : GNF:${totals.GNF} | EUR:${totals.EUR} | USD:${totals.USD} | XOF:${totals.XOF}
-  </div>
-
-  <h3>➕ Ajouter Stock</h3>
-  <form id="form-ajout">
-    <input name="sender" placeholder="Expéditeur" required />
-    <input name="destination" placeholder="Destination" required />
-    <input type="number" name="amount" placeholder="Montant" required />
-    <select name="currency">
-      <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
-    </select>
-    <button type="submit">Ajouter</button>
-  </form>
-
-  <table id="table-stock">
-    <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
-    <tbody>`;
-  
-  stocks.forEach(s=>{
-    html += `<tr data-id="${s._id}">
-      <td class="sender">${s.sender}</td>
-      <td class="destination">${s.destination}</td>
-      <td class="amount">${s.amount}</td>
-      <td class="currency">${s.currency}</td>
-      <td>
-        <button class="action-btn modifier">✏️ Modifier</button>
-        <button class="action-btn supprimer">❌ Supprimer</button>
-      </td>
-    </tr>`;
-  });
-
-  html += `</tbody></table>
-
-  <!-- MODALE MODIFIER -->
-  <div id="modal">
-    <div id="modal-content">
-      <h3>Modifier Stock</h3>
-      <form id="form-modifier">
-        <input name="sender" placeholder="Expéditeur" required />
-        <input name="destination" placeholder="Destination" required />
-        <input type="number" name="amount" placeholder="Montant" required />
-        <select name="currency">
-          <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
-        </select>
-        <input type="hidden" name="id" />
-        <div style="margin-top:10px;">
-          <button type="submit">Enregistrer</button>
-          <button type="button" id="close-modal">Annuler</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <script>
-    function updateTotals() {
-      const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
-      document.querySelectorAll('#table-stock tbody tr').forEach(tr=>{
-        const amount = parseFloat(tr.querySelector('.amount').textContent);
-        const currency = tr.querySelector('.currency').textContent;
-        totals[currency] += amount;
-      });
-      document.getElementById('totaux').innerHTML =
-        'Totaux : GNF:' + totals.GNF +
-        ' | EUR:' + totals.EUR +
-        ' | USD:' + totals.USD +
-        ' | XOF:' + totals.XOF;
-    }
-
-    // AJOUTER
-    document.getElementById('form-ajout').addEventListener('submit', async e=>{
-      e.preventDefault();
-      const f = e.target;
-      const data = { sender:f.sender.value, destination:f.destination.value, amount:f.amount.value, currency:f.currency.value };
-      const res = await fetch('/transferts/stock/ajouter', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
-      const stock = await res.json();
-      const tr = document.createElement('tr');
-      tr.dataset.id = stock._id;
-      tr.innerHTML = \`
-        <td class="sender">\${stock.sender}</td>
-        <td class="destination">\${stock.destination}</td>
-        <td class="amount">\${stock.amount}</td>
-        <td class="currency">\${stock.currency}</td>
-        <td>
-          <button class="action-btn modifier">✏️ Modifier</button>
-          <button class="action-btn supprimer">❌ Supprimer</button>
-        </td>\`;
-      document.querySelector('#table-stock tbody').prepend(tr);
-      f.reset();
-      updateTotals();
-    });
-
-    // MODALE
-    const modal = document.getElementById('modal');
-    const formModifier = document.getElementById('form-modifier');
-    document.getElementById('close-modal').onclick = ()=> modal.style.display='none';
-
-    document.querySelector('#table-stock tbody').addEventListener('click', e=>{
-      const tr = e.target.closest('tr');
-      const id = tr.dataset.id;
-
-      if(e.target.classList.contains('supprimer')){
-        if(!confirm('Confirmer suppression?')) return;
-        fetch('/transferts/stock/supprimer', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
-          .then(()=> { tr.remove(); updateTotals(); });
-      }
-
-      if(e.target.classList.contains('modifier')){
-        formModifier.sender.value = tr.querySelector('.sender').textContent;
-        formModifier.destination.value = tr.querySelector('.destination').textContent;
-        formModifier.amount.value = tr.querySelector('.amount').textContent;
-        formModifier.currency.value = tr.querySelector('.currency').textContent;
-        formModifier.id.value = id;
-        modal.style.display='flex';
-      }
-    });
-
-    formModifier.addEventListener('submit', async e=>{
-      e.preventDefault();
-      const id = formModifier.id.value;
-      const data = { sender:formModifier.sender.value, destination:formModifier.destination.value, amount:formModifier.amount.value, currency:formModifier.currency.value };
-      const res = await fetch('/transferts/stock/modifier/' + id, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
-      const stock = await res.json();
-      const tr = document.querySelector(\`#table-stock tbody tr[data-id="\${id}"]\`);
-      tr.querySelector('.sender').textContent = stock.sender;
-      tr.querySelector('.destination').textContent = stock.destination;
-      tr.querySelector('.amount').textContent = stock.amount;
-      tr.querySelector('.currency').textContent = stock.currency;
-      updateTotals();
-      modal.style.display='none';
-    });
-  </script>
-  `;
-
-  res.send(html);
-});
-
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;margin:0;padding:20px;background:#f4f6f9;}
+table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+th{background:#ff8c42;color:white;}
+button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+.modify{background:#28a745;}
+.delete{background:#dc3545;}
+</style>
+</head>
+<body>
+<h2>📦 Stock</h2>
+<div><strong>Totaux :</strong> GNF:${totals.GNF} | EUR:${totals.EUR} | USD:${totals.USD} | XOF:${totals.XOF}</div>
+<a href="/transferts/stock/nouveau"><button>➕ Nouveau Stock</button></a>
+<table>
+<thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
+<tbody>
+${stocks.map(s=>`<tr data-id="${s._id}">
+<td>${s.sender}</td>
+<td>${s.destination}</td>
+<td>${s.amount}</td>
+<td>${s.currency}</td>
+<td>
+<button class="modify">✏️ Modifier</button>
+<button class="delete">❌ Supprimer</button>
+</td>
+</tr>`).join('')}
+</tbody>
+</table>
+<a href="/transferts/list">⬅ Retour Transferts</a>
 
 <script>
-const modal = document.getElementById('modal');
-const formModifier = document.getElementById('form-modifier');
+async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
 
-// Met à jour les totaux
-function updateTotals() {
-  const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
-  document.querySelectorAll('#table-stock tbody tr').forEach(tr=>{
-    const amount = parseFloat(tr.querySelector('.amount').textContent) || 0;
-    const currency = tr.querySelector('.currency').textContent;
-    totals[currency] += amount;
-  });
-  document.getElementById('totaux').innerHTML =
-    'Totaux : GNF:' + totals.GNF +
-    ' | EUR:' + totals.EUR +
-    ' | USD:' + totals.USD +
-    ' | XOF:' + totals.XOF;
-}
-
-// ================= AJOUTER =================
-document.getElementById('form-ajout').addEventListener('submit', async e=>{
-  e.preventDefault();
-  const f = e.target;
-  const data = {
-    sender: f.sender.value,
-    destination: f.destination.value,
-    amount: parseFloat(f.amount.value),
-    currency: f.currency.value
-  };
-
-  try {
-    const res = await fetch('/transferts/stock/ajouter', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify(data)
-    });
-    const stock = await res.json();
-
-    // Crée la ligne dynamiquement
-    const tr = document.createElement('tr');
-    tr.dataset.id = stock._id;
-    tr.innerHTML = `
-      <td class="sender">${stock.sender}</td>
-      <td class="destination">${stock.destination}</td>
-      <td class="amount">${stock.amount}</td>
-      <td class="currency">${stock.currency}</td>
-      <td>
-        <button class="action-btn modifier">✏️ Modifier</button>
-        <button class="action-btn supprimer">❌ Supprimer</button>
-      </td>`;
-    document.querySelector('#table-stock tbody').prepend(tr);
-    f.reset();
-    updateTotals();
-  } catch(err) {
-    alert('Erreur ajout stock: ' + err.message);
+// Suppression
+document.querySelectorAll('.delete').forEach(btn=>{
+  btn.onclick = async ()=>{
+    if(!confirm('❌ Confirmer suppression?')) return;
+    const tr = btn.closest('tr');
+    const id = tr.dataset.id;
+    const res = await postData('/transferts/stock/delete', {id});
+    const data = await res.json();
+    if(data.ok) tr.remove();
+    else alert('Erreur suppression');
   }
 });
 
-// ================= MODALE =================
-document.getElementById('close-modal').onclick = ()=> modal.style.display='none';
-
-// Event delegation pour modifier et supprimer
-document.querySelector('#table-stock tbody').addEventListener('click', e=>{
-  const tr = e.target.closest('tr');
-  const id = tr?.dataset.id;
-  if(!tr) return;
-
-  // ========== SUPPRIMER ==========
-  if(e.target.classList.contains('supprimer')){
-    if(!confirm('Confirmer suppression?')) return;
-    fetch('/transferts/stock/supprimer', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({id})
-    }).then(()=>{
-      tr.remove();
-      updateTotals();
-    });
-  }
-
-  // ========== MODIFIER ==========
-  if(e.target.classList.contains('modifier')){
-    formModifier.sender.value = tr.querySelector('.sender').textContent;
-    formModifier.destination.value = tr.querySelector('.destination').textContent;
-    formModifier.amount.value = tr.querySelector('.amount').textContent;
-    formModifier.currency.value = tr.querySelector('.currency').textContent;
-    formModifier.id.value = id;
-    modal.style.display='flex';
-  }
-});
-
-// ================= ENVOI MODIFICATION =================
-formModifier.addEventListener('submit', async e=>{
-  e.preventDefault();
-  const id = formModifier.id.value;
-  const data = {
-    sender: formModifier.sender.value,
-    destination: formModifier.destination.value,
-    amount: parseFloat(formModifier.amount.value),
-    currency: formModifier.currency.value
-  };
-
-  try {
-    const res = await fetch('/transferts/stock/modifier/' + id, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify(data)
-    });
-    const stock = await res.json();
-    const tr = document.querySelector(`#table-stock tbody tr[data-id="${id}"]`);
-    tr.querySelector('.sender').textContent = stock.sender;
-    tr.querySelector('.destination').textContent = stock.destination;
-    tr.querySelector('.amount').textContent = stock.amount;
-    tr.querySelector('.currency').textContent = stock.currency;
-    updateTotals();
-    modal.style.display='none';
-  } catch(err) {
-    alert('Erreur modification: ' + err.message);
+// Modification
+document.querySelectorAll('.modify').forEach(btn=>{
+  btn.onclick = ()=>{
+    const tr = btn.closest('tr');
+    const id = tr.dataset.id;
+    window.location.href = '/transferts/stock/modifier/' + id;
   }
 });
 </script>
+</body>
+</html>
+`);
+});
+
+// Ajouter un stock (multi lignes possible)
+app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+.form-container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+input,select,button{padding:10px;margin-bottom:10px;font-size:16px;border-radius:8px;border:1px solid #ccc;}
+button{background:#ff8c42;color:white;border:none;cursor:pointer;margin-right:5px;}
+.row{display:flex;gap:10px;margin-bottom:5px;}
+.row input, .row select{flex:1;}
+</style>
+</head>
+<body>
+<div class="form-container">
+<h2>➕ Nouveau Stock (Plusieurs)</h2>
+<form id="newStockForm">
+<div id="stockRows">
+<div class="row">
+<input name="sender" placeholder="Expéditeur" required>
+<input name="destination" placeholder="Destination" required>
+<input type="number" name="amount" placeholder="Montant" required>
+<select name="currency">
+<option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
+</select>
+<button type="button" class="removeRowBtn">❌</button>
+</div>
+</div>
+<button type="button" id="addRowBtn">+ Ajouter une ligne</button>
+<button type="button" id="validerBtn">Valider</button>
+</form>
+<a href="/transferts/stock">⬅ Retour liste Stock</a>
+</div>
+
+<script>
+const stockRows=document.getElementById('stockRows');
+
+document.getElementById('addRowBtn').onclick=()=>{
+  const div=document.createElement('div'); div.className='row';
+  div.innerHTML=\`
+    <input name="sender" placeholder="Expéditeur" required>
+    <input name="destination" placeholder="Destination" required>
+    <input type="number" name="amount" placeholder="Montant" required>
+    <select name="currency">
+      <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
+    </select>
+    <button type="button" class="removeRowBtn">❌</button>\`;
+  stockRows.appendChild(div);
+  attachRemove(div.querySelector('.removeRowBtn'));
+};
+
+function attachRemove(btn){btn.onclick=()=>btn.closest('.row').remove();}
+document.querySelectorAll('.removeRowBtn').forEach(attachRemove);
+
+document.getElementById('validerBtn').onclick=async()=>{
+  const rows = document.querySelectorAll('#stockRows .row');
+  const stocks = [];
+  rows.forEach(r=>{
+    const sender = r.querySelector('input[name="sender"]').value.trim();
+    const destination = r.querySelector('input[name="destination"]').value.trim();
+    const amount = parseFloat(r.querySelector('input[name="amount"]').value);
+    const currency = r.querySelector('select[name="currency"]').value;
+    if(sender && destination && !isNaN(amount)) stocks.push({sender,destination,amount,currency});
+  });
+  if(stocks.length===0){alert('Aucune ligne valide'); return;}
+  const res = await fetch('/transferts/stock/multi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stocks})});
+  const data = await res.json();
+  if(data.ok) window.location.href='/transferts/stock';
+  else alert('Erreur ajout');
+};
+</script>
+</body>
+</html>
+`);
+});
+
+// POST multi-stock
+app.post('/transferts/stock/multi', requireLogin, async(req,res)=>{
+  try{
+    if(!req.session.user.permissions.ecriture) return res.status(403).json({ok:false,message:'Accès refusé'});
+    const { stocks } = req.body;
+    if(!Array.isArray(stocks) || stocks.length===0) return res.json({ok:false,message:'Aucun stock'});
+    for(const s of stocks){
+      await Stock.create(s);
+    }
+    res.json({ok:true});
+  }catch(err){console.error(err); res.status(500).json({ok:false,message:'Erreur serveur'});}
+});
+
+// Modifier un stock
+app.get('/transferts/stock/modifier/:id', requireLogin, async(req,res)=>{
+  const s = await Stock.findById(req.params.id);
+  if(!s) return res.send('Stock introuvable');
+  res.send(`
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+.form-container{max-width:400px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+input,select,button{padding:10px;margin-bottom:10px;font-size:16px;border-radius:8px;border:1px solid #ccc;}
+button{background:#28a745;color:white;border:none;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="form-container">
+<h2>✏️ Modifier Stock</h2>
+<form id="editStockForm">
+<input name="sender" value="${s.sender}" required>
+<input name="destination" value="${s.destination}" required>
+<input type="number" name="amount" value="${s.amount}" required>
+<select name="currency">
+<option ${s.currency==='GNF'?'selected':''}>GNF</option>
+<option ${s.currency==='EUR'?'selected':''}>EUR</option>
+<option ${s.currency==='USD'?'selected':''}>USD</option>
+<option ${s.currency==='XOF'?'selected':''}>XOF</option>
+</select>
+<button type="button" id="saveBtn">Enregistrer</button>
+</form>
+<a href="/transferts/stock">⬅ Retour liste Stock</a>
+</div>
+<script>
+document.getElementById('saveBtn').onclick=async()=>{
+  const form=document.getElementById('editStockForm');
+  const sender=form.sender.value.trim();
+  const destination=form.destination.value.trim();
+  const amount=parseFloat(form.amount.value);
+  const currency=form.currency.value;
+  if(!sender || !destination || isNaN(amount)){alert('Données invalides'); return;}
+  const res = await fetch('/transferts/stock/update/${s._id}',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sender,destination,amount,currency})
+  });
+  const data = await res.json();
+  if(data.ok) window.location.href='/transferts/stock';
+  else alert('Erreur mise à jour');
+};
+</script>
+</body>
+</html>
+`);
+});
+
+// POST update stock
+app.post('/transferts/stock/update/:id', requireLogin, async(req,res)=>{
+  try{
+    if(!req.session.user.permissions.modification) return res.status(403).json({ok:false,message:'Accès refusé'});
+    await Stock.findByIdAndUpdate(req.params.id, req.body);
+    res.json({ok:true});
+  }catch(err){console.error(err); res.status(500).json({ok:false,message:'Erreur serveur'});}
+});
+
+// POST delete stock
+app.post('/transferts/stock/delete', requireLogin, async(req,res)=>{
+  try{
+    if(!req.session.user.permissions.suppression) return res.status(403).json({ok:false,message:'Accès refusé'});
+    await Stock.findByIdAndDelete(req.body.id);
+    res.json({ok:true});
+  }catch(err){console.error(err); res.status(500).json({ok:false,message:'Erreur serveur'});}
+});
 
 
 // ================= SERVER =================
