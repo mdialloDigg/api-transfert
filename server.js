@@ -493,21 +493,11 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 
 
 
-// SCHEMA STOCK
-const stockSchema = new mongoose.Schema({
-  sender: String,
-  destination: String,
-  amount: Number,
-  currency: { type:String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
-  createdAt: { type: Date, default: Date.now }
-});
-const Stock = mongoose.model('Stock', stockSchema);
-
-// GET STOCK (Page complète)
-app.get('/transferts/stock', requireLogin, async(req,res)=>{
+// GET STOCK PAGE
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
 
-  // Calcul des totaux par destination/devise
+  // Totaux par destination/devise
   const totals = {};
   stocks.forEach(s=>{
     if(!totals[s.destination]) totals[s.destination] = {GNF:0,EUR:0,USD:0,XOF:0};
@@ -524,170 +514,104 @@ app.get('/transferts/stock', requireLogin, async(req,res)=>{
       th{background:#ff8c42;color:white;}
       input,select{padding:10px;border-radius:6px;border:1px solid #ccc;font-size:14px;margin-bottom:10px;}
       button{padding:10px 15px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:5px;}
-      #totaux table{margin-bottom:30px;}
       .form-container{margin-bottom:30px;background:white;padding:15px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
     </style>
   </head>
   <body>
+    <h2>📦 Gestion Stock</h2>
+    <a href="/transferts/list">⬅ Retour transferts</a>
 
-  <h2>📦 Gestion Stock</h2>
-  <a href="/transferts/list">⬅ Retour transferts</a>
+    <!-- Totaux -->
+    <div id="totaux" class="form-container">
+      <h3>📊 Totaux par destination/devise</h3>
+      <table>
+        <thead><tr><th>Destination</th><th>GNF</th><th>EUR</th><th>USD</th><th>XOF</th></tr></thead>
+        <tbody>
+          ${Object.keys(totals).map(d=>`
+            <tr><td>${d}</td><td>${totals[d].GNF}</td><td>${totals[d].EUR}</td><td>${totals[d].USD}</td><td>${totals[d].XOF}</td></tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
 
-  <!-- TOTAUX PAR DESTINATION/DEVISE -->
-  <div id="totaux" class="form-container">
-    <h3>📊 Totaux par destination/devise</h3>
-    <table>
-      <thead><tr><th>Destination</th><th>GNF</th><th>EUR</th><th>USD</th><th>XOF</th></tr></thead>
-      <tbody>
-        ${Object.keys(totals).map(dest=>{
-          return `<tr>
-            <td>${dest}</td>
-            <td>${totals[dest].GNF}</td>
-            <td>${totals[dest].EUR}</td>
-            <td>${totals[dest].USD}</td>
-            <td>${totals[dest].XOF}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  </div>
+    <!-- Nouveau stock -->
+    <div class="form-container">
+      <h3>➕ Nouveau Stock</h3>
+      <form id="newStockForm">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+          <input name="sender" placeholder="Expéditeur" required>
+          <input name="destination" placeholder="Destination" required>
+          <input type="number" name="amount" placeholder="Montant" required>
+          <select name="currency">
+            <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
+          </select>
+        </div>
+        <button type="button" id="newValiderBtn">Valider</button>
+      </form>
+    </div>
 
-  <!-- NOUVEAU STOCK -->
-  <div class="form-container">
-    <h3>➕ Nouveau Stock</h3>
-    <form id="newStockForm">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
-        <input name="sender" placeholder="Expéditeur" required>
-        <input name="destination" placeholder="Destination" required>
-        <input type="number" name="amount" placeholder="Montant" required>
-        <select name="currency">
-          <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
-        </select>
-      </div>
-      <button type="button" id="newValiderBtn">Valider</button>
-    </form>
-  </div>
+    <!-- Tableau stock -->
+    <div class="form-container">
+      <h3>📋 Historique Stock</h3>
+      <table id="stockTable">
+        <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
 
-  <!-- MODIFIER STOCK -->
-  <div class="form-container" id="editStockFormContainer" style="display:none;">
-    <h3>✏️ Modifier Stock</h3>
-    <form id="editStockForm">
-      <input type="hidden" name="id">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
-        <input name="sender" placeholder="Expéditeur" required>
-        <input name="destination" placeholder="Destination" required>
-        <input type="number" name="amount" placeholder="Montant" required>
-        <select name="currency">
-          <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
-        </select>
-      </div>
-      <button type="button" id="editEnregistrerBtn">Enregistrer</button>
-    </form>
-  </div>
+    <script>
+      let stocks = ${JSON.stringify(stocks)};
+      const tbody = document.querySelector('#stockTable tbody');
 
-  <!-- TABLEAU STOCK -->
-  <div class="form-container">
-    <h3>📋 Historique Stock</h3>
-    <table id="stockTable">
-      <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
+      function renderStock(){
+        tbody.innerHTML='';
+        stocks.forEach(s=>{
+          const tr = document.createElement('tr');
+          tr.dataset.id = s._id;
+          tr.innerHTML = \`
+            <td>\${s.sender}</td>
+            <td>\${s.destination}</td>
+            <td>\${s.amount}</td>
+            <td>\${s.currency}</td>
+            <td>
+              <button class="deleteBtn">❌ Supprimer</button>
+            </td>\`;
+          tbody.appendChild(tr);
+        });
 
-  <script>
-  let stocks = ${JSON.stringify(stocks)};
-  const tbody = document.querySelector('#stockTable tbody');
+        document.querySelectorAll('.deleteBtn').forEach(btn=>{
+          btn.onclick = async ()=>{
+            const tr = btn.closest('tr');
+            const res = await fetch('/transferts/stock/'+tr.dataset.id,{method:'DELETE'});
+            const data = await res.json();
+            stocks = data.stock;
+            renderStock();
+          };
+        });
+      }
 
-  const newForm = document.getElementById('newStockForm');
-  const newValiderBtn = document.getElementById('newValiderBtn');
-  const editFormContainer = document.getElementById('editStockFormContainer');
-  const editForm = document.getElementById('editStockForm');
-  const editEnregistrerBtn = document.getElementById('editEnregistrerBtn');
+      renderStock();
 
-  function renderStock(){
-    tbody.innerHTML='';
-    stocks.forEach(s=>{
-      const tr = document.createElement('tr');
-      tr.dataset.id = s._id;
-      tr.innerHTML = \`
-        <td>\${s.sender}</td>
-        <td>\${s.destination}</td>
-        <td>\${s.amount}</td>
-        <td>\${s.currency}</td>
-        <td>
-          <button class="editBtn">✏️ Modifier</button>
-          <button class="deleteBtn">❌ Supprimer</button>
-        </td>\`;
-      tbody.appendChild(tr);
-    });
-
-    document.querySelectorAll('.editBtn').forEach(btn=>{
-      btn.onclick = ()=>{
-        const tr = btn.closest('tr');
-        const s = stocks.find(x=>x._id===tr.dataset.id);
-        editForm.sender.value = s.sender;
-        editForm.destination.value = s.destination;
-        editForm.amount.value = s.amount;
-        editForm.currency.value = s.currency;
-        editForm.id.value = s._id;
-        editFormContainer.style.display = 'block';
-        window.scrollTo(0, editFormContainer.offsetTop);
-      };
-    });
-
-    document.querySelectorAll('.deleteBtn').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const tr = btn.closest('tr');
-        const res = await fetch('/transferts/stock/'+tr.dataset.id,{method:'DELETE'});
+      // AJOUTER NOUVEAU STOCK
+      document.getElementById('newValiderBtn').onclick = async ()=>{
+        const form = document.getElementById('newStockForm');
+        const payload = {
+          sender: form.sender.value,
+          destination: form.destination.value,
+          amount: Number(form.amount.value),
+          currency: form.currency.value
+        };
+        const res = await fetch('/transferts/stock',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
         const data = await res.json();
         stocks = data.stock;
         renderStock();
+        form.reset();
       };
-    });
-  }
-
-  renderStock();
-
-  // AJOUTER NOUVEAU STOCK
-  newValiderBtn.onclick = async ()=>{
-    const payload = {
-      sender: newForm.sender.value,
-      destination: newForm.destination.value,
-      amount: Number(newForm.amount.value),
-      currency: newForm.currency.value
-    };
-    const res = await fetch('/transferts/stock',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    });
-    const data = await res.json();
-    stocks = data.stock;
-    renderStock();
-    newForm.reset();
-  };
-
-  // MODIFIER STOCK
-  editEnregistrerBtn.onclick = async ()=>{
-    const id = editForm.id.value;
-    const payload = {
-      sender: editForm.sender.value,
-      destination: editForm.destination.value,
-      amount: Number(editForm.amount.value),
-      currency: editForm.currency.value
-    };
-    const res = await fetch('/transferts/stock/'+id,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    });
-    const data = await res.json();
-    stocks = data.stock;
-    renderStock();
-    editForm.reset();
-    editFormContainer.style.display = 'none';
-  };
-  </script>
+    </script>
 
   </body></html>`);
 });
@@ -696,14 +620,6 @@ app.get('/transferts/stock', requireLogin, async(req,res)=>{
 app.post('/transferts/stock', requireLogin, async(req,res)=>{
   const { sender,destination,amount,currency } = req.body;
   await new Stock({sender,destination,amount,currency}).save();
-  const stock = await Stock.find().sort({createdAt:-1});
-  res.send({ok:true, stock});
-});
-
-// PUT modifier stock
-app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  const { sender,destination,amount,currency } = req.body;
-  await Stock.findByIdAndUpdate(req.params.id,{sender,destination,amount,currency});
   const stock = await Stock.find().sort({createdAt:-1});
   res.send({ok:true, stock});
 });
