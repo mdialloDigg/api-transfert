@@ -23,6 +23,7 @@ app.use(session({ secret:'transfert-secret-final', resave:false, saveUninitializ
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+
 // ------------------- MIDDLEWARE -------------------
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -33,14 +34,17 @@ app.use(session({
 }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ------------------- DATABASE -------------------
-mongoose.connect('mongodb://127.0.0.1:27017/transferts', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => console.log('✅ MongoDB connected'))
-  .catch(err => console.log('❌ MongoDB error:', err));
 
-app.use(express.urlencoded({ extended: true }));
+
+// --- MongoDB ---
+mongoose.connect('mongodb://127.0.0.1:27017/stockDB', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => console.log('MongoDB connected'))
+  .catch(err => console.error(err));
+
+
+
 
 
 // ================= SCHEMAS =================
@@ -689,7 +693,7 @@ app.delete('/transferts/stock/:id', async (req,res)=>{
 });
 
 
-// ------------------- START SERVER -------------------
+// --- Démarrage serveur ---
 app.listen(PORT, function() {
-    console.log("😎 Server ready on port " + PORT);
+  console.log("😎 Server ready on port " + PORT);
 });
