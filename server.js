@@ -549,6 +549,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
       const validerBtn = document.getElementById('validerBtn');
       const modifierBtn = document.getElementById('modifierBtn');
 
+      // Rendu dynamique
       function renderStock(){
         stockBody.innerHTML = '';
         stocks.forEach(s=>{
@@ -565,7 +566,6 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
           stockBody.appendChild(tr);
         });
 
-        // Actions
         document.querySelectorAll('.editBtn').forEach(btn=>{
           btn.onclick = ()=>{
             const tr = btn.closest('tr');
@@ -586,8 +586,8 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
         document.querySelectorAll('.deleteBtn').forEach(btn=>{
           btn.onclick = async ()=>{
             if(confirm('Confirmer suppression ?')){
-              const tr = btn.closest('tr');
-              const res = await fetch('/transferts/stock/'+tr.dataset.id,{method:'DELETE'});
+              const id = btn.closest('tr').dataset.id;
+              const res = await fetch('/transferts/stock/'+id,{method:'DELETE'});
               const data = await res.json();
               if(data.ok){ stocks = data.stock; renderStock(); }
             }
@@ -668,7 +668,7 @@ app.post('/transferts/stock', requireLogin, async(req,res)=>{
   res.json({ ok:true, stock: stocks });
 });
 
-// ================= PUT STOCK (MODIFICATION) =================
+// ================= PUT STOCK =================
 app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
   const { sender,destination,amount,currency } = req.body;
   await Stock.findByIdAndUpdate(req.params.id,{ sender,destination,amount,currency });
