@@ -19,23 +19,27 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({ secret:'transfert-secret-final', resave:false, saveUninitialized:true }));
 
+// ------------------- APP SETUP -------------------
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// ================== MONGODB ==================
-// Récupère l'URI depuis les variables d'environnement
-const MONGODB_URI = process.env.MONGODB_URI;
-if (!MONGODB_URI) {
-  console.error("❌ ERREUR: variable d'env MONGODB_URI non définie");
-  process.exit(1);
-}
+// ------------------- MIDDLEWARE -------------------
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(session({
+    secret: 'secret-key',
+    resave: false,
+    saveUninitialized: true
+}));
+app.use(express.static(path.join(__dirname, 'public')));
 
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log("✅ MongoDB Atlas connecté"))
-.catch(err => console.error("❌ Erreur MongoDB:", err));
+// ------------------- DATABASE -------------------
+mongoose.connect('mongodb://127.0.0.1:27017/transferts', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.log('❌ MongoDB error:', err));
 
-app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 
@@ -685,7 +689,7 @@ app.delete('/transferts/stock/:id', async (req,res)=>{
 });
 
 
-
-// ================== START ==================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(\`😎 Server ready on port \${PORT}\`));
+// ------------------- START SERVER -------------------
+app.listen(PORT, function() {
+    console.log("😎 Server ready on port " + PORT);
+});
