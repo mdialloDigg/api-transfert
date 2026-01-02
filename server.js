@@ -19,10 +19,25 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({ secret:'transfert-secret-final', resave:false, saveUninitialized:true }));
 
-// ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
-.then(()=>console.log('✅ MongoDB connecté'))
-.catch(console.error);
+
+// ================== MONGODB ==================
+// Récupère l'URI depuis les variables d'environnement
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error("❌ ERREUR: variable d'env MONGODB_URI non définie");
+  process.exit(1);
+}
+
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log("✅ MongoDB Atlas connecté"))
+.catch(err => console.error("❌ Erreur MongoDB:", err));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -669,5 +684,8 @@ app.delete('/transferts/stock/:id', async (req,res)=>{
   }
 });
 
-// ================= SERVER =================
-app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
+
+
+// ================== START ==================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(\`😎 Server ready on port \${PORT}\`));
