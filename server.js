@@ -33,16 +33,16 @@ const Transfert = mongoose.model('Transfert', transfertSchema);
 const authSchema = new mongoose.Schema({ username:String, password:String, role:{type:String, enum:['admin','agent'], default:'agent'} });
 const Auth = mongoose.model('Auth', authSchema);
 
-
 // ================= STOCK =================
 const stockSchema = new mongoose.Schema({
-  sender: String,
-  destination: String,
-  amount: Number,
-  currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
+  sender: { type: String, required: true },
+  destination: { type: String, required: true },
+  amount: { type: Number, required: true },
+  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' },
   createdAt: { type: Date, default: Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
+
 
 
 // ================= UTIL =================
@@ -491,38 +491,137 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 
-// ================= STOCK =================
-app.get('/transferts/stock', requireLogin, async(req,res)=>{
-  const stocks = await Stock.find().sort({createdAt:-1});
-  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-  body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-  table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
-  th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
-  th{background:#ff8c42;color:white;}
-  input,select{padding:10px;border-radius:6px;border:1px solid #ccc;font-size:14px;margin-bottom:10px;}
-  button{padding:10px 15px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;}
-  </style></head><body>
-  <h2>➕ Nouveau Stock</h2>
-  <form id="stockForm">
-    <input name="sender" placeholder="Expéditeur" required>
-    <input name="destination" placeholder="Destination" required>
-    <input type="number" name="amount" placeholder="Montant" required>
-    <select name="currency">${currencies.map(c=>`<option>${c}</option>`).join('')}</select>
-    <button>Enregistrer</button>
-  </form>
-  <h3>📦 Liste du stock</h3><table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr></thead><tbody>`;
-  stocks.forEach(s=>{html+=`<tr><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td><td>${s.currency}</td></tr>`;});
-  html+='</tbody></table>';
-  html+=`<script>
-  document.getElementById('stockForm').onsubmit=async(e)=>{e.preventDefault();const f=e.target;const data={sender:f.sender.value,destination:f.destination.value,amount:f.amount.value,currency:f.currency.value};await fetch('/transferts/stock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});window.location.reload();};
-  </script></body></html>`;
-  res.send(html);
+
+// ===== GET STOCK =====
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
+  try {
+    const stocks = await Stock.find().sort({createdAt:-1});
+    let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+      body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+      table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+      th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+      th{background:#ff8c42;color:white;}
+      input,select{padding:10px;border-radius:6px;border:1px solid #ccc;font-size:14px;margin-bottom:10px;}
+      button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
+      .edit{background:#28a745;} .delete{background:#dc3545;}
+    </style></head><body>
+    <h2>📦 Gestion du Stock</h2>
+    <form id="stockForm">
+      <input name="sender" placeholder="Expéditeur" required>
+      <input name="destination" placeholder="Destination" required>
+      <input type="number" name="amount" placeholder="Montant" required>
+      <select name="currency">${['GNF','EUR','USD','XOF'].map(c=>`<option>${c}</option>`).join('')}</select>
+      <button>Enregistrer</button>
+    </form>
+    <h3>Liste du stock</h3>
+    <table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead><tbody>`;
+    
+    stocks.forEach(s=>{
+      html += `<tr data-id="${s._id}">
+        <td>${s.sender}</td>
+        <td>${s.destination}</td>
+        <td>${s.amount}</td>
+        <td>${s.currency}</td>
+        <td>
+          <button class="edit">✏️ Modifier</button>
+          <button class="delete">❌ Supprimer</button>
+        </td>
+      </tr>`;
+    });
+
+    html += `</tbody></table>
+      <script>
+        const stockForm = document.getElementById('stockForm');
+
+        // ===== Ajouter ou modifier =====
+        stockForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const f = e.target;
+          const data = { sender: f.sender.value, destination: f.destination.value, amount: f.amount.value, currency: f.currency.value };
+          const method = f.dataset.id ? 'PUT' : 'POST';
+          const url = f.dataset.id ? '/transferts/stock/' + f.dataset.id : '/transferts/stock';
+          try {
+            const res = await fetch(url, {
+              method,
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if(result.ok) window.location.reload();
+            else alert('Erreur serveur');
+          } catch(err) { console.error(err); alert('Erreur serveur'); }
+        };
+
+        // ===== Edit =====
+        document.querySelectorAll('.edit').forEach(btn=>{
+          btn.onclick = (e)=>{
+            const tr = btn.closest('tr');
+            stockForm.sender.value = tr.children[0].innerText;
+            stockForm.destination.value = tr.children[1].innerText;
+            stockForm.amount.value = tr.children[2].innerText;
+            stockForm.currency.value = tr.children[3].innerText;
+            stockForm.dataset.id = tr.dataset.id; // Indique qu’on modifie
+          };
+        });
+
+        // ===== Delete =====
+        document.querySelectorAll('.delete').forEach(btn=>{
+          btn.onclick = async ()=>{
+            if(confirm('❌ Confirmer suppression?')){
+              const tr = btn.closest('tr');
+              try {
+                const res = await fetch('/transferts/stock/' + tr.dataset.id, { method:'DELETE' });
+                const result = await res.json();
+                if(result.ok) tr.remove();
+                else alert('Erreur serveur');
+              } catch(err){ console.error(err); alert('Erreur serveur'); }
+            }
+          };
+        });
+      </script>
+      </body></html>`;
+
+    res.send(html);
+  } catch(err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur lors du chargement du stock');
+  }
 });
 
+// ===== POST STOCK =====
 app.post('/transferts/stock', requireLogin, async(req,res)=>{
-  const { sender,destination,amount,currency } = req.body;
-  await new Stock({sender,destination,amount,currency}).save();
-  res.send({ok:true});
+  try {
+    const { sender, destination, amount, currency } = req.body;
+    if(!sender || !destination || !amount || !currency) return res.status(400).send({ok:false, message:'Données manquantes'});
+    await new Stock({ sender, destination, amount, currency }).save();
+    res.send({ ok:true });
+  } catch(err) {
+    console.error(err);
+    res.status(500).send({ok:false, message:'Erreur serveur'});
+  }
+});
+
+// ===== PUT STOCK ===== (modification)
+app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
+  try {
+    const { sender, destination, amount, currency } = req.body;
+    await Stock.findByIdAndUpdate(req.params.id, { sender, destination, amount, currency });
+    res.send({ ok:true });
+  } catch(err) {
+    console.error(err);
+    res.status(500).send({ ok:false, message:'Erreur serveur'});
+  }
+});
+
+// ===== DELETE STOCK =====
+app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
+  try {
+    await Stock.findByIdAndDelete(req.params.id);
+    res.send({ ok:true });
+  } catch(err) {
+    console.error(err);
+    res.status(500).send({ ok:false, message:'Erreur serveur'});
+  }
 });
 
 
