@@ -309,44 +309,15 @@ app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
 
 // ================= STOCK ROUTES =================
 app.post('/stocks/new', requireLogin, async(req,res)=>{
-  try {
-    const data = req.body;
-    let s, action;
-
-    if(data._id){
-      // Modification
-      s = await Stock.findByIdAndUpdate(
-        data._id,
-        { sender: data.sender, destination: data.destination, amount: data.amount },
-        { new: true }
-      );
-      action = 'Modification';
-    } else {
-      // Création
-      s = await new Stock({
-        sender: data.sender,
-        destination: data.destination,
-        amount: data.amount,
-        currency: data.currency || 'GNF' // Défaut à GNF si non fourni
-      }).save();
-      action = 'Création';
-    }
-
-    // Enregistrer systématiquement l'historique
-    await new StockHistory({
-      action,
-      stockId: s._id,
-      sender: s.sender,
-      destination: s.destination,
-      amount: s.amount,
-      currency: s.currency
-    }).save();
-
-    res.json({ ok: true });
-  } catch(err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: err.message });
+  const data = req.body;
+  if(data._id){
+    const s = await Stock.findByIdAndUpdate(data._id,{sender:data.sender,destination:data.destination,amount:data.amount},{new:true});
+    await new StockHistory({action:'Modification', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
+  } else {
+    const s = await new Stock({sender:data.sender,destination:data.destination,amount:data.amount}).save();
+    await new StockHistory({action:'Création', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
   }
+  res.json({ok:true});
 });
 
 app.post('/stocks/delete', requireLogin, async(req,res)=>{
