@@ -2,174 +2,177 @@ const express=require('express')
 const mongoose=require('mongoose')
 const session=require('express-session')
 const bodyParser=require('body-parser')
+const XLSX=require('xlsx')
+const PDFDocument=require('pdfkit')
 const app=express()
-const port=process.env.PORT||3000
 
-app.use(bodyParser.json())
+mongoose.connect(process.env.MONGO_URI)
+
 app.use(bodyParser.urlencoded({extended:true}))
-app.use(session({secret:'secretkey',resave:false,saveUninitialized:false}))
+app.use(bodyParser.json())
+app.use(session({secret:'x',resave:false,saveUninitialized:false}))
 
-mongoose.connect(process.env.MONGO_URI||'mongodb://127.0.0.1:27017/transferts',{useNewUrlParser:true,useUnifiedTopology:true})
-
-const User=mongoose.model('User',new mongoose.Schema({username:String,password:String,role:String}))
-const Transfert=mongoose.model('Transfert',new mongoose.Schema({
-code:String,senderFirstName:String,senderLastName:String,senderPhone:String,
-originLocation:String,destinationLocation:String,amount:Number,currency:String,retired:Boolean
+const User=mongoose.model('User',new mongoose.Schema({u:String,p:String,r:String}))
+const Transfer=mongoose.model('Transfer',new mongoose.Schema({
+o:String,d:String,v:String,m:Number,da:String
 }))
-const Stock=mongoose.model('Stock',new mongoose.Schema({product:String,quantity:Number,location:String}))
+const Stock=mongoose.model('Stock',new mongoose.Schema({
+n:String,q:Number,d:String
+}))
 
-async function initUsers(){
-const c=await User.countDocuments()
-if(c===0){
-await User.create({username:'a',password:'a',role:'a'})
-await User.create({username:'admin2',password:'admin2',role:'admin2'})
-}}
-initUsers()
+;(async()=>{
+if(await User.countDocuments()==0){
+await User.create({u:'a',p:'a',r:'a'})
+await User.create({u:'admin2',p:'admin2',r:'admin2'})
+}})()
 
-function auth(req,res,next){if(req.session.user)next();else res.redirect('/')}
-function canEdit(req){return req.session.user.role==='a'||req.session.user.role==='admin2'}
+const auth=(req,res,n)=>req.session.u?n():res.redirect('/')
+const admin=(req,res,n)=>req.session.u.r==='admin2'?n():res.sendStatus(403)
 
-app.get('/',(req,res)=>{
-res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+app.get('/',(req,res)=>res.send(`
+<html><meta name=viewport content=width=device-width>
 <style>
-body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#eee}
-form{background:#fff;padding:20px;border-radius:8px;width:280px}
-input,button{width:100%;padding:10px;margin:5px 0}
-button{background:#007bff;color:#fff;border:none}
-</style></head><body>
-<form id="login">
-<input id="u" placeholder="Utilisateur" required>
-<input id="p" type="password" placeholder="Mot de passe" required>
-<button>Se connecter</button>
-</form>
+body{font-family:Arial;background:#eee}
+.box{max-width:350px;margin:100px auto;background:#fff;padding:20px}
+input,button,select{width:100%;padding:10px;margin:5px}
+</style>
+<div class=box>
+<h3>Login</h3>
+<input id=u placeholder=Utilisateur>
+<input id=p type=password placeholder=Mot de passe>
+<button onclick=l()>Se connecter</button>
+</div>
 <script>
-document.getElementById('login').onsubmit=async e=>{
-e.preventDefault()
-const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({username:u.value,password:p.value})})
-if(r.redirected)location=r.url
-else alert(await r.text())
+function l(){
+fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({u:u.value,p:p.value})})
+.then(r=>r.json()).then(d=>d.ok?location='/app':alert('Erreur'))
 }
-</script></body></html>`)
-})
+</script>`))
 
 app.post('/login',async(req,res)=>{
 const u=await User.findOne(req.body)
-if(u){req.session.user=u;res.redirect('/dashboard')}
-else res.status(401).send('Erreur login')
+if(!u)return res.json({ok:false})
+req.session.u=u
+res.json({ok:true})
 })
 
-app.get('/logout',(req,res)=>{req.session.destroy(()=>res.redirect('/'))})
+app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/')))
 
-app.get('/dashboard',auth,(req,res)=>{
-res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+app.get('/app',auth,async(req,res)=>{
+const page=+req.query.page||1,limit=10,skip=(page-1)*limit
+const q={}
+if(req.query.d)q.d=req.query.d
+if(req.query.v)q.v=req.query.v
+const t=await Transfer.find(q).skip(skip).limit(limit)
+const c=await Transfer.countDocuments(q)
+const s=await Stock.find()
+
+let totals={}
+;(await Transfer.find()).forEach(x=>{
+let k=x.d+' '+x.v
+totals[k]=(totals[k]||0)+x.m
+})
+
+res.send(`
+<html><meta name=viewport content=width=device-width>
 <style>
-body{font-family:sans-serif;margin:0}
-header{background:#007bff;color:#fff;padding:10px;display:flex;flex-wrap:wrap;gap:5px}
+body{font-family:Arial}
 table{width:100%;border-collapse:collapse}
-td,th{border:1px solid #ccc;padding:4px;text-align:center}
-input,button,select{padding:5px;margin:2px}
-@media(max-width:600px){table,thead,tbody,tr,td,th{display:block}}
-</style></head><body>
-<header>
-<input id="search" placeholder="Recherche">
-<button onclick="showForm()">Nouveau</button>
-<button onclick="showStock()">Stock</button>
-<button onclick="print()">Imprimer</button>
-<button onclick="location='/logout'">Déconnexion</button>
-</header>
+td,th{border:1px solid #ccc;padding:5px}
+input,select,button{padding:6px;margin:2px}
+</style>
+<h3>${req.session.u.u}</h3>
+<a href=/logout>Logout</a>
+<h4>Totaux</h4>
+${Object.entries(totals).map(x=>`<div>${x[0]} : ${x[1]}</div>`).join('')}
 
-<div id="list">
-<table>
-<thead><tr><th>Code</th><th>Nom</th><th>Tel</th><th>Origine</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Retiré</th><th></th></tr></thead>
-<tbody id="tbody"></tbody>
-<tfoot id="totals"></tfoot>
+<h4>Filtres</h4>
+<input id=fd placeholder=Destination>
+<input id=fv placeholder=Devise>
+<button onclick=f()>OK</button>
+
+<h4>Transferts</h4>
+<table id=tb>
+<tr><th>O</th><th>D</th><th>V</th><th>M</th><th>Date</th><th></th></tr>
+${t.map(x=>`
+<tr>
+<td>${x.o}</td><td>${x.d}</td><td>${x.v}</td><td>${x.m}</td><td>${x.da}</td>
+<td>
+<button onclick="e('${x._id}')">✎</button>
+${req.session.u.r==='admin2'?`<button onclick="dt('${x._id}')">X</button>`:''}
+</td>
+</tr>`).join('')}
 </table>
+<div>
+${Array.from({length:Math.ceil(c/limit)},(_,i)=>`<a href="/app?page=${i+1}">${i+1}</a>`).join(' ')}
 </div>
 
-<div id="form" style="display:none">
-<input id="id"><input id="code"><input id="fn"><input id="ln"><input id="ph">
-<input id="or"><input id="de"><input id="am" type="number"><input id="cu">
-<select id="re"><option value="false">Non</option><option value="true">Oui</option></select>
-<button onclick="save()">Valider</button><button onclick="back()">Retour</button>
-</div>
+<h4>Ajouter / Modifier</h4>
+<input id=o placeholder=Origine>
+<input id=d placeholder=Destination>
+<input id=v placeholder=Devise>
+<input id=m type=number placeholder=Montant>
+<input id=da placeholder=Date>
+<input id=id hidden>
+<button onclick=save()>Valider</button>
 
-<div id="stock" style="display:none">
-<input id="sid"><input id="sp"><input id="sq" type="number"><input id="sl">
-<button onclick="saveStock()">Valider</button><button onclick="back()">Retour</button>
-<table><tbody id="sbody"></tbody></table>
-</div>
+<h4>Stock</h4>
+<table>
+${s.map(x=>`
+<tr><td>${x.n}</td><td>${x.q}</td><td>${x.d}</td>
+<td>${req.session.u.r==='admin2'?`<button onclick="ds('${x._id}')">X</button>`:''}</td></tr>`).join('')}
+</table>
+<input id=sn placeholder=Nom>
+<input id=sq type=number placeholder=Qté>
+<input id=sd placeholder=Devise>
+<button onclick=ss()>Ajouter</button>
+
+<button onclick=window.print()>Imprimer</button>
+<button onclick=location='/excel'>Excel</button>
+<button onclick=location='/pdf'>PDF</button>
 
 <script>
-async function load(){
-const d=await(await fetch('/api/transferts')).json()
-tbody.innerHTML=''
-totals.innerHTML=''
-d.transferts.forEach(x=>{
-tbody.innerHTML+=\`<tr><td>\${x.code}</td><td>\${x.senderLastName}</td><td>\${x.senderPhone}</td>
-<td>\${x.originLocation}</td><td>\${x.destinationLocation}</td>
-<td>\${x.amount}</td><td>\${x.currency}</td><td>\${x.retired?'Oui':'Non'}</td>
-<td>\${x.canEdit?'<button onclick="edit(\\''+x._id+'\\')">✎</button><button onclick="del(\\''+x._id+'\\')">✖</button>':''}</td></tr>\`
+function f(){location='/?d='+fd.value+'&v='+fv.value}
+function save(){
+fetch('/t',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({id:id.value,o:o.value,d:d.value,v:v.value,m:m.value,da:da.value})})
+.then(()=>location.reload())
+}
+function e(i){
+fetch('/t/'+i).then(r=>r.json()).then(x=>{
+id.value=x._id;o.value=x.o;d.value=x.d;v.value=x.v;m.value=x.m;da.value=x.da
 })
-for(let k in d.totals){
-let [d1,c]=k.split('_')
-totals.innerHTML+=\`<tr><td colspan="4">Total \${d1}</td><td colspan="2">\${d.totals[k]}</td><td>\${c}</td><td colspan="2"></td></tr>\`
-}}
-async function save(){
-const data={code:code.value,senderFirstName:fn.value,senderLastName:ln.value,
-senderPhone:ph.value,originLocation:or.value,destinationLocation:de.value,
-amount:+am.value,currency:cu.value,retired:re.value==='true'}
-if(id.value)await fetch('/api/transferts/'+id.value,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-else await fetch('/api/transferts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-back();load()
 }
-async function edit(i){
-const d=await(await fetch('/api/transferts')).json()
-const x=d.transferts.find(e=>e._id===i)
-Object.assign(window,{id:{value:x._id},code:{value:x.code},fn:{value:x.senderFirstName},
-ln:{value:x.senderLastName},ph:{value:x.senderPhone},or:{value:x.originLocation},
-de:{value:x.destinationLocation},am:{value:x.amount},cu:{value:x.currency},re:{value:x.retired}})
-showForm()
+function dt(i){fetch('/t/'+i,{method:'DELETE'}).then(()=>location.reload())}
+function ss(){
+fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({n:sn.value,q:sq.value,d:sd.value})})
+.then(()=>location.reload())
 }
-async function del(i){if(confirm('Supprimer')){await fetch('/api/transferts/'+i,{method:'DELETE'});load()}}
-function showForm(){list.style.display='none';form.style.display='block';stock.style.display='none'}
-function showStock(){list.style.display='none';form.style.display='none';stock.style.display='block';loadStock()}
-function back(){form.style.display='none';stock.style.display='none';list.style.display='block'}
-async function loadStock(){
-const d=await(await fetch('/api/stock')).json()
-sbody.innerHTML=''
-d.forEach(x=>sbody.innerHTML+=\`<tr><td>\${x.product}</td><td>\${x.quantity}</td><td>\${x.location}</td>
-<td><button onclick="ds('\${x._id}')">✖</button></td></tr>\`)
-}
-async function saveStock(){
-await fetch('/api/stock',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({product:sp.value,quantity:+sq.value,location:sl.value})})
-loadStock()
-}
-async function ds(i){await fetch('/api/stock/'+i,{method:'DELETE'});loadStock()}
-search.oninput=e=>{
-[...tbody.children].forEach(r=>r.style.display=r.textContent.toLowerCase().includes(e.target.value.toLowerCase())?'':'none')
-}
-load()
-</script></body></html>`)
+function ds(i){fetch('/s/'+i,{method:'DELETE'}).then(()=>location.reload())}
+</script>`)})
+
+app.post('/t',auth,async(req,res)=>{
+req.body.id?await Transfer.findByIdAndUpdate(req.body.id,req.body):await Transfer.create(req.body)
+res.json(true)
+})
+app.get('/t/:id',auth,async(req,res)=>res.json(await Transfer.findById(req.params.id)))
+app.delete('/t/:id',auth,admin,async(req,res)=>{await Transfer.findByIdAndDelete(req.params.id);res.json(true)})
+
+app.post('/s',auth,async(req,res)=>{await Stock.create(req.body);res.json(true)})
+app.delete('/s/:id',auth,admin,async(req,res)=>{await Stock.findByIdAndDelete(req.params.id);res.json(true)})
+
+app.get('/excel',auth,async(req,res)=>{
+const wb=XLSX.utils.book_new()
+XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(await Transfer.find()),'Transferts')
+res.end(XLSX.write(wb,{type:'buffer',bookType:'xlsx'}))
 })
 
-app.get('/api/transferts',auth,async(req,res)=>{
-const t=await Transfert.find()
-let totals={}
-t.forEach(x=>{
-const k=x.destinationLocation+'_'+x.currency
-totals[k]=(totals[k]||0)+x.amount
-x.canEdit=canEdit(req)
+app.get('/pdf',auth,async(req,res)=>{
+const d=new PDFDocument();res.setHeader('Content-Type','application/pdf');d.pipe(res)
+;(await Transfer.find()).forEach(x=>d.text(`${x.o} ${x.d} ${x.v} ${x.m} ${x.da}`))
+d.end()
 })
-res.json({transferts:t,totals})
-})
-app.post('/api/transferts',auth,async(req,res)=>{if(canEdit(req))await Transfert.create(req.body);res.json({ok:true})})
-app.put('/api/transferts/:id',auth,async(req,res)=>{if(canEdit(req))await Transfert.findByIdAndUpdate(req.params.id,req.body);res.json({ok:true})})
-app.delete('/api/transferts/:id',auth,async(req,res)=>{if(canEdit(req))await Transfert.findByIdAndDelete(req.params.id);res.json({ok:true})})
 
-app.get('/api/stock',auth,async(req,res)=>res.json(await Stock.find()))
-app.post('/api/stock',auth,async(req,res)=>{if(canEdit(req))await Stock.create(req.body);res.json({ok:true})})
-app.delete('/api/stock/:id',auth,async(req,res)=>{if(canEdit(req))await Stock.findByIdAndDelete(req.params.id);res.json({ok:true})})
-
-app.listen(port,'0.0.0.0')
+app.listen(process.env.PORT||3000,'0.0.0.0')
