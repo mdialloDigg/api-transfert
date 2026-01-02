@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION TOUT-EN-UN
+ * APP TRANSFERT + STOCKS – DASHBOARD AMÉLIORÉ
  ******************************************************************/
 
 const express = require('express');
@@ -151,7 +151,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   <a href="/logout">🚪 Déconnexion</a>
 
   <h3>Transferts</h3>
-  <form method="get" action="/dashboard">
+  <form id="searchForm">
     <input type="text" name="search" placeholder="Recherche..." value="${search}">
     <select name="status">
       <option value="all" ${status==='all'?'selected':''}>Tous</option>
@@ -172,9 +172,12 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
   html+='<table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>';
   transferts.forEach(t=>{
-    html+=`<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName}</td><td>${t.receiverFirstName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired?'Retiré':'Non retiré'}</td>
-    <td><button class="modify" onclick="editTransfert('${t._id}')">✏️</button><button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
-    ${!t.retired?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}</td></tr>`;
+    html+=`<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName} ${t.senderLastName}</td><td>${t.receiverFirstName} ${t.receiverLastName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired?'Retiré':'Non retiré'}</td>
+    <td>
+    <button class="modify" onclick="editTransfert('${t._id}')">✏️</button>
+    <button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
+    ${!t.retired?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+    </td></tr>`;
   });
   html+='</table>';
 
@@ -182,7 +185,11 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
   <table><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
   stocks.forEach(s=>{
-    html+=`<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td><td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`;
+    html+=`<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td>
+    <td>
+    <button onclick="editStock('${s._id}')">✏️</button>
+    <button onclick="deleteStock('${s._id}')">❌</button>
+    </td></tr>`;
   });
   html+='</table>';
 
@@ -193,25 +200,64 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   html+='</table>';
 
   html+=`<script>
+  const searchForm = document.getElementById('searchForm');
+  searchForm.onsubmit = e=>{ e.preventDefault(); const f=e.target; window.location.href='/dashboard?search='+encodeURIComponent(f.search.value)+'&status='+f.status.value; };
+
   async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
   function newTransfert(){
-    const sender = prompt('Expéditeur'); const receiver = prompt('Destinataire');
-    const amount = parseFloat(prompt('Montant')); const currency = prompt('Devise','GNF');
-    if(sender && receiver && amount) postData('/transferts/form',{senderFirstName:sender,receiverFirstName:receiver,amount,fees:0,recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());
+    const userType = prompt('Type de personne (Client,Distributeur,Administrateur,Agence de transfert)','Client');
+    const senderFirstName = prompt('Prénom expéditeur'); const senderLastName = prompt('Nom expéditeur'); const senderPhone = prompt('Téléphone expéditeur');
+    const originLocation = prompt('Origine',locations[0]);
+    const receiverFirstName = prompt('Prénom destinataire'); const receiverLastName = prompt('Nom destinataire'); const receiverPhone = prompt('Téléphone destinataire');
+    const destinationLocation = prompt('Destination',locations[0]);
+    const amount = parseFloat(prompt('Montant')); const fees = parseFloat(prompt('Frais'))||0;
+    const currency = prompt('Devise','GNF');
+    const recoveryAmount = amount - fees;
+    postData('/transferts/form',{userType,senderFirstName,senderLastName,senderPhone,originLocation,receiverFirstName,receiverLastName,receiverPhone,destinationLocation,amount,fees,recoveryAmount,currency}).then(()=>location.reload());
   }
 
   function newStock(){
     const sender = prompt('Expéditeur'); const destination = prompt('Destination');
-    const amount = parseFloat(prompt('Montant')); if(sender && destination && amount) postData('/stocks/new',{sender,destination,amount}).then(()=>location.reload());
+    const amount = parseFloat(prompt('Montant'));
+    const currency = prompt('Devise','GNF');
+    if(sender && destination && amount) postData('/stocks/new',{sender,destination,amount,currency}).then(()=>location.reload());
   }
 
-  async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json();const code=prompt('Code',t.code)||t.code;const amount=parseFloat(prompt('Montant',t.amount))||t.amount; await postData('/transferts/form',{_id:t._id,code,amount}); location.reload();}
-  async function deleteTransfert(id){if(confirm('Supprimer ?')){await postData('/transferts/delete',{id}); location.reload();}}
-  async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces'); if(mode){await postData('/transferts/retirer',{id,mode}); location.reload();}}
+  async function editTransfert(id){
+    const t = await (await fetch('/transferts/get/'+id)).json();
+    const userType = prompt('Type de personne',t.userType) || t.userType;
+    const senderFirstName = prompt('Prénom expéditeur',t.senderFirstName)||t.senderFirstName;
+    const senderLastName = prompt('Nom expéditeur',t.senderLastName)||t.senderLastName;
+    const senderPhone = prompt('Téléphone expéditeur',t.senderPhone)||t.senderPhone;
+    const originLocation = prompt('Origine',t.originLocation)||t.originLocation;
+    const receiverFirstName = prompt('Prénom destinataire',t.receiverFirstName)||t.receiverFirstName;
+    const receiverLastName = prompt('Nom destinataire',t.receiverLastName)||t.receiverLastName;
+    const receiverPhone = prompt('Téléphone destinataire',t.receiverPhone)||t.receiverPhone;
+    const destinationLocation = prompt('Destination',t.destinationLocation)||t.destinationLocation;
+    const amount = parseFloat(prompt('Montant',t.amount))||t.amount;
+    const fees = parseFloat(prompt('Frais',t.fees))||t.fees;
+    const currency = prompt('Devise',t.currency)||t.currency;
+    const recoveryAmount = amount - fees;
+    postData('/transferts/form',{_id:t._id,userType,senderFirstName,senderLastName,senderPhone,originLocation,receiverFirstName,receiverLastName,receiverPhone,destinationLocation,amount,fees,recoveryAmount,currency}).then(()=>location.reload());
+  }
 
-  async function editStock(id){const s=await (await fetch('/stocks/get/'+id)).json();const sender=prompt('Expéditeur',s.sender)||s.sender;const destination=prompt('Destination',s.destination)||s.destination;const amount=parseFloat(prompt('Montant',s.amount))||s.amount;await postData('/stocks/new',{_id:s._id,sender,destination,amount}); location.reload();}
-  async function deleteStock(id){if(confirm('Supprimer stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
+  async function deleteTransfert(id){if(confirm('Supprimer transfert ?')){await postData('/transferts/delete',{id});location.reload();}}
+  async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces');if(mode){await postData('/transferts/retirer',{id,mode});location.reload();}}
+
+  async function editStock(id){
+    const s = await (await fetch('/stocks/get/'+id)).json();
+    const sender = prompt('Expéditeur',s.sender)||s.sender;
+    const destination = prompt('Destination',s.destination)||s.destination;
+    const amount = parseFloat(prompt('Montant',s.amount))||s.amount;
+    const currency = prompt('Devise',s.currency)||s.currency;
+    await postData('/stocks/new',{_id:s._id,sender,destination,amount,currency});
+    location.reload();
+  }
+
+  async function deleteStock(id){if(confirm('Supprimer stock ?')){await postData('/stocks/delete',{id});location.reload();}}
+
+  const locations = ${JSON.stringify(locations)};
   </script>`;
 
   html+='</body></html>';
@@ -250,10 +296,10 @@ app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   const data = req.body;
   if(data._id){
-    const s = await Stock.findByIdAndUpdate(data._id,{sender:data.sender,destination:data.destination,amount:data.amount},{new:true});
+    const s = await Stock.findByIdAndUpdate(data._id,{sender:data.sender,destination:data.destination,amount:data.amount,currency:data.currency},{new:true});
     await new StockHistory({action:'Modification', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
   } else {
-    const s = await new Stock({sender:data.sender,destination:data.destination,amount:data.amount}).save();
+    const s = await new Stock({sender:data.sender,destination:data.destination,amount:data.amount,currency:data.currency}).save();
     await new StockHistory({action:'Création', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
   }
   res.json({ok:true});
