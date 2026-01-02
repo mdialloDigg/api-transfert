@@ -45,6 +45,7 @@ const Stock = mongoose.model('Stock', stockSchema);
 
 
 
+
 // ================= UTIL =================
 async function generateUniqueCode(){
   let code, exists = true;
@@ -490,15 +491,6 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
   res.send(html);
 });
 
-// ================= STOCK =================
-const stockSchema = new mongoose.Schema({
-  sender: { type: String, required: true },
-  destination: { type: String, required: true },
-  amount: { type: Number, required: true },
-  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' },
-  createdAt: { type: Date, default: Date.now }
-});
-const Stock = mongoose.model('Stock', stockSchema);
 
 // ===== GET STOCK =====
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
