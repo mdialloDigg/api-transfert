@@ -508,6 +508,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
       input,select{padding:6px;border-radius:6px;border:1px solid #ccc;margin-bottom:10px;}
       button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
       #stockFormContainer{margin-bottom:20px;padding:15px;background:white;border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,0.1);}
+      a.button-link{display:inline-block;padding:6px 10px;background:#17a2b8;color:white;border-radius:6px;text-decoration:none;margin-right:5px;}
     </style>
   </head>
   <body>
@@ -520,6 +521,8 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
     </table>
 
     <button id="showFormBtn">➕ Ajouter un nouveau stock</button>
+    <a href="/transferts/list" class="button-link">⬅ Retour aux transferts</a>
+    <a href="/logout" class="button-link">🚪 Déconnexion</a>
 
     <div id="stockFormContainer" style="display:none;">
       <form id="stockForm">
@@ -659,7 +662,7 @@ app.post('/transferts/stock', requireLogin, async(req,res)=>{
   const { sender,destination,amount,currency } = req.body;
   await new Stock({ sender,destination,amount,currency }).save();
   const stocks = await Stock.find().sort({createdAt:-1});
-  res.json({ ok:true, stock });
+  res.json({ ok:true, stock: stocks });
 });
 
 // ================= PUT STOCK (MODIFICATION) =================
