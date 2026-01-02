@@ -493,99 +493,82 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 
 
 
-app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
-  res.send(`<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-      .form-container{max-width:500px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
-      input,select,button{width:100%;padding:12px;margin-bottom:10px;font-size:16px;border-radius:8px;border:1px solid #ccc;}
-      button{background:#ff8c42;color:white;border:none;cursor:pointer;}
-    </style>
-  </head>
-  <body>
-    <div class="form-container">
-      <h2>➕ Nouveau Stock</h2>
-      <form id="newStockForm">
-        <input name="sender" placeholder="Expéditeur" required>
-        <input name="destination" placeholder="Destination" required>
-        <input type="number" name="amount" placeholder="Montant" required>
-        <select name="currency">
-          <option>GNF</option>
-          <option>EUR</option>
-          <option>USD</option>
-          <option>XOF</option>
-        </select>
-        <button type="button" id="validerBtn">Valider</button>
-      </form>
-      <a href="/transferts/stock">⬅ Retour liste Stock</a>
-    </div>
-
-    <script>
-      document.getElementById('validerBtn').onclick = async () => {
-        const form = document.getElementById('newStockForm');
-        const payload = {
-          sender: form.sender.value.trim(),
-          destination: form.destination.value.trim(),
-          amount: Number(form.amount.value),
-          currency: form.currency.value
-        };
-
-        if(!payload.sender || !payload.destination || !payload.amount) {
-          alert('Veuillez remplir tous les champs !');
-          return;
-        }
-
-        try {
-          const res = await fetch('/transferts/stock', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-
-          if(data.ok){
-            // redirection vers la liste des stocks après ajout
-            window.location.href = '/transferts/stock';
-          } else {
-            alert('❌ Erreur lors de l\'ajout du stock : ' + (data.msg || ''));
-          }
-        } catch(err){
-          console.error(err);
-          alert('❌ Erreur réseau');
-        }
-      };
-    </script>
-  </body>
-  </html>`);
-});
-
-
-app.post('/transferts/stock', requireLogin, async (req,res)=>{
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
   try {
-    const { sender,destination,amount,currency } = req.body;
-    if(!sender || !destination || !amount || !currency) return res.send({ok:false, msg:"Champs manquants"});
+    const stocks = await Stock.find().sort({createdAt:-1});
 
-    await new Stock({sender,destination,amount,currency}).save();
-    res.send({ok:true});
+    // Totaux par destination/devise
+    const totals = {};
+    stocks.forEach(s=>{
+      if(!totals[s.destination]) totals[s.destination]={GNF:0,EUR:0,USD:0,XOF:0};
+      totals[s.destination][s.currency] += s.amount;
+    });
+
+    res.send(`<html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+        table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+        th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+        th{background:#ff8c42;color:white;}
+        button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
+        a{display:inline-block;margin-bottom:15px;color:#ff8c42;text-decoration:none;font-weight:bold;}
+      </style>
+    </head>
+    <body>
+      <h2>📦 Liste Stock</h2>
+      <a href="/transferts/list">⬅ Retour Transferts</a> | 
+      <a href="/transferts/stock/nouveau">➕ Nouveau Stock</a>
+
+      <!-- Totaux -->
+      <h3>📊 Totaux par destination/devise</h3>
+      <table>
+        <thead><tr><th>Destination</th><th>GNF</th><th>EUR</th><th>USD</th><th>XOF</th></tr></thead>
+        <tbody>
+          ${Object.keys(totals).map(d=>`<tr>
+            <td>${d}</td>
+            <td>${totals[d].GNF}</td>
+            <td>${totals[d].EUR}</td>
+            <td>${totals[d].USD}</td>
+            <td>${totals[d].XOF}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <!-- Historique -->
+      <h3>📋 Historique Stock</h3>
+      <table id="stockTable">
+        <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${stocks.map(s=>`<tr data-id="${s._id}">
+            <td>${s.sender}</td>
+            <td>${s.destination}</td>
+            <td>${s.amount}</td>
+            <td>${s.currency}</td>
+            <td><button class="deleteBtn">❌ Supprimer</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <script>
+        document.querySelectorAll('.deleteBtn').forEach(btn=>{
+          btn.onclick = async ()=>{
+            const tr = btn.closest('tr');
+            const res = await fetch('/transferts/stock/'+tr.dataset.id,{method:'DELETE'});
+            const data = await res.json();
+            if(data.ok) tr.remove();
+            else alert('Erreur suppression');
+          };
+        });
+      </script>
+    </body>
+    </html>`);
   } catch(err){
     console.error(err);
-    res.send({ok:false, msg:"Erreur serveur"});
+    res.send('Erreur serveur');
   }
 });
-
-app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  try{
-    await Stock.findByIdAndDelete(req.params.id);
-    res.send({ok:true});
-  } catch(err){
-    console.error(err);
-    res.send({ok:false});
-  }
-});
-
-
 
 // ================= SERVER =================
 app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
