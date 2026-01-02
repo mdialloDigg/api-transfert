@@ -574,6 +574,9 @@ document.querySelectorAll('.deleteBtn').forEach(btn=>{
   }
 });
 
+
+
+
 app.get('/transferts/stock/nouveau', requireLogin, async (req,res)=>{
   res.send(`
 <html>
@@ -660,8 +663,6 @@ app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
     res.send({ok:false});
   }
 });
-
-
 
 
 
