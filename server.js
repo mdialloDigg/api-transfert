@@ -506,7 +506,9 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
       th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
       th{background:#ff8c42;color:white;}
       input,select{padding:6px;border-radius:6px;border:1px solid #ccc;margin-bottom:10px;}
-      button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
+      button{padding:6px 10px;border:none;border-radius:6px;cursor:pointer;margin-right:5px;}
+      #validerBtn{background:#28a745;color:white;}
+      #modifierBtn{background:#ffc107;color:white;}
       #stockFormContainer{margin-bottom:20px;padding:15px;background:white;border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,0.1);}
       a.button-link{display:inline-block;padding:6px 10px;background:#17a2b8;color:white;border-radius:6px;text-decoration:none;margin-right:5px;}
     </style>
@@ -514,13 +516,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
   <body>
     <h2>📦 Gestion du Stock</h2>
 
-    <h3>📊 Totaux par destination et devise</h3>
-    <table id="totaux">
-      <thead><tr><th>Destination</th>${currencies.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
-      <tbody></tbody>
-    </table>
-
-    <button id="showFormBtn">➕ Ajouter un nouveau stock</button>
+    <button id="showFormBtn">➕ Nouveau Stock</button>
     <a href="/transferts/list" class="button-link">⬅ Retour aux transferts</a>
     <a href="/logout" class="button-link">🚪 Déconnexion</a>
 
@@ -532,11 +528,12 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
         <input type="number" name="amount" placeholder="Montant" required>
         <select name="currency">${currencies.map(c=>`<option>${c}</option>`).join('')}</select>
         <input type="hidden" name="id">
-        <button id="submitBtn">Enregistrer</button>
+        <button type="button" id="validerBtn">Valider</button>
+        <button type="button" id="modifierBtn" style="display:none;">Enregistrer</button>
       </form>
     </div>
 
-    <h3>Historique du stock</h3>
+    <h3>Historique des stocks</h3>
     <table id="stockTable">
       <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
       <tbody></tbody>
@@ -545,34 +542,14 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
     <script>
       let stocks = ${JSON.stringify(stocks)};
       const stockBody = document.querySelector('#stockTable tbody');
-      const totalsTbody = document.querySelector('#totaux tbody');
       const stockForm = document.getElementById('stockForm');
       const stockFormContainer = document.getElementById('stockFormContainer');
       const showFormBtn = document.getElementById('showFormBtn');
       const formTitle = document.getElementById('formTitle');
-      const submitBtn = document.getElementById('submitBtn');
+      const validerBtn = document.getElementById('validerBtn');
+      const modifierBtn = document.getElementById('modifierBtn');
 
       function renderStock(){
-        // Calcul des totaux
-        const totals = {};
-        stocks.forEach(s => {
-          if(!totals[s.destination]) totals[s.destination] = {GNF:0,EUR:0,USD:0,XOF:0};
-          totals[s.destination][s.currency] += s.amount;
-        });
-
-        // Mettre à jour le tableau des totaux
-        totalsTbody.innerHTML = '';
-        for(const dest in totals){
-          const row = document.createElement('tr');
-          row.innerHTML = '<td>' + dest + '</td>'
-                        + '<td>' + totals[dest].GNF + '</td>'
-                        + '<td>' + totals[dest].EUR + '</td>'
-                        + '<td>' + totals[dest].USD + '</td>'
-                        + '<td>' + totals[dest].XOF + '</td>';
-          totalsTbody.appendChild(row);
-        }
-
-        // Tableau stock
         stockBody.innerHTML = '';
         stocks.forEach(s=>{
           const tr = document.createElement('tr');
@@ -595,7 +572,8 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
             const id = tr.dataset.id;
             const s = stocks.find(x=>x._id===id);
             formTitle.innerText = '✏️ Modifier Stock';
-            submitBtn.innerText = 'Modifier';
+            validerBtn.style.display='none';
+            modifierBtn.style.display='inline-block';
             stockForm.sender.value = s.sender;
             stockForm.destination.value = s.destination;
             stockForm.amount.value = s.amount;
@@ -619,24 +597,25 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
 
       renderStock();
 
-      showFormBtn.onclick = ()=> stockFormContainer.style.display = stockFormContainer.style.display==='none'?'block':'none';
+      showFormBtn.onclick = ()=>{
+        stockFormContainer.style.display = stockFormContainer.style.display==='none'?'block':'none';
+        formTitle.innerText = '➕ Nouveau Stock';
+        validerBtn.style.display='inline-block';
+        modifierBtn.style.display='none';
+        stockForm.reset();
+        stockForm.id.value='';
+      };
 
-      stockForm.onsubmit = async e=>{
-        e.preventDefault();
-        const f = e.target;
+      // Ajouter nouveau stock
+      validerBtn.onclick = async ()=>{
         const payload = {
-          sender: f.sender.value,
-          destination: f.destination.value,
-          amount: Number(f.amount.value),
-          currency: f.currency.value
+          sender: stockForm.sender.value,
+          destination: stockForm.destination.value,
+          amount: Number(stockForm.amount.value),
+          currency: stockForm.currency.value
         };
-        const id = f.id.value;
-        let url = '/transferts/stock';
-        let method = 'POST';
-        if(id){ url += '/' + id; method = 'PUT'; } // modification
-
-        const res = await fetch(url, {
-          method,
+        const res = await fetch('/transferts/stock',{
+          method:'POST',
           headers:{'Content-Type':'application/json'},
           body: JSON.stringify(payload)
         });
@@ -644,11 +623,35 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
         if(data.ok){
           stocks = data.stock;
           renderStock();
-          f.reset();
-          f.id.value='';
-          formTitle.innerText = '➕ Nouveau Stock';
-          submitBtn.innerText = 'Enregistrer';
+          stockForm.reset();
           stockFormContainer.style.display='none';
+        }
+      };
+
+      // Modifier stock existant
+      modifierBtn.onclick = async ()=>{
+        const id = stockForm.id.value;
+        if(!id) return alert('Aucun stock sélectionné');
+        const payload = {
+          sender: stockForm.sender.value,
+          destination: stockForm.destination.value,
+          amount: Number(stockForm.amount.value),
+          currency: stockForm.currency.value
+        };
+        const res = await fetch('/transferts/stock/'+id,{
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if(data.ok){
+          stocks = data.stock;
+          renderStock();
+          stockForm.reset();
+          stockFormContainer.style.display='none';
+          validerBtn.style.display='inline-block';
+          modifierBtn.style.display='none';
+          formTitle.innerText = '➕ Nouveau Stock';
         }
       };
     </script>
