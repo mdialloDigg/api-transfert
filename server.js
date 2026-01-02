@@ -492,197 +492,114 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 
-// ===== GET STOCK =====
-app.get('/transferts/stock', requireLogin, async (req,res)=>{
-  try {
-    const page = parseInt(req.query.page)||1;
-    const limit = 20;
+app.get('/transferts/stock', requireLogin, async(req,res)=>{
+  const stocks = await Stock.find().sort({createdAt:-1});
+  const currencies = ['GNF','EUR','USD','XOF'];
 
-    let stocks = await Stock.find().sort({createdAt:-1});
-    const totalPages = Math.ceil(stocks.length/limit);
-    const paginated = stocks.slice((page-1)*limit, page*limit);
+  let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+    body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
+    table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
+    th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
+    th{background:#ff8c42;color:white;}
+    button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
+    input,select{padding:6px;border-radius:6px;border:1px solid #ccc;margin-bottom:10px;}
+    #stockFormContainer{display:none;margin-bottom:20px;padding:15px;background:white;border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,0.1);}
+  </style></head><body>
 
-    // Totaux par devise et par destination
-    const totals = {}; // {destination:{GNF:0,USD:0,...}}
-    stocks.forEach(s=>{
-      if(!totals[s.destination]) totals[s.destination] = {GNF:0,EUR:0,USD:0,XOF:0};
-      totals[s.destination][s.currency] += s.amount;
-    });
+  <h2>📦 Gestion du Stock</h2>
 
-    let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
-      body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-      table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
-      th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
-      th{background:#ff8c42;color:white;}
-      input,select{padding:10px;border-radius:6px;border:1px solid #ccc;font-size:14px;margin-bottom:10px;}
-      button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
-      .edit{background:#28a745;} .delete{background:#dc3545;}
-    </style></head><body>
-    <h2>📦 Gestion du Stock</h2>
+  <h3>📊 Totaux par destination et devise</h3>
+  <table id="totaux"><thead><tr><th>Destination</th>${currencies.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody></tbody></table>
 
-    <h3>📊 Totaux par destination et devise</h3>
-    <table><thead><tr><th>Destination</th><th>GNF</th><th>EUR</th><th>USD</th><th>XOF</th></tr></thead><tbody>`;
-    
-    for(let dest in totals){
-      html += `<tr>
-        <td>${dest}</td>
-        <td>${totals[dest].GNF}</td>
-        <td>${totals[dest].EUR}</td>
-        <td>${totals[dest].USD}</td>
-        <td>${totals[dest].XOF}</td>
-      </tr>`;
-    }
+  <button id="showFormBtn">➕ Ajouter un nouveau stock</button>
 
-    html += `</tbody></table>
-
+  <div id="stockFormContainer">
     <form id="stockForm">
       <h3>➕ Nouveau Stock</h3>
       <input name="sender" placeholder="Expéditeur" required>
       <input name="destination" placeholder="Destination" required>
       <input type="number" name="amount" placeholder="Montant" required>
-      <select name="currency">${['GNF','EUR','USD','XOF'].map(c=>`<option>${c}</option>`).join('')}</select>
+      <select name="currency">${currencies.map(c=>`<option>${c}</option>`).join('')}</select>
       <button>Enregistrer</button>
     </form>
+  </div>
 
-    <h3>Liste du stock</h3>
-    <table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead><tbody>`;
+  <h3>Liste du stock</h3>
+  <table id="stockTable">
+    <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
+    <tbody></tbody>
+  </table>
 
-    paginated.forEach(s=>{
-      html += `<tr data-id="${s._id}">
-        <td>${s.sender}</td>
-        <td>${s.destination}</td>
-        <td>${s.amount}</td>
-        <td>${s.currency}</td>
-        <td>
-          <button class="edit">✏️ Modifier</button>
-          <button class="delete">❌ Supprimer</button>
-        </td>
-      </tr>`;
-    });
+  <script>
+    let stocks = ${JSON.stringify(stocks)};
 
-    html += `</tbody></table>
-      <div id="pagination">`;
-    for(let i=1;i<=totalPages;i++){
-      html += `<a href="?page=${i}" style="margin-right:5px;">${i}</a>`;
-    }
-    html += `</div>
+    const stockBody = document.querySelector('#stockTable tbody');
+    const totalsTbody = document.querySelector('#totaux tbody');
+    const stockForm = document.getElementById('stockForm');
+    const stockFormContainer = document.getElementById('stockFormContainer');
+    const showFormBtn = document.getElementById('showFormBtn');
 
-    <script>
-      const stockForm = document.getElementById('stockForm');
-
-      // ===== Ajouter ou modifier =====
-      stockForm.onsubmit = async (e) => {
-        e.preventDefault();
-        const f = e.target;
-        const data = { sender: f.sender.value, destination: f.destination.value, amount: f.amount.value, currency: f.currency.value };
-        const method = f.dataset.id ? 'PUT' : 'POST';
-        const url = f.dataset.id ? '/transferts/stock/' + f.dataset.id : '/transferts/stock';
-        try {
-          const res = await fetch(url, {
-            method,
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(data)
-          });
-          const result = await res.json();
-          if(result.ok) window.location.reload();
-          else alert('Erreur serveur');
-        } catch(err) { console.error(err); alert('Erreur serveur'); }
-      };
-
-      // ===== Edit =====
-      document.querySelectorAll('.edit').forEach(btn=>{
-        btn.onclick = (e)=>{
-          const tr = btn.closest('tr');
-          stockForm.sender.value = tr.children[0].innerText;
-          stockForm.destination.value = tr.children[1].innerText;
-          stockForm.amount.value = tr.children[2].innerText;
-          stockForm.currency.value = tr.children[3].innerText;
-          stockForm.dataset.id = tr.dataset.id;
-        };
+    function renderStock(){
+      // Totaux
+      const totals = {};
+      stocks.forEach(s=>{
+        if(!totals[s.destination]) totals[s.destination] = {GNF:0,EUR:0,USD:0,XOF:0};
+        totals[s.destination][s.currency] += s.amount;
       });
 
-      // ===== Delete =====
-      document.querySelectorAll('.delete').forEach(btn=>{
+      totalsTbody.innerHTML = '';
+      for(let dest in totals){
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${dest}</td><td>${totals[dest].GNF}</td><td>${totals[dest].EUR}</td><td>${totals[dest].USD}</td><td>${totals[dest].XOF}</td>`;
+        totalsTbody.appendChild(row);
+      }
+
+      // Tableau stock
+      stockBody.innerHTML = '';
+      stocks.forEach(s=>{
+        const tr = document.createElement('tr');
+        tr.dataset.id = s._id;
+        tr.innerHTML = `<td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td><td>${s.currency}</td>
+          <td><button class="deleteBtn">❌ Supprimer</button></td>`;
+        stockBody.appendChild(tr);
+      });
+
+      // Delete stock
+      document.querySelectorAll('.deleteBtn').forEach(btn=>{
         btn.onclick = async ()=>{
-          if(confirm('❌ Confirmer suppression?')){
+          if(confirm('Confirmer suppression?')){
             const tr = btn.closest('tr');
-            try {
-              const res = await fetch('/transferts/stock/' + tr.dataset.id, { method:'DELETE' });
-              const result = await res.json();
-              if(result.ok) tr.remove();
-              else alert('Erreur serveur');
-            } catch(err){ console.error(err); alert('Erreur serveur'); }
+            const res = await fetch('/transferts/stock/'+tr.dataset.id,{method:'DELETE'});
+            const data = await res.json();
+            if(data.ok){ stocks = data.stock; renderStock(); }
           }
         };
       });
-    </script>
-    </body></html>`;
-    
-    res.send(html);
-  } catch(err){
-    console.error(err);
-    res.status(500).send('Erreur serveur lors du chargement du stock');
-  }
-});
-
-// ===== POST STOCK =====
-app.post('/transferts/stock', requireLogin, async(req,res)=>{
-  try {
-    const { sender,destination,amount,currency } = req.body;
-    if(!sender || !destination || !amount || !currency) return res.status(400).send({ok:false});
-    await new Stock({sender,destination,amount,currency}).save();
-    res.send({ok:true});
-  } catch(err){ console.error(err); res.status(500).send({ok:false}); }
-});
-
-// ===== PUT STOCK =====
-app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  try {
-    const { sender,destination,amount,currency } = req.body;
-    await Stock.findByIdAndUpdate(req.params.id,{sender,destination,amount,currency});
-    res.send({ok:true});
-  } catch(err){ console.error(err); res.status(500).send({ok:false}); }
-});
-
-// ===== DELETE STOCK =====
-app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
-  try { await Stock.findByIdAndDelete(req.params.id); res.send({ok:true}); }
-  catch(err){ console.error(err); res.status(500).send({ok:false}); }
-});
-
-// ===== MISE À JOUR DU STOCK LORS DU RETRAIT =====
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  try {
-    if(!req.session.user.permissions.retrait) return res.status(403).send('Accès refusé');
-
-    const t = await Transfert.findById(req.body.id);
-    if(!t) return res.status(404).send('Transfert introuvable');
-
-    // Retrait du transfert
-    await Transfert.findByIdAndUpdate(req.body.id, {
-      retired:true,
-      recoveryMode:req.body.mode,
-      $push:{retraitHistory:{date:new Date(),mode:req.body.mode}}
-    });
-
-    // === Diminuer le stock correspondant ===
-    const stock = await Stock.findOne({
-      sender: t.senderFirstName + ' ' + t.senderLastName,
-      destination: t.destinationLocation,
-      currency: t.currency
-    });
-
-    if(stock){
-      stock.amount -= t.recoveryAmount;
-      if(stock.amount < 0) stock.amount = 0;
-      await stock.save();
     }
 
-    res.send({ok:true});
-  } catch(err){
-    console.error(err);
-    res.status(500).send({ok:false});
-  }
+    renderStock();
+
+    // Afficher / masquer formulaire
+    showFormBtn.onclick = ()=>{ stockFormContainer.style.display = stockFormContainer.style.display==='none'?'block':'none'; };
+
+    // Ajouter nouveau stock
+    stockForm.onsubmit = async e=>{
+      e.preventDefault();
+      const f = e.target;
+      const data = {
+        sender: f.sender.value,
+        destination: f.destination.value,
+        amount: Number(f.amount.value),
+        currency: f.currency.value
+      };
+      const res = await fetch('/transferts/stock',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+      const result = await res.json();
+      if(result.ok){ stocks = result.stock; renderStock(); f.reset(); stockFormContainer.style.display='none'; }
+    };
+  </script>
+
+  </body></html>`;
+  res.send(html);
 });
 
 
