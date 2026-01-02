@@ -37,7 +37,7 @@ const stockSchema = new mongoose.Schema({
 const Stock = mongoose.model('Stock', stockSchema);
 
 const stockHistorySchema = new mongoose.Schema({
-  action: String, stockId: mongoose.Schema.Types.ObjectId, sender: String, destination: String, amount: Number, currency: String, date: { type: Date, default: Date.now }
+  code: { type: String, unique: true }, action: String, stockId: mongoose.Schema.Types.ObjectId, sender: String, destination: String, amount: Number, currency: String, date: { type: Date, default: Date.now }
 });
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
