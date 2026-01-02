@@ -1,5 +1,5 @@
 /******************************************************************
- * APP COMPLETE TRANSFERT + STOCKS – READY TO DEPLOY
+ * APP TRANSFERT + STOCKS – DASHBOARD INTERACTIF CLÉ EN MAIN
  ******************************************************************/
 
 const express = require('express');
@@ -15,7 +15,7 @@ app.use(session({ secret:'transfert-secret-final', resave:false, saveUninitializ
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
 .then(()=>console.log('✅ MongoDB connecté'))
-.catch(err=>console.error('❌ MongoDB non connecté:', err.message));
+.catch(err=>{ console.error('❌ Erreur MongoDB:', err.message); process.exit(1); });
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -78,8 +78,7 @@ app.get('/login',(req,res)=>{
     .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
     .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
     .login-container button:hover{background:#e67300;}
-  </style>
-  </head><body>
+  </style></head><body>
     <div class="login-container">
       <h2>Connexion</h2>
       <form method="post">
@@ -97,193 +96,122 @@ app.post('/login', async(req,res)=>{
   if(!user){ const hashed = bcrypt.hashSync(password,10); user = await new Auth({ username, password:hashed }).save(); }
   if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
   req.session.user = { username:user.username, role:user.role, permissions:setPermissions(username) };
-  res.redirect('/transferts/list');
+  res.redirect('/dashboard');
 });
 
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= TRANSFERT LIST =================
-app.get('/transferts/list', requireLogin, async(req,res)=>{
-  const { search='', status='all', page=1 } = req.query;
-  let transferts = await Transfert.find().sort({createdAt:-1});
-  const s = search.toLowerCase();
-  transferts = transferts.filter(t=>{
-    return t.code.toLowerCase().includes(s)
-      || t.senderFirstName.toLowerCase().includes(s)
-      || t.senderLastName.toLowerCase().includes(s)
-      || t.senderPhone.toLowerCase().includes(s)
-      || t.receiverFirstName.toLowerCase().includes(s)
-      || t.receiverLastName.toLowerCase().includes(s)
-      || t.receiverPhone.toLowerCase().includes(s);
-  });
-  if(status==='retire') transferts = transferts.filter(t=>t.retired);
-  else if(status==='non') transferts = transferts.filter(t=>!t.retired);
-
-  const limit=20;
-  const totalPages = Math.ceil(transferts.length/limit);
-  const paginated = transferts.slice((page-1)*limit,page*limit);
-
-  // Totaux par destination/devise
-  const totals = {};
-  paginated.forEach(t=>{
-    if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-    if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0, fees:0, recovery:0};
-    totals[t.destinationLocation][t.currency].amount += t.amount;
-    totals[t.destinationLocation][t.currency].fees += t.fees;
-    totals[t.destinationLocation][t.currency].recovery += t.recoveryAmount;
-  });
-
+// ================= DASHBOARD =================
+app.get('/dashboard', requireLogin, async(req,res)=>{
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  const stocks = await Stock.find().sort({createdAt:-1});
+  const stockHistory = await StockHistory.find().sort({date:-1});
   let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-    table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
-    th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
-    th{background:#ff8c42;color:white;}
-    .retired{background:#fff3b0;}
-    button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
-    .modify{background:#28a745;}
-    .delete{background:#dc3545;}
-    .retirer{background:#ff9900;}
-    a{margin-right:10px;text-decoration:none;color:#007bff;}
-  </style>
-  </head><body>
-  <h2>📋 Liste des transferts</h2>
-  <a href="/transferts/form">➕ Nouveau</a>
-  <a href="/stocks">📦 Stocks</a>
+  body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:8px;text-align:left;}
+  th{background:#ff8c42;color:white;}
+  button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;margin-right:3px;font-size:12px;}
+  .modify{background:#28a745;} .delete{background:#dc3545;} .retirer{background:#ff9900;}
+  a{color:#007bff;text-decoration:none;margin-right:10px;}
+  a:hover{text-decoration:underline;}
+  </style></head><body>
+  <h2>📊 Dashboard</h2>
   <a href="/logout">🚪 Déconnexion</a>
-  <h3>Totaux par destination/devise</h3>
-  <table><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr>`;
-  for(let dest in totals){
-    for(let curr in totals[dest]){
-      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
-    }
-  }
-  html+='</table>';
-  html+='<table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>';
-  paginated.forEach(t=>{
-    html+=`<tr class="${t.retired?'retired':''}" data-id="${t._id}">
-      <td>${t.code}</td>
-      <td>${t.senderFirstName} ${t.senderLastName}</td>
-      <td>${t.receiverFirstName} ${t.receiverLastName}</td>
-      <td>${t.amount}</td>
-      <td>${t.currency}</td>
-      <td>${t.retired?'Retiré':'Non retiré'}</td>
-      <td>
-        <a class="modify" href="/transferts/form?code=${t.code}">✏️</a>
-        <button class="delete">❌</button>
-        ${!t.retired?`<button class="retirer">💰 Retirer</button>`:''}
-      </td>
-    </tr>`;
-  });
+  <h3>Transferts</h3><table>`;
+  html+='<tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>';
+  transferts.forEach(t=>{html+=`<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName}</td><td>${t.receiverFirstName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired?'Retiré':'Non retiré'}</td>
+  <td><button class="modify" onclick="editTransfert('${t._id}')">✏️</button><button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
+  ${!t.retired?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}</td></tr>`});
   html+='</table>';
 
+  html+='<h3>Stocks</h3><table>';
+  html+='<tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>';
+  stocks.forEach(s=>{html+=`<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td><td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`});
+  html+='</table>';
+
+  html+='<h3>Historique Stocks</h3><table><tr><th>Date</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>';
+  stockHistory.forEach(h=>{html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`});
+  html+='</table>';
+
+  // AJAX
   html+=`<script>
-  document.querySelectorAll('.delete').forEach(btn=>btn.onclick=async()=>{
-    if(confirm('Supprimer ?')){
-      const tr=btn.closest('tr'); const id=tr.dataset.id;
-      await fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-      tr.remove();
-    }
-  });
-  document.querySelectorAll('.retirer').forEach(btn=>btn.onclick=async()=>{
-    const tr=btn.closest('tr'); const id=tr.dataset.id;
-    await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode:'Espèces'})});
-    tr.querySelector('td:nth-child(6)').innerText='Retiré';
-    btn.remove();
-  });
-  </script>`;
+  async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+  async function deleteTransfert(id){ if(confirm('Supprimer ?')){ await postData('/transferts/delete',{id}); location.reload();} }
+  async function retirerTransfert(id){ const mode=prompt('Mode de retrait','Espèces'); if(mode){ await postData('/transferts/retirer',{id,mode}); location.reload();} }
+  async function deleteStock(id){ if(confirm('Supprimer stock ?')){ await postData('/stocks/delete',{id}); location.reload();} }
 
+  async function editTransfert(id){
+    const res=await fetch('/transferts/get/'+id); const t=await res.json();
+    const code = prompt('Modifier Code',t.code) || t.code;
+    const amount = prompt('Modifier Montant',t.amount) || t.amount;
+    await postData('/transferts/form',{_id:t._id,code,amount}); location.reload();
+  }
+
+  async function editStock(id){
+    const res=await fetch('/stocks/get/'+id); const s=await res.json();
+    const sender = prompt('Modifier Expéditeur',s.sender) || s.sender;
+    const destination = prompt('Modifier Destination',s.destination) || s.destination;
+    const amount = prompt('Modifier Montant',s.amount) || s.amount;
+    await postData('/stocks/new',{_id:s._id,sender,destination,amount}); location.reload();
+  }
+  </script>`;
+  html+='</body></html>';
   res.send(html);
 });
 
-// ================= TRANSFERT CRUD =================
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  await Transfert.findByIdAndUpdate(req.body.id,{retired:true,recoveryMode:req.body.mode,$push:{retraitHistory:{date:new Date(),mode:req.body.mode}}});
-  res.send({ok:true});
+// ================= ROUTES TRANSFERT =================
+app.post('/transferts/form', requireLogin, async(req,res)=>{
+  const data = req.body;
+  if(data._id){
+    await Transfert.findByIdAndUpdate(data._id,{...data});
+  } else {
+    const code = data.code || await generateUniqueCode();
+    await new Transfert({...data, code, retraitHistory:[]}).save();
+  }
+  res.json({ok:true});
 });
+
 app.post('/transferts/delete', requireLogin, async(req,res)=>{
   await Transfert.findByIdAndDelete(req.body.id);
-  res.send({ok:true});
+  res.json({ok:true});
 });
 
-// ================= STOCKS =================
-app.get('/stocks', requireLogin, async(req,res)=>{
-  const stocks = await Stock.find().sort({createdAt:-1});
-  const history = await StockHistory.find().sort({date:-1});
-  let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
-    table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
-    th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
-    th{background:#ff8c42;color:white;}
-    button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;margin-right:3px;}
-    .modify{background:#28a745;}
-    .delete{background:#dc3545;}
-    a{margin-right:10px;text-decoration:none;color:#007bff;}
-  </style>
-  </head><body>
-  <h2>📦 Stocks</h2>
-  <a href="/stocks/new">➕ Nouveau</a>
-  <a href="/transferts/list">⬅ Transferts</a>
-  <h3>Liste des stocks</h3>
-  <table><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
-  stocks.forEach(s=>{ html+=`<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td>
-    <td><a class="modify" href="/stocks/edit/${s._id}">✏️</a> <button class="delete">❌</button></td></tr>`; });
-  html+='</table>';
-
-  html+='<h3>Historique</h3><table><tr><th>Date</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>';
-  history.forEach(h=>{ html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`; });
-  html+='</table>';
-
-  html+=`<script>
-    document.querySelectorAll('.delete').forEach(btn=>{
-      btn.onclick=async()=>{
-        if(confirm('Supprimer ?')){
-          const tr=btn.closest('tr'); const id=tr.dataset.id;
-          await fetch('/stocks/delete/'+id,{method:'GET'});
-          tr.remove();
-        }
-      };
-    });
-  </script>`;
-
-  res.send(html);
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  const {id,mode} = req.body;
+  await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+  res.json({ok:true});
 });
 
-app.get('/stocks/new', requireLogin,(req,res)=>{
-  res.send(`<form method="post" style="background:white;padding:20px;border-radius:10px;">
-    Expéditeur: <input name="sender" required><br>
-    Destination: <input name="destination" required><br>
-    Montant: <input type="number" name="amount" required><br>
-    <button>Ajouter</button>
-    <a href="/stocks">⬅ Retour</a>
-  </form>`);
+app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  res.json(t);
 });
+
+// ================= ROUTES STOCK =================
 app.post('/stocks/new', requireLogin, async(req,res)=>{
-  const s = await new Stock(req.body).save();
-  await new StockHistory({action:'AJOUT', stockId:s._id, ...req.body}).save();
-  res.redirect('/stocks');
+  const data = req.body;
+  if(data._id){
+    const s = await Stock.findByIdAndUpdate(data._id,{sender:data.sender,destination:data.destination,amount:data.amount},{new:true});
+    await new StockHistory({action:'Modification', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
+  } else {
+    const s = await new Stock({sender:data.sender,destination:data.destination,amount:data.amount}).save();
+    await new StockHistory({action:'Création', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
+  }
+  res.json({ok:true});
 });
-app.get('/stocks/edit/:id', requireLogin, async(req,res)=>{
+
+app.post('/stocks/delete', requireLogin, async(req,res)=>{
+  const s = await Stock.findByIdAndDelete(req.body.id);
+  if(s) await new StockHistory({action:'Suppression', stockId:s._id, sender:s.sender, destination:s.destination, amount:s.amount, currency:s.currency}).save();
+  res.json({ok:true});
+});
+
+app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   const s = await Stock.findById(req.params.id);
-  res.send(`<form method="post" style="background:white;padding:20px;border-radius:10px;">
-    Expéditeur: <input name="sender" value="${s.sender}" required><br>
-    Destination: <input name="destination" value="${s.destination}" required><br>
-    Montant: <input type="number" name="amount" value="${s.amount}" required><br>
-    <button>Modifier</button>
-    <a href="/stocks">⬅ Retour</a>
-  </form>`);
-});
-app.post('/stocks/edit/:id', requireLogin, async(req,res)=>{
-  await Stock.findByIdAndUpdate(req.params.id, req.body);
-  await new StockHistory({action:'MODIFICATION', stockId:req.params.id, ...req.body}).save();
-  res.redirect('/stocks');
-});
-app.get('/stocks/delete/:id', requireLogin, async(req,res)=>{
-  const s = await Stock.findById(req.params.id);
-  await Stock.findByIdAndDelete(req.params.id);
-  await new StockHistory({action:'SUPPRESSION', stockId:s._id, ...s._doc}).save();
-  res.redirect('/stocks');
+  res.json(s);
 });
 
 // ================= SERVER =================
