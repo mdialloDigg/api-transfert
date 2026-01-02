@@ -494,8 +494,17 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 
 
 
+// ================= STOCK =================
+const stockSchema = new mongoose.Schema({
+  sender: String,
+  destination: String,
+  amount: Number,
+  currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Stock = mongoose.model('Stock', stockSchema);
 
-// GET stock page
+// Page stock
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
   res.send(`
@@ -503,7 +512,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;margin:0;padding:20px;background:#f4f6f9;}
+body{font-family:Arial;margin:20px;background:#f4f6f9;}
 table{width:100%;border-collapse:collapse;margin-top:20px;}
 th,td{border:1px solid #ccc;padding:6px;text-align:left;}
 th{background:#ff8c42;color:white;}
@@ -626,7 +635,8 @@ modifierBtn.onclick=async ()=>{
   modifierBtn.style.display='none';
 };
 </script>
-</body></html>
+</body>
+</html>
 `);
 });
 
