@@ -184,9 +184,11 @@ app.get('/dashboard', requireLogin, async (req, res) => {
       <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`;
   });
 
-  html += `</table><h3>Historique Stocks</h3><table><tr><th>Date</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+  html += `</table><h3>Historique Stocks</h3><table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
   stockHistory.forEach(h => {
-    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
+    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>
+      <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>
+`;
   });
   html += `</table>`;
 
@@ -251,7 +253,7 @@ app.post('/stocks/new', requireLogin, async (req, res) => {
     await Stock.findByIdAndUpdate(data._id, { ...data });
   } else {
     const code = data.code || await generateUniqueCode();
-    await new Stock({ ...data, code }).save();
+    await new StockHistory({ ...data, code }).save();
   }
   res.json({ ok: true });
 });
