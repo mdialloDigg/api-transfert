@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION TOUT-EN-UN
+ * APP TRANSFERT + STOCKS – VERSION CORRIGÉE
  ******************************************************************/
 
 const express = require('express');
@@ -166,6 +166,7 @@ app.get('/dashboard', requireLogin, async (req, res) => {
   }
 
   html += `</tbody></table><table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+
   transferts.forEach(t => {
     html += `<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName}</td><td>${t.receiverFirstName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired ? 'Retiré' : 'Non retiré'}</td>
     <td>
@@ -186,9 +187,7 @@ app.get('/dashboard', requireLogin, async (req, res) => {
 
   html += `</table><h3>Historique Stocks</h3><table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
   stockHistory.forEach(h => {
-    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>
-      <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>
-`;
+    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
   });
   html += `</table>`;
 
@@ -203,15 +202,32 @@ app.get('/dashboard', requireLogin, async (req, res) => {
 
   function newStock(){
     const sender = prompt('Expéditeur'); const destination = prompt('Destination');
-    const amount = parseFloat(prompt('Montant')); if(sender && destination && amount) postData('/stocks/new',{sender,destination,amount}).then(()=>location.reload());
+    const amount = parseFloat(prompt('Montant')); const currency = prompt('Devise','GNF');
+    if(sender && destination && amount) postData('/stocks/new',{sender,destination,amount,currency}).then(()=>location.reload());
   }
 
-  async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json();const code=prompt('Code',t.code)||t.code;const amount=parseFloat(prompt('Montant',t.amount))||t.amount; await postData('/transferts/form',{_id:t._id,code,amount}); location.reload();}
-  async function deleteTransfert(id){if(confirm('Supprimer ?')){await postData('/transferts/delete',{id}); location.reload();}}
+  async function editTransfert(id){
+    const t = await (await fetch('/transferts/get/'+id)).json();
+    const sender = prompt('Expéditeur', t.senderFirstName) || t.senderFirstName;
+    const receiver = prompt('Destinataire', t.receiverFirstName) || t.receiverFirstName;
+    const amount = parseFloat(prompt('Montant', t.amount)) || t.amount;
+    const currency = prompt('Devise', t.currency) || t.currency;
+    await postData('/transferts/form',{_id:t._id, senderFirstName:sender, receiverFirstName:receiver, amount, currency});
+    location.reload();
+  }
+  async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
   async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces'); if(mode){await postData('/transferts/retirer',{id,mode}); location.reload();}}
 
-  async function editStock(id){const s=await (await fetch('/stocks/get/'+id)).json();const sender=prompt('Expéditeur',s.sender)||s.sender;const destination=prompt('Destination',s.destination)||s.destination;const amount=parseFloat(prompt('Montant',s.amount))||s.amount;await postData('/stocks/new',{_id:s._id,sender,destination,amount}); location.reload();}
-  async function deleteStock(id){if(confirm('Supprimer stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
+  async function editStock(id){
+    const s = await (await fetch('/stocks/get/'+id)).json();
+    const sender = prompt('Expéditeur', s.sender) || s.sender;
+    const destination = prompt('Destination', s.destination) || s.destination;
+    const amount = parseFloat(prompt('Montant', s.amount)) || s.amount;
+    const currency = prompt('Devise', s.currency) || s.currency;
+    await postData('/stocks/new', {_id: s._id, sender, destination, amount, currency});
+    location.reload();
+  }
+  async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
   </script>`;
 
   html += '</body></html>';
@@ -253,19 +269,28 @@ app.post('/stocks/new', requireLogin, async (req, res) => {
     await Stock.findByIdAndUpdate(data._id, { ...data });
   } else {
     const code = data.code || await generateUniqueCode();
-    await new data({ ...data, code }).save();
+    await new Stock({ ...data, code }).save();
   }
   res.json({ ok: true });
 });
 
 app.post('/stocks/delete', requireLogin, async (req, res) => {
-  const s = await StockHistory.findByIdAndDelete(req.body.id);
-  if (s) await new StockHistory({ action: 'Suppression', stockId: s._id, sender: s.sender, destination: s.destination, amount: s.amount, currency: s.currency }).save();
+  const s = await Stock.findByIdAndDelete(req.body.id);
+  if (s) {
+    await new StockHistory({
+      action: 'Suppression',
+      stockId: s._id,
+      sender: s.sender,
+      destination: s.destination,
+      amount: s.amount,
+      currency: s.currency
+    }).save();
+  }
   res.json({ ok: true });
 });
 
 app.get('/stocks/get/:id', requireLogin, async (req, res) => {
-  const s = await StockHistory.findById(req.params.id);
+  const s = await Stock.findById(req.params.id);
   res.json(s);
 });
 
