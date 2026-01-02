@@ -491,11 +491,30 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 
+// ================= STOCK =================
+const stockSchema = new mongoose.Schema({
+  sender: { type: String, required: true },
+  destination: { type: String, required: true },
+  amount: { type: Number, required: true },
+  currency: { type: String, enum: ['GNF','EUR','USD','XOF'], default: 'GNF' },
+  createdAt: { type: Date, default: Date.now }
+});
+const Stock = mongoose.model('Stock', stockSchema);
 
-// ===== GET STOCK =====
+// ===== GET STOCK (list avec pagination et totaux) =====
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   try {
-    const stocks = await Stock.find().sort({createdAt:-1});
+    const page = parseInt(req.query.page)||1;
+    const limit = 20;
+
+    let stocks = await Stock.find().sort({createdAt:-1});
+    const totalPages = Math.ceil(stocks.length/limit);
+    const paginated = stocks.slice((page-1)*limit, page*limit);
+
+    // Totaux par devise
+    const totals = { GNF:0, EUR:0, USD:0, XOF:0 };
+    stocks.forEach(s => { totals[s.currency] += s.amount; });
+
     let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
       body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
       table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
@@ -506,6 +525,15 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
       .edit{background:#28a745;} .delete{background:#dc3545;}
     </style></head><body>
     <h2>📦 Gestion du Stock</h2>
+
+    <h3>📊 Totaux par devise</h3>
+    <ul>
+      <li>GNF: ${totals.GNF}</li>
+      <li>EUR: ${totals.EUR}</li>
+      <li>USD: ${totals.USD}</li>
+      <li>XOF: ${totals.XOF}</li>
+    </ul>
+
     <form id="stockForm">
       <input name="sender" placeholder="Expéditeur" required>
       <input name="destination" placeholder="Destination" required>
@@ -513,10 +541,11 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
       <select name="currency">${['GNF','EUR','USD','XOF'].map(c=>`<option>${c}</option>`).join('')}</select>
       <button>Enregistrer</button>
     </form>
+
     <h3>Liste du stock</h3>
     <table><thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead><tbody>`;
     
-    stocks.forEach(s=>{
+    paginated.forEach(s=>{
       html += `<tr data-id="${s._id}">
         <td>${s.sender}</td>
         <td>${s.destination}</td>
@@ -530,6 +559,11 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
     });
 
     html += `</tbody></table>
+      <div id="pagination">`;
+    for(let i=1;i<=totalPages;i++){
+      html += `<a href="?page=${i}" style="margin-right:5px;">${i}</a>`;
+    }
+    html += `</div>
       <script>
         const stockForm = document.getElementById('stockForm');
 
@@ -560,7 +594,7 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
             stockForm.destination.value = tr.children[1].innerText;
             stockForm.amount.value = tr.children[2].innerText;
             stockForm.currency.value = tr.children[3].innerText;
-            stockForm.dataset.id = tr.dataset.id; // Indique qu’on modifie
+            stockForm.dataset.id = tr.dataset.id;
           };
         });
 
@@ -592,12 +626,12 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
 app.post('/transferts/stock', requireLogin, async(req,res)=>{
   try {
     const { sender, destination, amount, currency } = req.body;
-    if(!sender || !destination || !amount || !currency) return res.status(400).send({ok:false, message:'Données manquantes'});
+    if(!sender || !destination || !amount || !currency) return res.status(400).send({ok:false});
     await new Stock({ sender, destination, amount, currency }).save();
     res.send({ ok:true });
   } catch(err) {
     console.error(err);
-    res.status(500).send({ok:false, message:'Erreur serveur'});
+    res.status(500).send({ok:false});
   }
 });
 
@@ -609,7 +643,7 @@ app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
     res.send({ ok:true });
   } catch(err) {
     console.error(err);
-    res.status(500).send({ ok:false, message:'Erreur serveur'});
+    res.status(500).send({ ok:false });
   }
 });
 
@@ -620,9 +654,10 @@ app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
     res.send({ ok:true });
   } catch(err) {
     console.error(err);
-    res.status(500).send({ ok:false, message:'Erreur serveur'});
+    res.status(500).send({ ok:false });
   }
 });
+
 
 
 
