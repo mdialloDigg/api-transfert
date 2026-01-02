@@ -498,9 +498,7 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 
-// --- Middlewares ---
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+
 
 // --- Page principale avec HTML + JS intégré ---
 app.get('/', async (req, res) => {
