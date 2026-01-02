@@ -254,7 +254,7 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
     await Stock.findByIdAndUpdate(data._id,{...data});
   } else {
     const code = data.code || await generateUniqueCode();
-    await new Stock({...data, _id, StockHistory:[]}).save();
+    await new StockHistory({...data, _id, StockHistory:[]}).save();
   }
   res.json({ok:true});
 });
