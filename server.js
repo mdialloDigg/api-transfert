@@ -492,11 +492,11 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 // ================= STOCK =================
-app.get('/transferts/stock', requireLogin, async (req, res) => {
-  const stocks = await Stock.find().sort({ createdAt: -1 });
+app.get('/transferts/stock', requireLogin, async (req,res)=>{
+  const stocks = await Stock.find().sort({createdAt:-1});
   const currencies = ['GNF','EUR','USD','XOF'];
 
-  const html = `
+  res.send(`
   <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -505,8 +505,8 @@ app.get('/transferts/stock', requireLogin, async (req, res) => {
       table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
       th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
       th{background:#ff8c42;color:white;}
-      button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
       input,select{padding:6px;border-radius:6px;border:1px solid #ccc;margin-bottom:10px;}
+      button{padding:6px 10px;background:#ff8c42;color:white;border:none;border-radius:6px;cursor:pointer;margin-right:4px;}
       #stockFormContainer{margin-bottom:20px;padding:15px;background:white;border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,0.1);}
     </style>
   </head>
@@ -515,9 +515,7 @@ app.get('/transferts/stock', requireLogin, async (req, res) => {
 
     <h3>📊 Totaux par destination et devise</h3>
     <table id="totaux">
-      <thead>
-        <tr><th>Destination</th>${currencies.map(c => `<th>${c}</th>`).join('')}</tr>
-      </thead>
+      <thead><tr><th>Destination</th>${currencies.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
       <tbody></tbody>
     </table>
 
@@ -525,20 +523,19 @@ app.get('/transferts/stock', requireLogin, async (req, res) => {
 
     <div id="stockFormContainer" style="display:none;">
       <form id="stockForm">
-        <h3>➕ Nouveau Stock</h3>
+        <h3 id="formTitle">➕ Nouveau Stock</h3>
         <input name="sender" placeholder="Expéditeur" required>
         <input name="destination" placeholder="Destination" required>
         <input type="number" name="amount" placeholder="Montant" required>
-        <select name="currency">${currencies.map(c => `<option>${c}</option>`).join('')}</select>
-        <button>Enregistrer</button>
+        <select name="currency">${currencies.map(c=>`<option>${c}</option>`).join('')}</select>
+        <input type="hidden" name="id">
+        <button id="submitBtn">Enregistrer</button>
       </form>
     </div>
 
-    <h3>Liste du stock</h3>
+    <h3>Historique du stock</h3>
     <table id="stockTable">
-      <thead>
-        <tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>
-      </thead>
+      <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
 
@@ -549,6 +546,8 @@ app.get('/transferts/stock', requireLogin, async (req, res) => {
       const stockForm = document.getElementById('stockForm');
       const stockFormContainer = document.getElementById('stockFormContainer');
       const showFormBtn = document.getElementById('showFormBtn');
+      const formTitle = document.getElementById('formTitle');
+      const submitBtn = document.getElementById('submitBtn');
 
       function renderStock(){
         // Calcul des totaux
@@ -570,80 +569,109 @@ app.get('/transferts/stock', requireLogin, async (req, res) => {
           totalsTbody.appendChild(row);
         }
 
-        // Mettre à jour le tableau du stock
+        // Tableau stock
         stockBody.innerHTML = '';
-        stocks.forEach(s => {
+        stocks.forEach(s=>{
           const tr = document.createElement('tr');
           tr.dataset.id = s._id;
-          tr.innerHTML = '<td>' + s.sender + '</td>'
-                       + '<td>' + s.destination + '</td>'
-                       + '<td>' + s.amount + '</td>'
-                       + '<td>' + s.currency + '</td>'
-                       + '<td><button class="deleteBtn">❌ Supprimer</button></td>';
+          tr.innerHTML = '<td>'+s.sender+'</td>'
+                       + '<td>'+s.destination+'</td>'
+                       + '<td>'+s.amount+'</td>'
+                       + '<td>'+s.currency+'</td>'
+                       + '<td>'
+                       + '<button class="editBtn">✏️ Modifier</button>'
+                       + '<button class="deleteBtn">❌ Supprimer</button>'
+                       + '</td>';
           stockBody.appendChild(tr);
         });
 
-        // Suppression dynamique
-        document.querySelectorAll('.deleteBtn').forEach(btn => {
-          btn.onclick = async function(){
-            if(confirm('Confirmer suppression?')){
+        // Actions
+        document.querySelectorAll('.editBtn').forEach(btn=>{
+          btn.onclick = ()=>{
+            const tr = btn.closest('tr');
+            const id = tr.dataset.id;
+            const s = stocks.find(x=>x._id===id);
+            formTitle.innerText = '✏️ Modifier Stock';
+            submitBtn.innerText = 'Modifier';
+            stockForm.sender.value = s.sender;
+            stockForm.destination.value = s.destination;
+            stockForm.amount.value = s.amount;
+            stockForm.currency.value = s.currency;
+            stockForm.id.value = s._id;
+            stockFormContainer.style.display = 'block';
+          };
+        });
+
+        document.querySelectorAll('.deleteBtn').forEach(btn=>{
+          btn.onclick = async ()=>{
+            if(confirm('Confirmer suppression ?')){
               const tr = btn.closest('tr');
-              const res = await fetch('/transferts/stock/' + tr.dataset.id, { method: 'DELETE' });
+              const res = await fetch('/transferts/stock/'+tr.dataset.id,{method:'DELETE'});
               const data = await res.json();
               if(data.ok){ stocks = data.stock; renderStock(); }
             }
-          }
+          };
         });
       }
 
       renderStock();
 
-      // Afficher / masquer formulaire
-      showFormBtn.onclick = function(){
-        stockFormContainer.style.display = stockFormContainer.style.display === 'none' ? 'block' : 'none';
-      };
+      showFormBtn.onclick = ()=> stockFormContainer.style.display = stockFormContainer.style.display==='none'?'block':'none';
 
-      // Ajouter un nouveau stock
-      stockForm.onsubmit = async function(e){
+      stockForm.onsubmit = async e=>{
         e.preventDefault();
         const f = e.target;
-        const data = {
+        const payload = {
           sender: f.sender.value,
           destination: f.destination.value,
           amount: Number(f.amount.value),
           currency: f.currency.value
         };
-        const res = await fetch('/transferts/stock',{
-          method:'POST',
+        const id = f.id.value;
+        let url = '/transferts/stock';
+        let method = 'POST';
+        if(id){ url += '/' + id; method = 'PUT'; } // modification
+
+        const res = await fetch(url, {
+          method,
           headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(data)
+          body: JSON.stringify(payload)
         });
-        const result = await res.json();
-        if(result.ok){
-          stocks = result.stock;
+        const data = await res.json();
+        if(data.ok){
+          stocks = data.stock;
           renderStock();
           f.reset();
-          stockFormContainer.style.display = 'none';
+          f.id.value='';
+          formTitle.innerText = '➕ Nouveau Stock';
+          submitBtn.innerText = 'Enregistrer';
+          stockFormContainer.style.display='none';
         }
       };
     </script>
   </body>
   </html>
-  `;
-
-  res.send(html);
+  `);
 });
 
 // ================= POST STOCK =================
-app.post('/transferts/stock', requireLogin, async(req,res) => {
+app.post('/transferts/stock', requireLogin, async(req,res)=>{
   const { sender,destination,amount,currency } = req.body;
   await new Stock({ sender,destination,amount,currency }).save();
+  const stocks = await Stock.find().sort({createdAt:-1});
+  res.json({ ok:true, stock });
+});
+
+// ================= PUT STOCK (MODIFICATION) =================
+app.put('/transferts/stock/:id', requireLogin, async(req,res)=>{
+  const { sender,destination,amount,currency } = req.body;
+  await Stock.findByIdAndUpdate(req.params.id,{ sender,destination,amount,currency });
   const stocks = await Stock.find().sort({createdAt:-1});
   res.json({ ok:true, stock: stocks });
 });
 
 // ================= DELETE STOCK =================
-app.delete('/transferts/stock/:id', requireLogin, async(req,res) => {
+app.delete('/transferts/stock/:id', requireLogin, async(req,res)=>{
   await Stock.findByIdAndDelete(req.params.id);
   const stocks = await Stock.find().sort({createdAt:-1});
   res.json({ ok:true, stock: stocks });
