@@ -692,8 +692,7 @@ app.delete('/transferts/stock/:id', async (req,res)=>{
   }
 });
 
-
-// --- Démarrage serveur ---
+// ===== Lancer le serveur =====
 app.listen(PORT, function() {
-  console.log("😎 Server ready on port " + PORT);
+  console.log("Server ready on port " + PORT);
 });
