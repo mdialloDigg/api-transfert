@@ -1,164 +1,214 @@
-const express=require('express')
-const mongoose=require('mongoose')
-const session=require('express-session')
-const bodyParser=require('body-parser')
-const app=express()
+/******************************************************************
+ * APP TRANSFERT & STOCK – VERSION TOUT-EN-UN
+ ******************************************************************/
 
-mongoose.connect(process.env.MONGO_URI)
+const express = require('express');
+const mongoose = require('mongoose');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 
-app.use(bodyParser.urlencoded({extended:true}))
-app.use(bodyParser.json())
-app.use(session({secret:'x',resave:false,saveUninitialized:false}))
+const app = express();
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(session({ secret:'transfert-stock-secret', resave:false, saveUninitialized:true }));
 
-const User=mongoose.model('User',new mongoose.Schema({u:String,p:String,r:String}))
-const Transfer=mongoose.model('Transfer',new mongoose.Schema({
-o:String,d:String,v:String,m:Number,da:String
-}))
-const Stock=mongoose.model('Stock',new mongoose.Schema({
-n:String,q:Number,d:String
-}))
+// ================= DATABASE =================
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert_stock')
+.then(()=>console.log('✅ MongoDB connecté'))
+.catch(console.error);
 
-;(async()=>{
-if(await User.countDocuments()==0){
-await User.create({u:'a',p:'a',r:'a'})
-await User.create({u:'admin2',p:'admin2',r:'admin2'})
-}})()
+// ================= CONSTANTES =================
+const locations = ['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
+const currencies = ['GNF','EUR','USD','XOF'];
+const retraitModes = ['Espèces','Virement','Orange Money','Wave'];
 
-const auth=(req,res,n)=>req.session.u?n():res.redirect('/')
-const admin=(req,res,n)=>req.session.u.r==='admin2'?n():res.sendStatus(403)
+// ================= SCHEMAS =================
+const transfertSchema = new mongoose.Schema({
+  userType: { type:String, enum:['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
+  senderFirstName:String, senderLastName:String, senderPhone:String, originLocation:String,
+  receiverFirstName:String, receiverLastName:String, receiverPhone:String, destinationLocation:String,
+  amount:Number, fees:Number, recoveryAmount:Number, currency:{ type:String, enum:currencies, default:'GNF' },
+  recoveryMode:String, retraitHistory:[{ date:Date, mode:String }], retired:{ type:Boolean, default:false },
+  code:{ type:String, unique:true }, createdAt:{ type:Date, default:Date.now }
+});
+const Transfert = mongoose.model('Transfert', transfertSchema);
 
-app.get('/',(req,res)=>res.send(`
-<html><meta name=viewport content=width=device-width>
-<style>
-body{font-family:Arial;background:#eee}
-.box{max-width:350px;margin:100px auto;background:#fff;padding:20px}
-input,button{width:100%;padding:10px;margin:5px}
-</style>
-<div class=box>
-<h3>Login</h3>
-<input id=u placeholder=Utilisateur>
-<input id=p type=password placeholder=Mot de passe>
-<button onclick=l()>Se connecter</button>
-</div>
-<script>
-function l(){
-fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({u:u.value,p:p.value})})
-.then(r=>r.json()).then(d=>d.ok?location='/app':alert('Erreur'))
+const stockSchema = new mongoose.Schema({
+  expediteur: {type:String, required:true},
+  destination: {type:String, required:true},
+  montant: {type:Number, required:true},
+  devise: {type:String, enum:currencies, default:'GNF'},
+  createdAt: {type:Date, default:Date.now}
+});
+const Stock = mongoose.model('Stock', stockSchema);
+
+const authSchema = new mongoose.Schema({ username:String, password:String, role:{type:String, enum:['admin','agent'], default:'agent'} });
+const Auth = mongoose.model('Auth', authSchema);
+
+// ================= UTIL =================
+async function generateUniqueCode(){
+  let code, exists = true;
+  while(exists){
+    const letter = String.fromCharCode(65 + Math.floor(Math.random()*26));
+    const number = Math.floor(100 + Math.random()*900);
+    code = `${letter}${number}`;
+    exists = await Transfert.findOne({ code }).exec();
+  }
+  return code;
 }
-</script>`))
 
-app.post('/login',async(req,res)=>{
-const u=await User.findOne(req.body)
-if(!u)return res.json({ok:false})
-req.session.u=u
-res.json({ok:true})
-})
-
-app.get('/logout',(req,res)=>req.session.destroy(()=>res.redirect('/')))
-
-app.get('/app',auth,async(req,res)=>{
-const q={}
-if(req.query.d)q.d=req.query.d
-if(req.query.v)q.v=req.query.v
-const t=await Transfer.find(q)
-const s=await Stock.find()
-
-let totals={}
-t.forEach(x=>{
-let k=x.d+' '+x.v
-totals[k]=(totals[k]||0)+x.m
-})
-
-res.send(`
-<html><meta name=viewport content=width=device-width>
-<style>
-body{font-family:Arial}
-table{width:100%;border-collapse:collapse}
-td,th{border:1px solid #ccc;padding:5px}
-input,button{padding:6px;margin:2px}
-</style>
-<h3>${req.session.u.u}</h3>
-<a href=/logout>Déconnexion</a>
-
-<h4>Totaux</h4>
-${Object.entries(totals).map(x=>`<div>${x[0]} : ${x[1]}</div>`).join('')}
-
-<h4>Recherche</h4>
-<input id=s onkeyup=r()>
-
-<h4>Transferts</h4>
-<table id=t>
-<tr><th>O</th><th>D</th><th>V</th><th>M</th><th>Date</th><th></th></tr>
-${t.map(x=>`
-<tr>
-<td>${x.o}</td><td>${x.d}</td><td>${x.v}</td><td>${x.m}</td><td>${x.da}</td>
-<td>
-<button onclick="e('${x._id}')">✎</button>
-${req.session.u.r==='admin2'?`<button onclick="dt('${x._id}')">X</button>`:''}
-</td>
-</tr>`).join('')}
-</table>
-
-<h4>Ajouter / Modifier</h4>
-<input id=o placeholder=Origine>
-<input id=d placeholder=Destination>
-<input id=v placeholder=Devise>
-<input id=m type=number placeholder=Montant>
-<input id=da placeholder=Date>
-<input id=id hidden>
-<button onclick=save()>Valider</button>
-
-<h4>Stock</h4>
-<table>
-${s.map(x=>`
-<tr><td>${x.n}</td><td>${x.q}</td><td>${x.d}</td>
-<td>${req.session.u.r==='admin2'?`<button onclick="ds('${x._id}')">X</button>`:''}</td></tr>`).join('')}
-</table>
-<input id=sn placeholder=Nom>
-<input id=sq type=number placeholder=Quantité>
-<input id=sd placeholder=Devise>
-<button onclick=ss()>Ajouter</button>
-
-<button onclick=window.print()>Imprimer</button>
-
-<script>
-function r(){
-let v=s.value.toLowerCase()
-document.querySelectorAll('#t tr').forEach((x,i)=>{
-if(i==0)return
-x.style.display=x.innerText.toLowerCase().includes(v)?'':'none'
-})
+// ================= AUTH & PERMISSIONS =================
+const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
+function setPermissions(username){
+  if(username==='a') return { lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true };
+  if(username==='admin2') return { lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true };
+  return { lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true };
 }
-function save(){
-fetch('/t',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({id:id.value,o:o.value,d:d.value,v:v.value,m:m.value,da:da.value})})
-.then(()=>location.reload())
-}
-function e(i){
-fetch('/t/'+i).then(r=>r.json()).then(x=>{
-id.value=x._id;o.value=x.o;d.value=x.d;v.value=x.v;m.value=x.m;da.value=x.da
-})
-}
-function dt(i){fetch('/t/'+i,{method:'DELETE'}).then(()=>location.reload())}
-function ss(){
-fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({n:sn.value,q:sq.value,d:sd.value})})
-.then(()=>location.reload())
-}
-function ds(i){fetch('/s/'+i,{method:'DELETE'}).then(()=>location.reload())}
-</script>`)})
 
-app.post('/t',auth,async(req,res)=>{
-req.body.id
-?await Transfer.findByIdAndUpdate(req.body.id,req.body)
-:await Transfer.create(req.body)
-res.json(true)
-})
-app.get('/t/:id',auth,async(req,res)=>res.json(await Transfer.findById(req.params.id)))
-app.delete('/t/:id',auth,admin,async(req,res)=>{await Transfer.findByIdAndDelete(req.params.id);res.json(true)})
+// ================= LOGIN =================
+app.get('/login',(req,res)=>{
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+  body{margin:0;font-family:Arial;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
+  .login-container{background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:360px;text-align:center;}
+  .login-container h2{margin-bottom:30px;font-size:26px;color:#ff8c42;}
+  .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
+  .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
+  .login-container button:hover{background:#e67300;}
+  </style></head><body>
+    <div class="login-container">
+      <h2>Connexion</h2>
+      <form method="post">
+        <input name="username" placeholder="Utilisateur" required>
+        <input type="password" name="password" placeholder="Mot de passe" required>
+        <button>Se connecter</button>
+      </form>
+    </div>
+  </body></html>`);
+});
 
-app.post('/s',auth,async(req,res)=>{await Stock.create(req.body);res.json(true)})
-app.delete('/s/:id',auth,admin,async(req,res)=>{await Stock.findByIdAndDelete(req.params.id);res.json(true)})
+app.post('/login', async(req,res)=>{
+  const { username, password } = req.body;
+  let user = await Auth.findOne({ username }).exec();
+  if(!user){ const hashed = bcrypt.hashSync(password,10); user = await new Auth({ username, password:hashed }).save(); }
+  if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
+  req.session.user = { username:user.username, role:user.role, permissions:setPermissions(username) };
+  res.redirect('/transferts/list');
+});
 
-app.listen(process.env.PORT||3000,'0.0.0.0')
+app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
+
+// ================= TRANSFERTS FORMULAIRE =================
+app.get('/transferts/form', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
+  let t=null; if(req.query.code) t = await Transfert.findOne({code:req.query.code});
+  const code = t?t.code:await generateUniqueCode();
+  const search = req.query.search||''; const status = req.query.status||'all';
+  
+  // HTML complet du formulaire Transfert (expéditeur, destinataire, montant, devise, code)
+  res.send(`<html><head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:Arial;background:#f0f4f8;margin:0;padding:10px;}
+    .container{max-width:900px;margin:20px auto;padding:20px;background:#fff;border-radius:15px;box-shadow:0 8px 20px rgba(0,0,0,0.2);}
+    h2{color:#ff8c42;text-align:center;margin-bottom:20px;}
+    form{display:grid;gap:15px;}
+    label{font-weight:bold;}
+    input,select{padding:12px;border-radius:8px;border:1px solid #ccc;width:100%;font-size:16px;}
+    input[readonly]{background:#e9ecef;}
+    button{padding:15px;background:#ff8c42;color:white;font-weight:bold;border:none;border-radius:10px;font-size:16px;cursor:pointer;}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;}
+    .section-title{margin-top:20px;font-size:18px;color:#ff8c42;font-weight:bold;border-bottom:2px solid #ff8c42;padding-bottom:5px;}
+    a{color:#ff8c42;text-decoration:none;font-weight:bold;}
+  </style></head><body>
+  <div class="container">
+    <h2>${t?'✏️ Modifier':'➕ Nouveau'} Transfert</h2>
+    <form method="post">
+      <div class="section-title">Expéditeur</div>
+      <div class="grid">
+        <div><label>Prénom</label><input name="senderFirstName" required value="${t?t.senderFirstName:''}"></div>
+        <div><label>Nom</label><input name="senderLastName" required value="${t?t.senderLastName:''}"></div>
+        <div><label>Téléphone</label><input name="senderPhone" required value="${t?t.senderPhone:''}"></div>
+        <div><label>Origine</label><select name="originLocation">${locations.map(v=>`<option ${t&&t.originLocation===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      </div>
+      <div class="section-title">Destinataire</div>
+      <div class="grid">
+        <div><label>Prénom</label><input name="receiverFirstName" required value="${t?t.receiverFirstName:''}"></div>
+        <div><label>Nom</label><input name="receiverLastName" required value="${t?t.receiverLastName:''}"></div>
+        <div><label>Téléphone</label><input name="receiverPhone" required value="${t?t.receiverPhone:''}"></div>
+        <div><label>Destination</label><select name="destinationLocation">${locations.map(v=>`<option ${t&&t.destinationLocation===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      </div>
+      <div class="section-title">Montants & Devise</div>
+      <div class="grid">
+        <div><label>Montant</label><input type="number" id="amount" name="amount" required value="${t?t.amount:''}"></div>
+        <div><label>Frais</label><input type="number" id="fees" name="fees" required value="${t?t.fees:''}"></div>
+        <div><label>Montant à recevoir</label><input type="text" id="recoveryAmount" readonly value="${t?t.recoveryAmount:''}"></div>
+        <div><label>Devise</label><select name="currency">${currencies.map(c=>`<option ${t&&t.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div><label>Code transfert</label><input type="text" name="code" readonly value="${code}"></div>
+      </div>
+      <button>${t?'Enregistrer Modifications':'Enregistrer'}</button>
+    </form>
+    <a href="/transferts/list">⬅ Retour liste</a>
+    <script>
+      const amountField=document.getElementById('amount');
+      const feesField=document.getElementById('fees');
+      const recoveryField=document.getElementById('recoveryAmount');
+      function updateRecovery(){recoveryField.value=(parseFloat(amountField.value)||0)-(parseFloat(feesField.value)||0);}
+      amountField.addEventListener('input',updateRecovery);
+      feesField.addEventListener('input',updateRecovery);
+      updateRecovery();
+    </script>
+  </div>
+  </body></html>`);
+});
+
+// POST TRANSFERT
+app.post('/transferts/form', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
+  const amount = Number(req.body.amount||0);
+  const fees = Number(req.body.fees||0);
+  const recoveryAmount = amount - fees;
+  const code = req.body.code || await generateUniqueCode();
+  let existing = await Transfert.findOne({code});
+  if(existing) await Transfert.findByIdAndUpdate(existing._id,{...req.body, amount, fees, recoveryAmount});
+  else await new Transfert({...req.body, amount, fees, recoveryAmount, retraitHistory:[], code}).save();
+  res.redirect('/transferts/list');
+});
+
+// ================= STOCK FORMULAIRE =================
+app.get('/transferts/stock', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
+  res.send(`<html><head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:Arial;background:#f0f4f8;margin:0;padding:10px;}
+    .container{max-width:500px;margin:20px auto;padding:20px;background:#fff;border-radius:15px;box-shadow:0 8px 20px rgba(0,0,0,0.2);}
+    h2{color:#ff8c42;text-align:center;margin-bottom:20px;}
+    input,select{padding:12px;border-radius:8px;border:1px solid #ccc;width:100%;font-size:16px;margin-bottom:10px;}
+    button{padding:15px;background:#ff8c42;color:white;font-weight:bold;border:none;border-radius:10px;font-size:16px;cursor:pointer;}
+    a{color:#ff8c42;text-decoration:none;font-weight:bold;}
+  </style></head><body>
+  <div class="container">
+    <h2>➕ Nouveau Stock</h2>
+    <form method="post">
+      <input name="expediteur" placeholder="Expéditeur" required>
+      <input name="destination" placeholder="Destination" required>
+      <input type="number" name="montant" placeholder="Montant" required>
+      <select name="devise">${currencies.map(c=>`<option>${c}</option>`).join('')}</select>
+      <button>Enregistrer</button>
+    </form>
+    <a href="/transferts/stock/list">⬅ Retour liste Stock</a>
+  </div></body></html>`);
+});
+
+// POST STOCK
+app.post('/transferts/stock', requireLogin, async(req,res)=>{
+  if(!req.session.user.permissions.ecriture) return res.status(403).send('Accès refusé');
+  const { expediteur,destination,montant,devise } = req.body;
+  await new Stock({ expediteur,destination,montant:Number(montant),devise }).save();
+  res.redirect('/transferts/stock/list');
+});
+
+// ================= SERVER =================
+app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
