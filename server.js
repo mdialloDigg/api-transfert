@@ -495,7 +495,8 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 app.get('/transferts/stock', requireLogin, async(req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
   res.send(`
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
 body{font-family:Arial;background:#f4f6f9;margin:0;padding:20px;}
 table{width:100%;border-collapse:collapse;background:white;margin-bottom:20px;}
 th,td{border:1px solid #ccc;padding:6px;text-align:left;font-size:14px;}
@@ -595,6 +596,7 @@ showFormBtn.onclick=()=>{
   modifierBtn.style.display='none';
   stockForm.reset();
   stockForm.id.value='';
+  stockForm.sender.focus();
 };
 
 validerBtn.onclick=async()=>{
@@ -604,9 +606,19 @@ validerBtn.onclick=async()=>{
     amount: Number(stockForm.amount.value),
     currency: stockForm.currency.value
   };
-  const res=await fetch('/transferts/stock',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify(payload)});
+  if(!payload.sender||!payload.destination||!payload.amount) return alert('Tous les champs sont requis');
+  const res=await fetch('/transferts/stock',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
   const data=await res.json();
-  if(data.ok){ stocks=data.stock; renderStock(); stockForm.reset(); stockForm.sender.focus(); }
+  if(data.ok){
+    stocks=data.stock;
+    renderStock();
+    stockForm.reset();
+    stockForm.sender.focus();
+  }
 };
 
 modifierBtn.onclick=async()=>{
@@ -618,9 +630,21 @@ modifierBtn.onclick=async()=>{
     amount: Number(stockForm.amount.value),
     currency: stockForm.currency.value
   };
-  const res=await fetch('/transferts/stock/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body: JSON.stringify(payload)});
+  const res=await fetch('/transferts/stock/'+id,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
   const data=await res.json();
-  if(data.ok){ stocks=data.stock; renderStock(); stockForm.reset(); validerBtn.style.display='inline-block'; modifierBtn.style.display='none'; formTitle.innerText='➕ Nouveau Stock'; }
+  if(data.ok){
+    stocks=data.stock;
+    renderStock();
+    stockForm.reset();
+    validerBtn.style.display='inline-block';
+    modifierBtn.style.display='none';
+    formTitle.innerText='➕ Nouveau Stock';
+    stockForm.sender.focus();
+  }
 };
 </script>
 </body></html>
