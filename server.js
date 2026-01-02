@@ -492,7 +492,9 @@ app.get('/transferts/word', requireLogin, async(req,res)=>{
 });
 
 
-// Page stock
+
+
+// GET page stock
 app.get('/transferts/stock', requireLogin, async (req,res)=>{
   const stocks = await Stock.find().sort({createdAt:-1});
   res.send(`
@@ -500,38 +502,48 @@ app.get('/transferts/stock', requireLogin, async (req,res)=>{
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:Arial;margin:20px;background:#f4f6f9;}
+body{font-family:Arial;margin:0;padding:20px;background:#f4f6f9;}
+.container{max-width:900px;margin:auto;background:white;padding:20px;border-radius:15px;}
 table{width:100%;border-collapse:collapse;margin-top:20px;}
-th,td{border:1px solid #ccc;padding:6px;text-align:left;}
+th,td{border:1px solid #ccc;padding:8px;text-align:left;}
 th{background:#ff8c42;color:white;}
-button{padding:6px 10px;margin-right:5px;border:none;border-radius:6px;cursor:pointer;}
+button{padding:6px 12px;margin-right:5px;border:none;border-radius:6px;cursor:pointer;}
 #validerBtn{background:#28a745;color:white;}
 #modifierBtn{background:#ffc107;color:white;display:none;}
-#stockFormContainer{margin-bottom:20px;background:white;padding:15px;border-radius:10px;display:none;}
+#stockFormContainer{display:none;margin-bottom:20px;}
 </style>
 </head>
 <body>
-<h2>Gestion Stock</h2>
+<div class="container">
+<h2>➕ Gestion Stock</h2>
 <button id="showFormBtn">➕ Nouveau Stock</button>
-<a href="/transferts/list">⬅ Retour transferts</a>
+<a href="/transferts/list" style="margin-left:20px;">⬅ Retour transferts</a>
+
 <div id="stockFormContainer">
 <form id="stockForm">
 <input type="hidden" name="id">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px;">
 <input name="sender" placeholder="Expéditeur" required>
 <input name="destination" placeholder="Destination" required>
 <input type="number" name="amount" placeholder="Montant" required>
 <select name="currency">
 <option>GNF</option><option>EUR</option><option>USD</option><option>XOF</option>
 </select>
+</div>
+<div style="margin-top:10px;">
 <button type="button" id="validerBtn">Valider</button>
 <button type="button" id="modifierBtn">Enregistrer</button>
+</div>
 </form>
 </div>
-<h3>Historique des stocks</h3>
+
+<h3>📦 Historique du stock</h3>
 <table id="stockTable">
 <thead><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr></thead>
 <tbody></tbody>
 </table>
+</div>
+
 <script>
 let stocks = ${JSON.stringify(stocks)};
 const tbody = document.querySelector('#stockTable tbody');
@@ -557,6 +569,7 @@ function renderStock(){
       </td>\`;
     tbody.appendChild(tr);
   });
+
   document.querySelectorAll('.editBtn').forEach(btn=>{
     btn.onclick = ()=>{
       const tr = btn.closest('tr');
@@ -571,6 +584,7 @@ function renderStock(){
       formContainer.style.display='block';
     };
   });
+
   document.querySelectorAll('.deleteBtn').forEach(btn=>{
     btn.onclick = async ()=>{
       const tr = btn.closest('tr');
@@ -581,6 +595,7 @@ function renderStock(){
     };
   });
 }
+
 renderStock();
 
 showFormBtn.onclick=()=>{
@@ -591,6 +606,7 @@ showFormBtn.onclick=()=>{
   form.id.value='';
 };
 
+// Ajouter nouveau stock
 validerBtn.onclick=async ()=>{
   const payload={
     sender: form.sender.value,
@@ -606,8 +622,9 @@ validerBtn.onclick=async ()=>{
   form.sender.focus();
 };
 
+// Modifier stock existant
 modifierBtn.onclick=async ()=>{
-  const id=form.id.value;
+  const id = form.id.value;
   const payload={
     sender: form.sender.value,
     destination: form.destination.value,
