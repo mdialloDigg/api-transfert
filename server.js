@@ -604,7 +604,5 @@ app.get('/transferts/stock', requireLogin, async(req,res)=>{
 
 
 
-
-
 // ================= SERVER =================
 app.listen(process.env.PORT||3000,()=>console.log('🚀 Serveur lancé sur http://localhost:3000'));
