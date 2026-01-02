@@ -275,9 +275,9 @@ app.post('/stocks/new', requireLogin, async (req, res) => {
 });
 
 app.post('/stocks/delete', requireLogin, async (req, res) => {
-  const s = await StockHistory.findByIdAndDelete(req.body.id);
+  const s = await Stock.findByIdAndDelete(req.body.id);
   if (s) {
-    await new StockHistory({
+    await new Stock({
       action: 'Suppression',
       stockId: s._id,
       sender: s.sender,
