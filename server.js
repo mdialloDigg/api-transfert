@@ -299,7 +299,7 @@ postData('/transferts/form',{originLocation: originLocation,senderFirstName: sen
     async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json(); const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName; const senderPhone=prompt('Téléphone expéditeur',t.senderPhone)||t.senderPhone; const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName; const receiverPhone=prompt('Téléphone destinataire',t.receiverPhone)||t.receiverPhone; const amount=parseFloat(prompt('Montant',t.amount))||t.amount; const currency=prompt('Devise',t.currency)||t.currency; await postData('/transferts/form',{_id:t._id,senderFirstName:sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,currency}); location.reload();}
     async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
 
-<script>
+
 async function retirerTransfert(id){
   const mode = prompt('Mode de retrait', 'Espèces');
   if (!mode) return;
@@ -320,7 +320,7 @@ async function retirerTransfert(id){
   alert('✅ Retrait effectué avec succès');
   location.reload();
 }
-</script>
+
 
       function newStock() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const destination=prompt('Destination'); const destinationPhone=prompt('Téléphone destination'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && destination && amount) postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}).then(()=>location.reload());}
     async function editStock(id){const s=await (await fetch('/stocks/get/'+id)).json(); const sender=prompt('Expéditeur',s.sender)||s.sender; const senderPhone=prompt('Téléphone expéditeur',s.senderPhone)||s.senderPhone; const destination=prompt('Destination',s.destination)||s.destination; const destinationPhone=prompt('Téléphone destination',s.destinationPhone)||s.destinationPhone; const amount=parseFloat(prompt('Montant',s.amount))||s.amount; const currency=prompt('Devise',s.currency)||s.currency; await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();}
