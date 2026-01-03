@@ -313,7 +313,7 @@ app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   try{
     const data=req.body;
-    if(data._id) await Stock.findByIdAndUpdate(data._id,{...data});
+    if(data._id) await StockHistory.findByIdAndUpdate(data._id,{...data});
     else{
       const code = data.code || await generateUniqueCode();
       await new StockHistory({...data,code}).save();
@@ -340,7 +340,7 @@ app.post('/stocks/delete', requireLogin, async(req,res)=>{
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   try{
-    const s = await Stock.findById(req.params.id);
+    const s = await StockHistory.findById(req.params.id);
     res.json(s);
   } catch(err){
     console.error(err);
