@@ -351,24 +351,16 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
 
     const transfert = await Transfert.findById(id).session(session);
     if (!transfert) {
-      await session.abortTransaction();
-      return res.status(404).json({ error: 'Transfert introuvable' });
+      throw new Error('Transfert introuvable');
     }
 
     if (transfert.retired) {
-      await session.abortTransaction();
-      return res.status(400).json({ error: 'Déjà retiré' });
-    }
-
-    if (!transfert.destinationLocation) {
-      await session.abortTransaction();
-      return res.status(400).json({ error: 'Destination non définie' });
+      throw new Error('Transfert déjà retiré');
     }
 
     const montantRetire = transfert.amount - transfert.fees;
     if (montantRetire <= 0) {
-      await session.abortTransaction();
-      return res.status(400).json({ error: 'Montant retiré invalide' });
+      throw new Error('Montant invalide');
     }
 
     const stock = await Stock.findOne({
@@ -376,48 +368,50 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       currency: transfert.currency
     }).session(session);
 
-    if (!stock || stock.amount < montantRetire) {
-      await session.abortTransaction();
-      return res.status(400).json({ error: 'Stock insuffisant' });
+    if (!stock) {
+      throw new Error('Stock introuvable');
     }
 
+    if (stock.amount < montantRetire) {
+      throw new Error('Stock insuffisant');
+    }
 
-
-    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
-    res.json({ok:true});
-
-
+    // 🔻 DÉBIT DU STOCK
     stock.amount -= montantRetire;
-    stock.updatedAt = new Date();
     await stock.save({ session });
 
+    // ✅ MARQUER LE TRANSFERT COMME RETIRÉ
+    transfert.retired = true;
+    transfert.retraitHistory.push({
+      date: new Date(),
+      mode
+    });
+    await transfert.save({ session });
+
+    // 🧾 HISTORIQUE
     await new StockHistory({
       code: transfert.code,
       action: 'RETRAIT TRANSFERT',
       stockId: stock._id,
+      sender: transfert.senderFirstName + ' ' + transfert.senderLastName,
+      senderPhone: transfert.senderPhone,
       destination: transfert.destinationLocation,
       amount: montantRetire,
       currency: transfert.currency
     }).save({ session });
 
-
+    // ✅ TOUT OK
     await session.commitTransaction();
     session.endSession();
 
-
-
-
+    res.json({ ok: true });
 
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
-    console.error(err);
-    res.status(500).json({ error: 'Erreur lors du retrait' });
+    console.error('❌ Retrait erreur:', err.message);
+    res.status(400).json({ error: err.message });
   }
-
-window.retirerTransfert = retirerTransfert;
-
-
 });
 
 
