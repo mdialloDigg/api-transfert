@@ -200,10 +200,13 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
     html+=`</table>
     <h3>Historique Stocks</h3>
-    <table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+    <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Action</th></tr>`;
     stockHistory.forEach(h=>{
       html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td>
-      <td><button onclick="editStock('${h._id}')">✏️</button><button onclick="deleteStock('${h._id}')">❌</button></td></tr>`;
+      <td>
+      <button class="modify" onclick="editStock('${h._id}')">✏️</button>
+      <button class="delete" onclick="deleteStock('${h._id}')">❌</button>
+     </td></tr>`;
     });
 
     // ============ SCRIPT =================
@@ -324,7 +327,7 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
 
 app.post('/stocks/delete', requireLogin, async(req,res)=>{
   try{
-    const s=await Stock.findByIdAndDelete(req.body.id);
+    const s=await StockHistory.findByIdAndDelete(req.body.id);
     if(s){
       await new StockHistory({action:'Suppression',stockId:s._id,sender:s.sender,destination:s.destination,amount:s.amount,currency:s.currency}).save();
     }
@@ -337,7 +340,7 @@ app.post('/stocks/delete', requireLogin, async(req,res)=>{
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   try{
-    const s = await Stock.findById(req.params.id);
+    const s = await StockHistory.findById(req.params.id);
     res.json(s);
   } catch(err){
     console.error(err);
