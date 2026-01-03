@@ -288,36 +288,87 @@ if(req.session.user.permissions.ecriture){
     html+=`</table></div>`;
 
     // =================== SCRIPT ==================
-    html+=`<script>
+     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
-    function newTransfert() {const originLocation=prompt('Origine'); const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const destinationLocation=prompt('Destination');const receiver=prompt('Destinataire'); const receiverPhone=prompt('Téléphone destinataire'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && receiver && amount) 
+    function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
+    const ALLOWED_CURRENCIES=['GNF','XOF','EUR','USD'];
+    const ALLOWED_LOCATIONS=['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
+    const ALLOWED_RETRAIT_MODES=['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
+    function isValidPhone(phone){return /^00224\\d{9}$/.test(phone) || /^0033\\d{9}$/.test(phone);}
 
-postData('/transferts/form',{originLocation: originLocation,senderFirstName: sender,senderPhone,destinationLocation: destinationLocation,receiverFirstName:receiver,receiverPhone,amount,fees:parseFloat(prompt('frais')),recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());}
+    async function newTransfert(){
+      let originLocation=normalizeUpper(prompt('Origine (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)'));
+      if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide !');return;}
+      let sender=prompt('Nom expéditeur'); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destinationLocation=normalizeUpper(prompt('Destination (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)')); if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}
+      let receiver=prompt('Nom destinataire'); if(!receiver){alert('Nom obligatoire');return;}
+      let receiverPhone=prompt('Téléphone destinataire (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant')); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let fees=parseFloat(prompt('Frais')); if(isNaN(fees) || fees<0){alert('Frais invalide');return;}
+      let currency=normalizeUpper(prompt('Devise (GNF,XOF,EUR,USD)','GNF')); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      let recoveryMode=normalizeUpper(prompt('Mode de retrait (ESPECE, TRANSFERT, VIREMENT, AUTRE)','ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
 
+      await postData('/transferts/form',{
+        userType:'Client', originLocation, senderFirstName:sender, senderPhone,
+        destinationLocation, receiverFirstName:receiver, receiverPhone,
+        amount, fees, recoveryAmount: amount-fees, currency, recoveryMode
+      });
+      location.reload();
+    }
 
-    async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json(); const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName; const senderPhone=prompt('Téléphone expéditeur',t.senderPhone)||t.senderPhone; const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName; const receiverPhone=prompt('Téléphone destinataire',t.receiverPhone)||t.receiverPhone; const amount=parseFloat(prompt('Montant',t.amount))||t.amount; const currency=prompt('Devise',t.currency)||t.currency; await postData('/transferts/form',{_id:t._id,senderFirstName:sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,currency}); location.reload();}
+    async function editTransfert(id){
+      const t=await (await fetch('/transferts/get/'+id)).json();
+      let originLocation=normalizeUpper(prompt('Origine',t.originLocation)); if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide');return;}
+      let sender=prompt('Nom expéditeur',t.senderFirstName); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur',t.senderPhone); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destinationLocation=normalizeUpper(prompt('Destination',t.destinationLocation)); if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}
+      let receiver=prompt('Nom destinataire',t.receiverFirstName); if(!receiver){alert('Nom obligatoire');return;}
+      let receiverPhone=prompt('Téléphone destinataire',t.receiverPhone); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant',t.amount)); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let fees=parseFloat(prompt('Frais',t.fees)); if(isNaN(fees) || fees<0){alert('Frais invalide');return;}
+      let currency=normalizeUpper(prompt('Devise',t.currency)); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      let recoveryMode=normalizeUpper(prompt('Mode de retrait',t.recoveryMode||'ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
+      await postData('/transferts/form',{_id:t._id, originLocation, senderFirstName:sender, senderPhone, destinationLocation, receiverFirstName:receiver, receiverPhone, amount, fees, recoveryAmount:amount-fees, currency, recoveryMode});
+      location.reload();
+    }
+
     async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
-async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces');if(!mode)return;const res=await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})});const data=await res.json();if(!res.ok){alert(data.error||'Erreur lors du retrait');return;}alert('✅ Retrait effectué avec succès');location.reload();}
+    async function retirerTransfert(id){
+      let mode=normalizeUpper(prompt('Mode de retrait','ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(mode)){alert('Mode invalide');return;}
+      const res=await postData('/transferts/retirer',{id,mode}); if(!res.ok){alert(res.error||'Erreur');return;} alert('✅ Retrait effectué'); location.reload();
+    }
 
-      function newStock() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const destination=prompt('Destination'); const destinationPhone=prompt('Téléphone destination'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && destination && amount) postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}).then(()=>location.reload());}
-    async function editStock(id){const s=await (await fetch('/stocks/get/'+id)).json(); const sender=prompt('Expéditeur',s.sender)||s.sender; const senderPhone=prompt('Téléphone expéditeur',s.senderPhone)||s.senderPhone; const destination=prompt('Destination',s.destination)||s.destination; const destinationPhone=prompt('Téléphone destination',s.destinationPhone)||s.destinationPhone; const amount=parseFloat(prompt('Montant',s.amount))||s.amount; const currency=prompt('Devise',s.currency)||s.currency; await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();}
-    
+    async function newStock(){
+      let sender=prompt('Expéditeur'); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destination=normalizeUpper(prompt('Destination')); if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}
+      let destinationPhone=prompt('Téléphone destination'); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant')); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let currency=normalizeUpper(prompt('Devise','GNF')); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      await postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();
+    }
 
+    async function editStock(id){
+      const s=await (await fetch('/stocks/get/'+id)).json();
+      let sender=prompt('Expéditeur',s.sender); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur',s.senderPhone); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destination=normalizeUpper(prompt('Destination',s.destination)); if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}
+      let destinationPhone=prompt('Téléphone destination',s.destinationPhone); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant',s.amount)); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let currency=normalizeUpper(prompt('Devise',s.currency)); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();
+    }
 
-async function deleteStock(id){if(!confirm('Supprimer ce stock ?'))return;const r=await fetch('/stocks/delete',{method:'POST',headers:{'Content Type':'application/json'},body:JSON.stringify({id})});const d=await r.json();if(!r.ok){alert(d.error||'Erreur suppression');return;}alert('✅ Stock supprimé');location.reload();}
-
+    async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
 
     function printRow(btn){const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1" style="border-collapse:collapse; font-family:Arial; padding:10px;">'); newWin.document.write(row.outerHTML); newWin.document.write('</table></body></html>'); newWin.document.close(); newWin.print(); newWin.close();}
     </script>`;
 
     html+='</body></html>';
     res.send(html);
-
-  } catch(err){
-    console.error(err);
-    res.status(500).send('Erreur serveur lors du chargement du dashboard');
-  }
+  } catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
 });
 
 // ================= TRANSFERT ROUTES =================
