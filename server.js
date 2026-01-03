@@ -345,11 +345,12 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
-
+  const { id, mode } = req.body;
+  const transfert = await Transfert.findById(id).session(session);
   try {
-    const { id, mode } = req.body;
+    
 
-    const transfert = await Transfert.findById(id).session(session);
+   
     if (!transfert) {
       throw new Error('Transfert introuvable');
     }
@@ -363,22 +364,22 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       throw new Error('Montant invalide');
     }
 
-    const stock = await Stock.findOne({
+    const StockHistory = await StockHistory.findOne({
       destination: transfert.destinationLocation,
       currency: transfert.currency
     }).session(session);
 
-    if (!stock) {
+    if (!StockHistory) {
       throw new Error('Stock introuvable');
     }
 
-    if (stock.amount < montantRetire) {
+    if (StockHistory.amount < montantRetire) {
       throw new Error('Stock insuffisant');
     }
 
     // 🔻 DÉBIT DU STOCK
-    stock.amount -= montantRetire;
-    await stock.save({ session });
+    StockHistory.amount -= montantRetire;
+    await StockHistory.save({ session });
 
     // ✅ MARQUER LE TRANSFERT COMME RETIRÉ
     transfert.retired = true;
@@ -392,7 +393,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     await new StockHistory({
       code: transfert.code,
       action: 'RETRAIT TRANSFERT',
-      stockId: stock._id,
+      stockId: StockHistory._id,
       sender: transfert.senderFirstName + ' ' + transfert.senderLastName,
       senderPhone: transfert.senderPhone,
       destination: transfert.destinationLocation,
