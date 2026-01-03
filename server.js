@@ -228,11 +228,13 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
     // =================== Table Transferts ===================
     html+=`<div class="table-container"><table>
-    <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+    <tr><th>Code</th><th>Origin Location</th><th>Expéditeur</th><th>Destination Location</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transferts.forEach(t=>{
       html+=`<tr data-id="${t._id}">
         <td data-label="Code">${t.code}</td>
+        <td data-label="Origin Location">${t.originLocation}</td>
         <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
+        <td data-label="Destination Location">${t.destinationLocation}</td>
         <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
         <td data-label="Montant">${t.amount}</td>
         <td data-label="Frais">${t.fees}</td>
@@ -279,7 +281,11 @@ if(req.session.user.permissions.ecriture){
     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
-    function newTransfert() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const receiver=prompt('Destinataire'); const receiverPhone=prompt('Téléphone destinataire'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && receiver && amount) postData('/transferts/form',{senderFirstName: sender,senderPhone,receiverFirstName: receiver,receiverPhone,amount,fees:parseFloat(prompt('frais')),recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());}
+    function newTransfert() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const receiver=prompt('Destinataire'); const receiverPhone=prompt('Téléphone destinataire'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && receiver && amount) 
+
+postData('/transferts/form',{senderFirstName: sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,fees:parseFloat(prompt('frais')),recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());}
+
+
     async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json(); const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName; const senderPhone=prompt('Téléphone expéditeur',t.senderPhone)||t.senderPhone; const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName; const receiverPhone=prompt('Téléphone destinataire',t.receiverPhone)||t.receiverPhone; const amount=parseFloat(prompt('Montant',t.amount))||t.amount; const currency=prompt('Devise',t.currency)||t.currency; await postData('/transferts/form',{_id:t._id,senderFirstName:sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,currency}); location.reload();}
     async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
     async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces'); if(mode){await postData('/transferts/retirer',{id,mode}); location.reload();}}
