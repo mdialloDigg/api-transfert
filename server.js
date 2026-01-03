@@ -161,7 +161,8 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
       totals[t.destinationLocation][t.currency].amount+=t.amount;
       totals[t.destinationLocation][t.currency].fees+=t.fees;
-      totals[t.destinationLocation][t.currency].recovery+=t.recoveryAmount;
+      totals[t.destinationLocation][t.currency].recovery += (t.amount - t.fees);
+
     });
 
     // ================== HTML ==================
@@ -235,7 +236,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
         <td data-label="Montant">${t.amount}</td>
         <td data-label="Frais">${t.fees}</td>
-        <td data-label="Reçu">${t.recoveryAmount}</td>
+        <td data-label="Reçu">${t.amount - t.fees}</td>
         <td data-label="Devise">${t.currency}</td>
         <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
         <td data-label="Actions">
