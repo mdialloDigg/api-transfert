@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION RENDER READY
+ * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC TELEPHONES ET DROITS
  ******************************************************************/
 
 require('dotenv').config();
@@ -22,28 +22,56 @@ mongoose.connect(mongoUri)
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
   userType: { type: String, enum: ['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
-  senderFirstName:String, senderLastName:String, senderPhone:String, originLocation:String,
-  receiverFirstName:String, receiverLastName:String, receiverPhone:String, destinationLocation:String,
-  amount:Number, fees:Number, recoveryAmount:Number, currency:{type:String,enum:['GNF','EUR','USD','XOF'], default:'GNF'},
-  recoveryMode:String, retraitHistory:[{date:Date,mode:String}], retired:{type:Boolean,default:false},
-  code:{type:String,unique:true}, createdAt:{type:Date,default:Date.now}
+  senderFirstName: String,
+  senderLastName: String,
+  senderPhone: String,
+  originLocation: String,
+  receiverFirstName: String,
+  receiverLastName: String,
+  receiverPhone: String,
+  destinationLocation: String,
+  amount: Number,
+  fees: Number,
+  recoveryAmount: Number,
+  currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
+  recoveryMode: String,
+  retraitHistory: [{ date: Date, mode: String }],
+  retired: { type: Boolean, default: false },
+  code: { type: String, unique: true },
+  createdAt: { type: Date, default: Date.now }
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const authSchema = new mongoose.Schema({
-  username:String, password:String,
-  role:{type:String,enum:['admin','agent'],default:'agent'}
+  username: String,
+  password: String,
+  role: { type: String, enum:['admin','agent'], default:'agent' }
 });
 const Auth = mongoose.model('Auth', authSchema);
 
 const stockSchema = new mongoose.Schema({
-  code:{type:String,unique:true}, sender:String, destination:String, amount:Number, currency:{type:String,default:'GNF'}, createdAt:{type:Date,default:Date.now}
+  code: { type: String, unique: true },
+  sender: String,
+  senderPhone: String,
+  destination: String,
+  destinationPhone: String,
+  amount: Number,
+  currency: { type: String, default:'GNF' },
+  createdAt: { type: Date, default: Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
 
 const stockHistorySchema = new mongoose.Schema({
-  code:String, action:String, stockId:mongoose.Schema.Types.ObjectId,
-  sender:String, destination:String, amount:Number, currency:String, date:{type:Date,default:Date.now}
+  code: String,
+  action: String,
+  stockId: mongoose.Schema.Types.ObjectId,
+  sender: String,
+  senderPhone: String,
+  destination: String,
+  destinationPhone: String,
+  amount: Number,
+  currency: String,
+  date: { type: Date, default: Date.now }
 });
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
@@ -65,9 +93,9 @@ const requireLogin = (req,res,next)=>{
 };
 
 function setPermissions(username){
-  if(username==='a') return { lecture:true,ecriture:false,retrait:true,modification:false,suppression:false,imprimer:true };
-  if(username==='admin2') return { lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true };
-  return { lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true };
+  if(username==='a') return { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true };
+  if(username==='admin2') return { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true };
+  return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
 }
 
 const locations=['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
@@ -141,12 +169,12 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       totals[t.destinationLocation][t.currency].recovery+=t.recoveryAmount;
     });
 
-    // ============ HTML =================
+    // ================== HTML ==================
     let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
     body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
     table{width:100%;border-collapse:collapse;margin-bottom:20px;}
-    th,td{border:1px solid #ccc;padding:8px;text-align:left;}
+    th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top;}
     th{background:#ff8c42;color:white;}
     button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;margin-right:3px;font-size:12px;}
     .modify{background:#28a745;} .delete{background:#dc3545;} .retirer{background:#ff9900;}
@@ -179,70 +207,125 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     }
 
     html+=`</tbody></table>
-    <table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+    <table>
+    <tr>
+      <th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th>
+    </tr>`;
+
     transferts.forEach(t=>{
-      html+=`<tr data-id="${t._id}"><td>${t.code}</td><td>${t.senderFirstName}</td><td>${t.receiverFirstName}</td><td>${t.amount}</td><td>${t.currency}</td><td>${t.retired?'Retiré':'Non retiré'}</td>
-      <td>
-        <button class="modify" onclick="editTransfert('${t._id}')">✏️</button>
-        <button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
-        ${!t.retired?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
-      </td></tr>`;
+      html+=`<tr data-id="${t._id}">
+        <td>${t.code}</td>
+        <td>${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
+        <td>${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
+        <td>${t.amount}</td>
+        <td>${t.currency}</td>
+        <td>${t.retired?'Retiré':'Non retiré'}</td>
+        <td>
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
+          ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+        </td>
+      </tr>`;
     });
 
     html+=`</table>
     <h3>Stocks</h3>
     ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
     <h3>Historique Stocks</h3>
-    <table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+    <table>
+    <tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+
     stockHistory.forEach(h=>{
-      html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td>
-      <td>
-      <button class="modify" onclick="editStock('${h._id}')">✏️</button>
-      <button class="delete" onclick="deleteStock('${h._id}')">❌</button>
-     </td></tr>`;
+      html+=`<tr>
+        <td>${h.date.toLocaleString()}</td>
+        <td>${h.code}</td>
+        <td>${h.action}</td>
+        <td>${h.sender}<br>📞 ${h.senderPhone || '-'}</td>
+        <td>${h.destination}<br>📞 ${h.destinationPhone || '-'}</td>
+        <td>${h.amount}</td>
+        <td>
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="editStock('${h._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${h._id}')">❌</button>`:''}
+        </td>
+      </tr>`;
     });
 
-    // ============ SCRIPT =================
+    // ================== SCRIPT ==================
     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
     function newTransfert(){
       const sender=prompt('Expéditeur');
+      const senderPhone=prompt('Téléphone expéditeur');
       const receiver=prompt('Destinataire');
+      const receiverPhone=prompt('Téléphone destinataire');
       const amount=parseFloat(prompt('Montant'));
       const currency=prompt('Devise','GNF');
-      if(sender && receiver && amount) postData('/transferts/form',{senderFirstName:sender,receiverFirstName:receiver,amount,fees:0,recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());
+      if(sender && receiver && amount) postData('/transferts/form',{
+        senderFirstName: sender,
+        senderPhone,
+        receiverFirstName: receiver,
+        receiverPhone,
+        amount,
+        fees:0,
+        recoveryAmount:amount,
+        currency,
+        userType:'Client'
+      }).then(()=>location.reload());
     }
 
     function newStock(){
       const sender=prompt('Expéditeur');
+      const senderPhone=prompt('Téléphone expéditeur');
       const destination=prompt('Destination');
+      const destinationPhone=prompt('Téléphone destination');
       const amount=parseFloat(prompt('Montant'));
       const currency=prompt('Devise','GNF');
-      if(sender && destination && amount) postData('/stocks/new',{sender,destination,amount,currency}).then(()=>location.reload());
+      if(sender && destination && amount) postData('/stocks/new',{
+        sender, senderPhone, destination, destinationPhone, amount, currency
+      }).then(()=>location.reload());
     }
 
     async function editTransfert(id){
       const t=await (await fetch('/transferts/get/'+id)).json();
       const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName;
+      const senderPhone=prompt('Téléphone expéditeur', t.senderPhone)||t.senderPhone;
       const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName;
+      const receiverPhone=prompt('Téléphone destinataire', t.receiverPhone)||t.receiverPhone;
       const amount=parseFloat(prompt('Montant',t.amount))||t.amount;
       const currency=prompt('Devise',t.currency)||t.currency;
-      await postData('/transferts/form',{_id:t._id,senderFirstName:sender,receiverFirstName:receiver,amount,currency});
+      await postData('/transferts/form',{
+        _id:t._id,
+        senderFirstName: sender,
+        senderPhone,
+        receiverFirstName: receiver,
+        receiverPhone,
+        amount,
+        currency
+      });
       location.reload();
     }
+
     async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
     async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces'); if(mode){await postData('/transferts/retirer',{id,mode}); location.reload();}}
 
     async function editStock(id){
       const s=await (await fetch('/stocks/get/'+id)).json();
       const sender=prompt('Expéditeur',s.sender)||s.sender;
+      const senderPhone=prompt('Téléphone expéditeur', s.senderPhone)||s.senderPhone;
       const destination=prompt('Destination',s.destination)||s.destination;
+      const destinationPhone=prompt('Téléphone destination', s.destinationPhone)||s.destinationPhone;
       const amount=parseFloat(prompt('Montant',s.amount))||s.amount;
       const currency=prompt('Devise',s.currency)||s.currency;
-      await postData('/stocks/new',{_id:s._id,sender,destination,amount,currency});
+      await postData('/stocks/new',{
+        _id:s._id,
+        sender, senderPhone,
+        destination, destinationPhone,
+        amount, currency
+      });
       location.reload();
     }
+
     async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
     </script>`;
 
@@ -318,7 +401,6 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
   }
 });
 
-
 app.post('/stocks/delete', requireLogin, async(req,res)=>{
   try{
     await StockHistory.findByIdAndDelete(req.body.id);
@@ -328,8 +410,6 @@ app.post('/stocks/delete', requireLogin, async(req,res)=>{
     res.status(500).json({error:'Erreur lors de la suppression du stocks'});
   }
 });
-
-
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   try{
