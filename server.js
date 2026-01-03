@@ -397,7 +397,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       senderPhone: transfert.senderPhone,
       destination: transfert.destinationLocation,
       destinationPhone: transfert.receiverPhone,
-      amount: montantRetire,
+      amount: - stock.amount,
       currency: transfert.currency
     }).save();
 
