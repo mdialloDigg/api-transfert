@@ -436,17 +436,17 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
   }
 });
 
-
-app.post('/stocks/delete', requireLogin, async (req, res) => {
-  try {
-    const result = await StockHistory.findByIdAndDelete(req.body.id);
-    if (!result) return res.status(404).json({ error: 'Historique introuvable' });
-    res.json({ ok: true });
-  } catch (err) {
+app.post('/stocks/delete', requireLogin, async(req,res)=>{
+  try{
+    await StockHistory.findByIdAndDelete(req.body.id);
+    res.json({ok:true});
+  } catch(err){
     console.error(err);
-    res.status(500).json({ error: 'Erreur suppression stock' });
+    res.status(500).json({error:'Erreur lors de la suppression du stocks'});
   }
 });
+
+
 
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
