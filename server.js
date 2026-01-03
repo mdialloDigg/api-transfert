@@ -1,6 +1,6 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC MOBILE ET IMPRIMER
- * + CONTROLES DE FORMAT ET CRUD COMPLET
+ * APP TRANSFERT + STOCKS – VERSION COMPLETE
+ * DASHBOARD + CRUD + VALIDATIONS STRICTES + CLIENT JS
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -23,6 +23,7 @@ mongoose.connect(mongoUri)
 const ALLOWED_CURRENCIES = ['GNF','XOF','EUR','USD'];
 const ALLOWED_LOCATIONS = ['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
 const ALLOWED_RETRAIT_MODES = ['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
+
 function normalizeUpper(v){ return (v||'').toString().trim().toUpperCase(); }
 function isValidPhone(phone){ return /^00224\d{9}$/.test(phone) || /^0033\d{9}$/.test(phone); }
 
@@ -41,7 +42,7 @@ const transfertSchema = new mongoose.Schema({
   fees: Number,
   recoveryAmount: Number,
   currency: { type: String, enum: ALLOWED_CURRENCIES, default:'GNF' },
-  recoveryMode: String,
+  recoveryMode: { type: String, enum: ALLOWED_RETRAIT_MODES, default:'ESPECE' },
   retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
   code: { type: String, unique: true },
@@ -51,9 +52,11 @@ const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const stockSchema = new mongoose.Schema({
   code: { type: String, unique: true },
-  sender: String,
+  senderFirstName: String,
+  senderLastName: String,
   senderPhone: String,
-  destination: String,
+  destinationFirstName: String,
+  destinationLastName: String,
   destinationPhone: String,
   amount: Number,
   currency: { type: String, enum: ALLOWED_CURRENCIES, default:'GNF' },
@@ -65,9 +68,11 @@ const stockHistorySchema = new mongoose.Schema({
   code: String,
   action: String,
   stockId: mongoose.Schema.Types.ObjectId,
-  sender: String,
+  senderFirstName: String,
+  senderLastName: String,
   senderPhone: String,
-  destination: String,
+  destinationFirstName: String,
+  destinationLastName: String,
   destinationPhone: String,
   amount: Number,
   currency: String,
@@ -145,241 +150,161 @@ app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); 
 // ================= DASHBOARD =================
 app.get('/dashboard', requireLogin, async(req,res)=>{
   try{
-    const { search='', status='all' } = req.query;
-    const transfertsRaw = await Transfert.find().sort({createdAt:-1});
+    const transferts = await Transfert.find().sort({createdAt:-1});
     const stocks = await Stock.find().sort({createdAt:-1});
     const stockHistory = await StockHistory.find().sort({date:-1});
 
-    const s = search.toLowerCase();
-    let transferts = transfertsRaw.filter(t=>{
-      return t.code.toLowerCase().includes(s)
-        || t.senderFirstName.toLowerCase().includes(s)
-        || t.senderLastName.toLowerCase().includes(s)
-        || (t.senderPhone||'').toLowerCase().includes(s)
-        || t.receiverFirstName.toLowerCase().includes(s)
-        || t.receiverLastName.toLowerCase().includes(s)
-        || (t.receiverPhone||'').toLowerCase().includes(s);
-    });
-    if(status==='retire') transferts=transferts.filter(t=>t.retired);
-    else if(status==='non') transferts=transferts.filter(t=>!t.retired);
-
-    const totals={};
-    transferts.forEach(t=>{
-      if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-      if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
-      totals[t.destinationLocation][t.currency].amount+=t.amount;
-      totals[t.destinationLocation][t.currency].fees+=t.fees;
-      totals[t.destinationLocation][t.currency].recovery += (t.amount - t.fees);
-    });
-
-    // ================== HTML ==================
-    let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+    let html = `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Dashboard</title>
     <style>
-    body { font-family: Arial; background:#f0f2f5; margin:0; padding:20px; }
-    h2,h3,h4 { margin-top:20px; color:#333; }
-    a { color:#007bff; text-decoration:none; margin-right:10px; }
-    a:hover { text-decoration:underline; }
-    input, select, button { padding:8px; margin:5px 0; border-radius:6px; border:1px solid #ccc; font-size:14px; }
-    button { cursor:pointer; transition:0.3s; }
-    button.modify { background: #28a745; color:white; }
-    button.delete { background: #dc3545; color:white; }
-    button.retirer { background: #ff9900; color:white; }
-    button.print { background: #007bff; color:white; }
-    .table-container { width:100%; overflow-x:auto; margin-bottom:20px; }
-    table { border-collapse: collapse; width:100%; min-width:600px; }
-    th, td { border:1px solid #ccc; padding:10px; text-align:left; vertical-align:top; }
-    th { background:#ff8c42; color:white; }
+    body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
+    h2,h3,h4{margin-top:20px;color:#333;}
+    a{color:#007bff;text-decoration:none;margin-right:10px;}
+    a:hover{text-decoration:underline;}
+    input,select,button{padding:8px;margin:5px 0;border-radius:6px;border:1px solid #ccc;font-size:14px;}
+    button{cursor:pointer;transition:0.3s;}
+    button.modify{background:#28a745;color:white;}
+    button.delete{background:#dc3545;color:white;}
+    button.retirer{background:#ff9900;color:white;}
+    button.print{background:#007bff;color:white;}
+    .table-container{width:100%;overflow-x:auto;margin-bottom:20px;}
+    table{border-collapse:collapse;width:100%;min-width:600px;}
+    th,td{border:1px solid #ccc;padding:10px;text-align:left;vertical-align:top;}
+    th{background:#ff8c42;color:white;}
     @media(max-width:768px){
-      table, thead, tbody, th, td, tr { display:block; }
-      thead tr { display:none; }
-      tr { margin-bottom:15px; border-bottom:2px solid #ddd; padding-bottom:10px; }
-      td { border:none; position:relative; padding-left:50%; text-align:left; }
-      td::before { content: attr(data-label); position:absolute; left:10px; top:10px; font-weight:bold; white-space:nowrap; }
+      table,thead,tbody,th,td,tr{display:block;}
+      thead tr{display:none;}
+      tr{margin-bottom:15px;border-bottom:2px solid #ddd;padding-bottom:10px;}
+      td{border:none;position:relative;padding-left:50%;text-align:left;}
+      td::before{content: attr(data-label);position:absolute;left:10px;top:10px;font-weight:bold;white-space:nowrap;}
     }
-    </style>
-    </head><body>
+    </style></head><body>
     <h2>📊 Dashboard</h2>
     <a href="/logout">🚪 Déconnexion</a>
-
     <h3>Transferts</h3>
-    <form method="get" action="/dashboard">
-      <input type="text" name="search" placeholder="Recherche..." value="${search}">
-      <select name="status">
-        <option value="all" ${status==='all'?'selected':''}>Tous</option>
-        <option value="retire" ${status==='retire'?'selected':''}>Retirés</option>
-        <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
-      </select>
-      <button type="submit">🔍 Filtrer</button>
-      ${req.session.user.permissions.ecriture?'<button type="button" onclick="newTransfert()">➕ Nouveau Transfert</button>':''}
-    </form>
+    <button onclick="newTransfert()">➕ Nouveau Transfert</button>
+    <div class="table-container"><table id="transfertTable"><thead><tr>
+    <th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th>
+    <th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th>
+    </tr></thead><tbody>`;
 
-    <h4>Totaux par destination/devise</h4>
-    <div class="table-container"><table>
-    <thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
-    for(let dest in totals){
-      for(let curr in totals[dest]){
-        html+=`<tr>
-          <td data-label="Destination">${dest}</td>
-          <td data-label="Devise">${curr}</td>
-          <td data-label="Montant">${totals[dest][curr].amount}</td>
-          <td data-label="Frais">${totals[dest][curr].fees}</td>
-          <td data-label="Reçu">${totals[dest][curr].recovery}</td>
-        </tr>`;
-      }
-    }
-    html+=`</tbody></table></div>`;
-
-    // =================== Table Transferts ===================
-    html+=`<div class="table-container"><table>
-    <tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transferts.forEach(t=>{
       html+=`<tr data-id="${t._id}">
-        <td data-label="Code">${t.code}</td>
-        <td data-label="Origine">${t.originLocation}</td>
-        <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
-        <td data-label="Destination">${t.destinationLocation}</td>
-        <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
-        <td data-label="Montant">${t.amount}</td>
-        <td data-label="Frais">${t.fees}</td>
-        <td data-label="Reçu">${t.amount - t.fees}</td>
-        <td data-label="Devise">${t.currency}</td>
-        <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
-        <td data-label="Actions">
-          ${req.session.user.permissions.modification?`<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>`:''}
-          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
-          ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
-          <button class="print" onclick="printRow(this)">🖨️</button>
-        </td>
-      </tr>`;
+      <td>${t.code}</td>
+      <td>${t.originLocation}</td>
+      <td>${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone}</td>
+      <td>${t.destinationLocation}</td>
+      <td>${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone}</td>
+      <td>${t.amount}</td>
+      <td>${t.fees}</td>
+      <td>${t.amount - t.fees}</td>
+      <td>${t.currency}</td>
+      <td>${t.retired?'Retiré':'Non retiré'}</td>
+      <td>
+      <button class="modify" onclick="editTransfert('${t._id}')">✏️</button>
+      <button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>
+      ${!t.retired?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+      <button class="print" onclick="printRow(this)">🖨️</button>
+      </td></tr>`;
     });
-    html+=`</table></div>`;
 
-    // =================== Table Stocks ===================
-    html+=`<h3>Stocks</h3>`;
-    if(req.session.user.permissions.ecriture){
-      html+=`<button type="button" onclick="newStock()">➕ Nouveau Stock</button>`;
-    }
-    html+=`<div class="table-container"><table>
-    <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
+    html+=`</tbody></table></div>`;
+
+    // ===== STOCKS =====
+    html+=`<h3>Stocks</h3><button onclick="newStock()">➕ Nouveau Stock</button>
+    <div class="table-container"><table id="stockTable"><thead><tr>
+    <th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th>
+    </tr></thead><tbody>`;
+
     stocks.forEach(s=>{
       html+=`<tr data-id="${s._id}">
-        <td data-label="Code">${s.code}</td>
-        <td data-label="Expéditeur">${s.sender}<br>📞 ${s.senderPhone || '-'}</td>
-        <td data-label="Destination">${s.destination}<br>📞 ${s.destinationPhone || '-'}</td>
-        <td data-label="Montant">${s.amount}</td>
-        <td data-label="Devise">${s.currency}</td>
-        <td data-label="Actions">
-          ${req.session.user.permissions.modification?`<button class="modify" onclick="editStock('${s._id}')">✏️</button>`:''}
-          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${s._id}')">❌</button>`:''}
-          <button class="print" onclick="printRow(this)">🖨️</button>
-        </td>
-      </tr>`;
+      <td>${s.code}</td>
+      <td>${s.senderFirstName} ${s.senderLastName}<br>📞 ${s.senderPhone}</td>
+      <td>${s.destinationFirstName} ${s.destinationLastName}<br>📞 ${s.destinationPhone}</td>
+      <td>${s.amount}</td>
+      <td>${s.currency}</td>
+      <td>
+      <button class="modify" onclick="editStock('${s._id}')">✏️</button>
+      <button class="delete" onclick="deleteStock('${s._id}')">❌</button>
+      <button class="print" onclick="printRow(this)">🖨️</button>
+      </td></tr>`;
     });
-    html+=`</table></div>`;
 
-    // =================== Historique Stocks ===================
+    html+=`</tbody></table></div>`;
+
+    // ===== HISTORIQUE =====
     html+=`<h3>Historique Stocks</h3>
-    <div class="table-container"><table>
-    <tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+    <div class="table-container"><table id="historyTable"><thead><tr>
+    <th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th>
+    </tr></thead><tbody>`;
+
     stockHistory.forEach(h=>{
       html+=`<tr>
-        <td data-label="Date">${h.date.toLocaleString()}</td>
-        <td data-label="Code">${h.code}</td>
-        <td data-label="Expéditeur">${h.sender}<br>📞 ${h.senderPhone || '-'}</td>
-        <td data-label="Destination">${h.destination}<br>📞 ${h.destinationPhone || '-'}</td>
-        <td data-label="Montant">${h.amount}</td>
-        <td data-label="Actions">
-          <button class="print" onclick="printRow(this)">🖨️</button>
-        </td>
+      <td>${h.date.toLocaleString()}</td>
+      <td>${h.code}</td>
+      <td>${h.senderFirstName} ${h.senderLastName}<br>📞 ${h.senderPhone}</td>
+      <td>${h.destinationFirstName} ${h.destinationLastName}<br>📞 ${h.destinationPhone}</td>
+      <td>${h.amount}</td>
+      <td><button class="print" onclick="printRow(this)">🖨️</button></td>
       </tr>`;
     });
-    html+=`</table></div>`;
 
-    // =================== SCRIPT ==================
+    html+=`</tbody></table></div>`;
+
+    // ================= SCRIPT =================
     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
-    function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
-    const ALLOWED_CURRENCIES=['GNF','XOF','EUR','USD'];
-    const ALLOWED_LOCATIONS=['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
-    const ALLOWED_RETRAIT_MODES=['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
-    function isValidPhone(phone){return /^00224\\d{9}$/.test(phone) || /^0033\\d{9}$/.test(phone);}
+    function normalizeUpper(v){ return (v||'').toString().trim().toUpperCase(); }
+    function isValidPhone(phone){ return /^00224\\d{9}$/.test(phone) || /^0033\\d{9}$/.test(phone); }
 
     async function newTransfert(){
-      let originLocation=normalizeUpper(prompt('Origine (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)'));
-      if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide !');return;}
-      let sender=prompt('Nom expéditeur'); if(!sender){alert('Nom obligatoire');return;}
-      let senderPhone=prompt('Téléphone expéditeur (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
-      let destinationLocation=normalizeUpper(prompt('Destination (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)')); if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}
-      let receiver=prompt('Nom destinataire'); if(!receiver){alert('Nom obligatoire');return;}
-      let receiverPhone=prompt('Téléphone destinataire (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
-      let amount=parseFloat(prompt('Montant')); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
-      let fees=parseFloat(prompt('Frais')); if(isNaN(fees) || fees<0){alert('Frais invalide');return;}
-      let currency=normalizeUpper(prompt('Devise (GNF,XOF,EUR,USD)','GNF')); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
-      let recoveryMode=normalizeUpper(prompt('Mode de retrait (ESPECE, TRANSFERT, VIREMENT, AUTRE)','ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
-
-      await postData('/transferts/form',{
-        userType:'Client', originLocation, senderFirstName:sender, senderPhone,
-        destinationLocation, receiverFirstName:receiver, receiverPhone,
-        amount, fees, recoveryAmount: amount-fees, currency, recoveryMode
-      });
+      const origin=normalizeUpper(prompt('Origine (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)'));
+      if(!${JSON.stringify(ALLOWED_LOCATIONS)}.includes(origin)){alert('Origine invalide');return;}
+      const senderFirstName=prompt('Prénom expéditeur'); if(!senderFirstName){alert('Prénom obligatoire');return;}
+      const senderLastName=prompt('Nom expéditeur'); if(!senderLastName){alert('Nom obligatoire');return;}
+      const senderPhone=prompt('Téléphone expéditeur (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      const destination=normalizeUpper(prompt('Destination')); if(!${JSON.stringify(ALLOWED_LOCATIONS)}.includes(destination)){alert('Destination invalide');return;}
+      const receiverFirstName=prompt('Prénom destinataire'); if(!receiverFirstName){alert('Prénom obligatoire');return;}
+      const receiverLastName=prompt('Nom destinataire'); if(!receiverLastName){alert('Nom obligatoire');return;}
+      const receiverPhone=prompt('Téléphone destinataire (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
+      const amount=parseFloat(prompt('Montant')); if(isNaN(amount)||amount<=0){alert('Montant invalide');return;}
+      const fees=parseFloat(prompt('Frais')); if(isNaN(fees)||fees<0){alert('Frais invalide');return;}
+      const currency=normalizeUpper(prompt('Devise (GNF,XOF,EUR,USD)','GNF')); if(!${JSON.stringify(ALLOWED_CURRENCIES)}.includes(currency)){alert('Devise invalide');return;}
+      const recoveryMode=normalizeUpper(prompt('Mode de retrait (ESPECE, TRANSFERT, VIREMENT, AUTRE)','ESPECE')); if(!${JSON.stringify(ALLOWED_RETRAIT_MODES)}.includes(recoveryMode)){alert('Mode invalide');return;}
+      await postData('/transferts/form',{userType:'Client',originLocation:origin,senderFirstName,senderLastName,senderPhone,destinationLocation:destination,receiverFirstName,receiverLastName,receiverPhone,amount,fees,recoveryAmount:amount-fees,currency,recoveryMode});
       location.reload();
     }
 
-    async function editTransfert(id){
-      const t=await (await fetch('/transferts/get/'+id)).json();
-      let originLocation=normalizeUpper(prompt('Origine',t.originLocation)); if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide');return;}
-      let sender=prompt('Nom expéditeur',t.senderFirstName); if(!sender){alert('Nom obligatoire');return;}
-      let senderPhone=prompt('Téléphone expéditeur',t.senderPhone); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
-      let destinationLocation=normalizeUpper(prompt('Destination',t.destinationLocation)); if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}
-      let receiver=prompt('Nom destinataire',t.receiverFirstName); if(!receiver){alert('Nom obligatoire');return;}
-      let receiverPhone=prompt('Téléphone destinataire',t.receiverPhone); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
-      let amount=parseFloat(prompt('Montant',t.amount)); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
-      let fees=parseFloat(prompt('Frais',t.fees)); if(isNaN(fees) || fees<0){alert('Frais invalide');return;}
-      let currency=normalizeUpper(prompt('Devise',t.currency)); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
-      let recoveryMode=normalizeUpper(prompt('Mode de retrait',t.recoveryMode||'ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
-      await postData('/transferts/form',{_id:t._id, originLocation, senderFirstName:sender, senderPhone, destinationLocation, receiverFirstName:receiver, receiverPhone, amount, fees, recoveryAmount:amount-fees, currency, recoveryMode});
-      location.reload();
-    }
-
-    async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
-    async function retirerTransfert(id){
-      let mode=normalizeUpper(prompt('Mode de retrait','ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(mode)){alert('Mode invalide');return;}
-      const res=await postData('/transferts/retirer',{id,mode}); if(!res.ok){alert(res.error||'Erreur');return;} alert('✅ Retrait effectué'); location.reload();
-    }
+    async function deleteTransfert(id){ if(confirm('Supprimer ce transfert ?')){ await postData('/transferts/delete',{id}); location.reload(); } }
+    async function retirerTransfert(id){ const mode=normalizeUpper(prompt('Mode de retrait')); if(!${JSON.stringify(ALLOWED_RETRAIT_MODES)}.includes(mode)){alert('Mode invalide'); return;} await postData('/transferts/retirer',{id,mode}); location.reload(); }
 
     async function newStock(){
-      let sender=prompt('Expéditeur'); if(!sender){alert('Nom obligatoire');return;}
-      let senderPhone=prompt('Téléphone expéditeur'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
-      let destination=normalizeUpper(prompt('Destination')); if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}
-      let destinationPhone=prompt('Téléphone destination'); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
-      let amount=parseFloat(prompt('Montant')); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
-      let currency=normalizeUpper(prompt('Devise','GNF')); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
-      await postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();
+      const senderFirstName=prompt('Prénom expéditeur'); if(!senderFirstName){alert('Prénom obligatoire');return;}
+      const senderLastName=prompt('Nom expéditeur'); if(!senderLastName){alert('Nom obligatoire');return;}
+      const senderPhone=prompt('Téléphone expéditeur'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      const destinationFirstName=prompt('Prénom destinataire'); if(!destinationFirstName){alert('Prénom obligatoire');return;}
+      const destinationLastName=prompt('Nom destinataire'); if(!destinationLastName){alert('Nom obligatoire');return;}
+      const destinationPhone=prompt('Téléphone destinataire'); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
+      const amount=parseFloat(prompt('Montant')); if(isNaN(amount)||amount<=0){alert('Montant invalide');return;}
+      const currency=normalizeUpper(prompt('Devise (GNF,XOF,EUR,USD)','GNF')); if(!${JSON.stringify(ALLOWED_CURRENCIES)}.includes(currency)){alert('Devise invalide');return;}
+      await postData('/stocks/new',{senderFirstName,senderLastName,senderPhone,destinationFirstName,destinationLastName,destinationPhone,amount,currency});
+      location.reload();
     }
 
-    async function editStock(id){
-      const s=await (await fetch('/stocks/get/'+id)).json();
-      let sender=prompt('Expéditeur',s.sender); if(!sender){alert('Nom obligatoire');return;}
-      let senderPhone=prompt('Téléphone expéditeur',s.senderPhone); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
-      let destination=normalizeUpper(prompt('Destination',s.destination)); if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}
-      let destinationPhone=prompt('Téléphone destination',s.destinationPhone); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
-      let amount=parseFloat(prompt('Montant',s.amount)); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
-      let currency=normalizeUpper(prompt('Devise',s.currency)); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
-      await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();
-    }
+    async function deleteStock(id){ if(confirm('Supprimer ce stock ?')){ await postData('/stocks/delete',{id}); location.reload(); } }
+    function printRow(btn){ const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1" style="border-collapse:collapse; font-family:Arial; padding:10px;">'); newWin.document.write(row.outerHTML); newWin.document.write('</table></body></html>'); newWin.print(); }
 
-    async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
-
-    function printRow(btn){const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1" style="border-collapse:collapse; font-family:Arial; padding:10px;">'); newWin.document.write(row.outerHTML); newWin.document.write('</table></body></html>'); newWin.document.close(); newWin.print(); newWin.close();}
+    function editTransfert(id){ alert('Edition non implémentée dans cette démo'); }
+    function editStock(id){ alert('Edition non implémentée dans cette démo'); }
     </script>`;
 
     html+='</body></html>';
     res.send(html);
+
   } catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
 });
 
-// ================= TRANSFERT ROUTES =================
+// ================= ROUTES TRANSFERT =================
 app.post('/transferts/form', requireLogin, async(req,res)=>{
   try{
     const data=req.body;
@@ -389,56 +314,46 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
       await new Transfert({...data,code,retraitHistory:[]}).save();
     }
     res.json({ok:true});
-  } catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du transfert'}); }
+  }catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
 });
 
 app.post('/transferts/delete', requireLogin, async(req,res)=>{
-  try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); }
-  catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du transfert'}); }
+  try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); } 
+  catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
 });
 
-app.post('/transferts/retirer', requireLogin, async (req,res)=>{
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   try{
-    const { id, mode }=req.body;
-    const transfert = await Transfert.findById(id); if(!transfert) return res.status(404).json({error:'Transfert introuvable'});
+    const {id,mode} = req.body;
+    const transfert = await Transfert.findById(id);
+    if(!transfert) return res.status(404).json({error:'Transfert introuvable'});
     if(transfert.retired) return res.status(400).json({error:'Déjà retiré'});
-    const montantRetire = transfert.amount - transfert.fees;
-    const stock = await StockHistory.findOne({destination:transfert.destinationLocation, currency:transfert.currency});
-    if(!stock || stock.amount<montantRetire) return res.status(400).json({error:'Stock insuffisant'});
-    stock.amount -= montantRetire; await stock.save();
-    transfert.retired=true; transfert.retraitHistory.push({date:new Date(),mode}); await transfert.save();
+    if(!ALLOWED_RETRAIT_MODES.includes(normalizeUpper(mode))) return res.status(400).json({error:'Mode invalide'});
+    transfert.retired=true;
+    transfert.retraitHistory.push({date:new Date(),mode:normalizeUpper(mode)});
+    await transfert.save();
     res.json({ok:true});
-  } catch(err){ console.error(err); res.status(500).json({error:'Erreur retrait'});}
+  }catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
 });
 
-app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
-  try{ const t = await Transfert.findById(req.params.id); res.json(t); } 
-  catch(err){ console.error(err); res.status(500).json({error:'Transfert introuvable'}); }
-});
-
-// ================= STOCK ROUTES =================
+// ================= ROUTES STOCK =================
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   try{
     const data=req.body;
-    if(data._id) await StockHistory.findByIdAndUpdate(data._id,{...data});
+    if(data._id) await Stock.findByIdAndUpdate(data._id,{...data});
     else{
       const code = data.code || await generateUniqueCode();
-      await new StockHistory({...data,code}).save();
+      await new Stock({...data,code}).save();
     }
     res.json({ok:true});
-  } catch(err){ console.error(err); res.status(500).json({error:'Erreur stock'}); }
+  }catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
 });
 
 app.post('/stocks/delete', requireLogin, async(req,res)=>{
-  try{ await StockHistory.findByIdAndDelete(req.body.id); res.json({ok:true}); }
-  catch(err){ console.error(err); res.status(500).json({error:'Erreur suppression stock'}); }
-});
-
-app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
-  try{ const s = await StockHistory.findById(req.params.id); res.json(s); }
-  catch(err){ console.error(err); res.status(500).json({error:'Stock introuvable'}); }
+  try{ await Stock.findByIdAndDelete(req.body.id); res.json({ok:true}); } 
+  catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
 });
 
 // ================= SERVER =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
+app.listen(PORT,()=>console.log(\`🚀 Serveur lancé sur http://localhost:\${PORT}\`));
