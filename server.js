@@ -202,7 +202,8 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     <h3>Historique Stocks</h3>
     <table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
     stockHistory.forEach(h=>{
-      html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
+      html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td>
+      <td><button onclick="editStock('${h._id}')">✏️</button><button onclick="deleteStock('${h._id}')">❌</button></td></tr>`;
     });
 
     // ============ SCRIPT =================
@@ -312,7 +313,7 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
     if(data._id) await Stock.findByIdAndUpdate(data._id,{...data});
     else{
       const code = data.code || await generateUniqueCode();
-      await new Stock({...data,code}).save();
+      await new StockHistory({...data,code}).save();
     }
     res.json({ok:true});
   } catch(err){
