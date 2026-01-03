@@ -227,13 +227,14 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
     // =================== Table Transferts ===================
     html+=`<div class="table-container"><table>
-    <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+    <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transferts.forEach(t=>{
       html+=`<tr data-id="${t._id}">
         <td data-label="Code">${t.code}</td>
         <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
         <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
         <td data-label="Montant">${t.amount}</td>
+        <td data-label="Frais">${t.fees}</td>
         <td data-label="Reçu">${t.recoveryAmount}</td>
         <td data-label="Devise">${t.currency}</td>
         <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
