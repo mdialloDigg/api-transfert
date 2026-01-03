@@ -377,7 +377,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     }
 
     // 3️⃣ Débiter le stock
-    stock.amount =stock.amount - montantRetire;
+    stock.amount = - montantRetire;
     await stock.save();
 
     // 4️⃣ Marquer le transfert comme retiré
@@ -397,7 +397,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       senderPhone: transfert.senderPhone,
       destination: transfert.destinationLocation,
       destinationPhone: transfert.receiverPhone,
-      amount: - stock.amount,
+      amount: stock.amount,
       currency: transfert.currency
     }).save();
 
