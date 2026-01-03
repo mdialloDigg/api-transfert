@@ -268,7 +268,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     // ================== Stock History ==================
     html+=`<h3>Historique Stocks</h3>
     <div class="table-container"><table>
-    <tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
+    <tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
     stockHistory.forEach(h=>{
       html+=`<tr>
         <td data-label="Date">${new Date(h.date).toLocaleString()}</td>
@@ -276,6 +276,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         <td data-label="Expéditeur">${h.sender}<br>📞 ${h.senderPhone||'-'}</td>
         <td data-label="Destination">${h.destination}<br>📞 ${h.destinationPhone||'-'}</td>
         <td data-label="Montant">${h.amount}</td>
+        <td data-label="Devise">${h.currency}</td>
       </tr>`;
     });
     html+=`</table></div>`;
