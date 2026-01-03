@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION COMPLETE FINALE
+ * APP TRANSFERT + STOCKS – VERSION FINALE TOUT EN UN
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -75,8 +75,6 @@ const requireLogin = (req,res,next)=>{
 };
 
 function setPermissions(username){
-  if(username==='a') return { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true };
-  if(username==='admin2') return { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true };
   return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
 }
 
@@ -146,7 +144,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       totalsStocks[s.destination][s.currency].amount += s.amount;
     });
 
-    // HTML
+    // =================== HTML ===================
     let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
     body{font-family:Arial;margin:0;padding:20px;background:#f0f2f5;}
@@ -158,6 +156,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     .delete{background:#dc3545;}
     .retirer{background:#ff9900;}
     .print{background:#007bff;}
+    .newBtn{background:#6f42c1;}
     .table-container{width:100%;overflow-x:auto;margin-bottom:20px;}
     table{border-collapse:collapse;width:100%;}
     th,td{border:1px solid #ccc;padding:10px;text-align:left;}
@@ -169,11 +168,17 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       td{border:none;position:relative;padding-left:50%;text-align:left;}
       td::before{content:attr(data-label);position:absolute;left:10px;top:10px;font-weight:bold;white-space:nowrap;}
     }
+    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
+    .modal-content{background:white;padding:20px;border-radius:10px;max-width:400px;width:90%;}
+    .modal-content input, .modal-content select{width:100%;padding:8px;margin:5px 0;border-radius:6px;border:1px solid #ccc;}
     </style></head><body>
-    <h2>📊 Dashboard</h2><a href="/logout">🚪 Déconnexion</a>`;
+    <h2>📊 Dashboard</h2><a href="/logout">🚪 Déconnexion</a>
+    <button class="newBtn" onclick="openTransfertModal()">➕ Nouveau Transfert</button>
+    <button class="newBtn" onclick="openStockModal()">➕ Nouveau Stock</button>
 
-    // Tables transferts
-    html+=`<h3>Transferts</h3><div class="table-container"><table>
+    <!-- Transferts -->
+    <h3>Transferts</h3>
+    <div class="table-container"><table>
     <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transfertsRaw.forEach(t=>{
       html+=`<tr data-id="${t._id}">
@@ -194,8 +199,9 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     });
     html+=`</table></div>`;
 
-    // Tables stocks
-    html+=`<h3>Stocks</h3><div class="table-container"><table>
+    // Stocks
+    html+=`<h3>Stocks</h3>
+    <div class="table-container"><table>
     <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
     stocks.forEach(s=>{
       html+=`<tr data-id="${s._id}">
@@ -212,24 +218,132 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     });
     html+=`</table></div>`;
 
-    // Script CRUD + imprimer
+    // =================== Modals ===================
+    html+=`
+    <div id="transfertModal" class="modal">
+      <div class="modal-content">
+        <h3 id="transfertModalTitle">Nouveau Transfert</h3>
+        <form id="transfertForm">
+          <input type="hidden" id="transfertId">
+          <input placeholder="Nom expéditeur" id="senderFirstName" required>
+          <input placeholder="Téléphone expéditeur" id="senderPhone" required>
+          <input placeholder="Origine" id="originLocation" required>
+          <input placeholder="Nom destinataire" id="receiverFirstName" required>
+          <input placeholder="Téléphone destinataire" id="receiverPhone" required>
+          <input placeholder="Destination" id="destinationLocation" required>
+          <input type="number" placeholder="Montant" id="amount" required>
+          <input type="number" placeholder="Frais" id="fees" required>
+          <input placeholder="Devise" id="currency" required value="GNF">
+          <input placeholder="Mode de retrait" id="recoveryMode" required value="ESPECE">
+          <button type="submit">Enregistrer</button>
+          <button type="button" onclick="closeTransfertModal()">Annuler</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="stockModal" class="modal">
+      <div class="modal-content">
+        <h3 id="stockModalTitle">Nouveau Stock</h3>
+        <form id="stockForm">
+          <input type="hidden" id="stockId">
+          <input placeholder="Expéditeur" id="stockSender" required>
+          <input placeholder="Téléphone expéditeur" id="stockSenderPhone" required>
+          <input placeholder="Destination" id="stockDestination" required>
+          <input placeholder="Téléphone destination" id="stockDestinationPhone" required>
+          <input type="number" placeholder="Montant" id="stockAmount" required>
+          <input placeholder="Devise" id="stockCurrency" value="GNF" required>
+          <button type="submit">Enregistrer</button>
+          <button type="button" onclick="closeStockModal()">Annuler</button>
+        </form>
+      </div>
+    </div>
+    `;
+
+    // =================== SCRIPT ===================
     html+=`<script>
-    async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
-    function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
     const ALLOWED_CURRENCIES=['GNF','XOF','EUR','USD'];
     const ALLOWED_LOCATIONS=['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
     const ALLOWED_RETRAIT_MODES=['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
+
+    function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
     function isValidPhone(phone){return /^00224\\d{9}$/.test(phone)||/^0033\\d{9}$/.test(phone);}
     function printRow(btn){const row=btn.closest('tr'); const w=window.open(); w.document.write("<table border=1>"+row.outerHTML+"</table>"); w.document.close(); w.print();}
 
-    async function deleteTransfert(id){if(confirm("Supprimer ?")){await postData("/transferts/delete",{id}); location.reload();}}
-    async function deleteStock(id){if(confirm("Supprimer ?")){await postData("/stocks/delete",{id}); location.reload();}}
+    async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
+    function openTransfertModal(){document.getElementById('transfertModal').style.display='flex';}
+    function closeTransfertModal(){document.getElementById('transfertModal').style.display='none';document.getElementById('transfertForm').reset();document.getElementById('transfertId').value='';}
+    function openStockModal(){document.getElementById('stockModal').style.display='flex';}
+    function closeStockModal(){document.getElementById('stockModal').style.display='none';document.getElementById('stockForm').reset();document.getElementById('stockId').value='';}
+
+    document.getElementById('transfertForm').addEventListener('submit', async function(e){
+      e.preventDefault();
+      const data={
+        _id:document.getElementById('transfertId').value,
+        senderFirstName:document.getElementById('senderFirstName').value,
+        senderPhone:document.getElementById('senderPhone').value,
+        originLocation:document.getElementById('originLocation').value,
+        receiverFirstName:document.getElementById('receiverFirstName').value,
+        receiverPhone:document.getElementById('receiverPhone').value,
+        destinationLocation:document.getElementById('destinationLocation').value,
+        amount:parseFloat(document.getElementById('amount').value),
+        fees:parseFloat(document.getElementById('fees').value),
+        recoveryAmount:parseFloat(document.getElementById('amount').value)-parseFloat(document.getElementById('fees').value),
+        currency:document.getElementById('currency').value,
+        recoveryMode:document.getElementById('recoveryMode').value
+      };
+      await postData('/transferts/form',data);
+      location.reload();
+    });
+
+    document.getElementById('stockForm').addEventListener('submit', async function(e){
+      e.preventDefault();
+      const data={
+        _id:document.getElementById('stockId').value,
+        sender:document.getElementById('stockSender').value,
+        senderPhone:document.getElementById('stockSenderPhone').value,
+        destination:document.getElementById('stockDestination').value,
+        destinationPhone:document.getElementById('stockDestinationPhone').value,
+        amount:parseFloat(document.getElementById('stockAmount').value),
+        currency:document.getElementById('stockCurrency').value
+      };
+      await postData('/stocks/new',data);
+      location.reload();
+    });
+
+    async function editTransfert(id){
+      const t = await (await fetch('/transferts/get/'+id)).json();
+      document.getElementById('transfertId').value=t._id;
+      document.getElementById('senderFirstName').value=t.senderFirstName;
+      document.getElementById('senderPhone').value=t.senderPhone;
+      document.getElementById('originLocation').value=t.originLocation;
+      document.getElementById('receiverFirstName').value=t.receiverFirstName;
+      document.getElementById('receiverPhone').value=t.receiverPhone;
+      document.getElementById('destinationLocation').value=t.destinationLocation;
+      document.getElementById('amount').value=t.amount;
+      document.getElementById('fees').value=t.fees;
+      document.getElementById('currency').value=t.currency;
+      document.getElementById('recoveryMode').value=t.recoveryMode;
+      document.getElementById('transfertModalTitle').innerText='Modifier Transfert';
+      openTransfertModal();
+    }
+
+    async function editStock(id){
+      const s = await (await fetch('/stocks/get/'+id)).json();
+      document.getElementById('stockId').value=s._id;
+      document.getElementById('stockSender').value=s.sender;
+      document.getElementById('stockSenderPhone').value=s.senderPhone;
+      document.getElementById('stockDestination').value=s.destination;
+      document.getElementById('stockDestinationPhone').value=s.destinationPhone;
+      document.getElementById('stockAmount').value=s.amount;
+      document.getElementById('stockCurrency').value=s.currency;
+      document.getElementById('stockModalTitle').innerText='Modifier Stock';
+      openStockModal();
+    }
+
+    async function deleteTransfert(id){if(confirm("Supprimer ce transfert ?")){await postData("/transferts/delete",{id}); location.reload();}}
+    async function deleteStock(id){if(confirm("Supprimer ce stock ?")){await postData("/stocks/delete",{id}); location.reload();}}
     async function retirerTransfert(id){const mode=prompt("Mode de retrait","ESPECE");if(!ALLOWED_RETRAIT_MODES.includes(normalizeUpper(mode))){alert("Mode invalide"); return;} await postData("/transferts/retirer",{id,mode:normalizeUpper(mode)}); location.reload();}
-
-    async function editTransfert(id){const t=await (await fetch("/transferts/get/"+id)).json();const sender=prompt("Nom expéditeur",t.senderFirstName);const senderPhone=prompt("Téléphone",t.senderPhone);const receiver=prompt("Nom destinataire",t.receiverFirstName);const receiverPhone=prompt("Téléphone destinataire",t.receiverPhone);const amount=parseFloat(prompt("Montant",t.amount));const fees=parseFloat(prompt("Frais",t.fees));const currency=prompt("Devise",t.currency);const recoveryMode=prompt("Mode retrait",t.recoveryMode||"ESPECE"); await postData("/transferts/form",{_id:t._id,senderFirstName:sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,fees,recoveryAmount:amount-fees,currency,recoveryMode}); location.reload();}
-
-    async function editStock(id){const s=await (await fetch("/stocks/get/"+id)).json();const sender=prompt("Expéditeur",s.sender);const senderPhone=prompt("Téléphone",s.senderPhone);const destination=prompt("Destination",s.destination);const destinationPhone=prompt("Téléphone destination",s.destinationPhone);const amount=parseFloat(prompt("Montant",s.amount));const currency=prompt("Devise",s.currency); await postData("/stocks/new",{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();}
     </script>`;
 
     html+='</body></html>';
