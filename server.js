@@ -369,18 +369,69 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
   catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du transfert'}); }
 });
 
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  try{
-    const {id,mode}=req.body;
-    const t=await Transfert.findById(id);
-    if(!t) return res.status(404).json({error:'Transfert introuvable'});
-    if(t.retired) return res.status(400).json({error:'Déjà retiré'});
-    t.retired=true;
-    t.retraitHistory.push({date:new Date(),mode});
-    await t.save();
-    res.json({ok:true});
-  }catch(err){console.error(err);res.status(500).json({error:'Erreur lors du retrait'});}
+app.post('/transferts/retirer', requireLogin, async (req, res) => {
+  try {
+    const { id, mode } = req.body;
+
+    // 1️⃣ Récupérer le transfert
+    const transfert = await Transfert.findById(id);
+    if (!transfert) {
+      return res.status(404).json({ error: 'Transfert introuvable' });
+    }
+
+    if (transfert.retired) {
+      return res.status(400).json({ error: 'Déjà retiré' });
+    }
+
+    const montantRetire = transfert.amount - transfert.fees;
+
+    // 2️⃣ Trouver le stock correspondant
+    const stock = await StockHistory.findOne({
+      destination: transfert.destinationLocation,
+      currency: transfert.currency
+    });
+
+    if (!stock) {
+      return res.status(400).json({ error: 'Stock introuvable' });
+    }
+
+    if (stock.amount < montantRetire) {
+      return res.status(400).json({ error: 'Stock insuffisant' });
+    }
+
+    // 3️⃣ Débiter le stock
+    stock.amount = stock.amount - montantRetire;
+    await stock.save();
+
+    // 4️⃣ Marquer le transfert comme retiré
+    transfert.retired = true;
+    transfert.retraitHistory.push({
+      date: new Date(),
+      mode
+    });
+    await transfert.save();
+
+    // 5️⃣ Historique
+    // await new StockHistory({
+     //  code: transfert.code,
+       //action: 'RETRAIT',
+       //stockId: stock._id,
+       //sender: `${transfert.senderFirstName} ${transfert.senderLastName}`,
+       //senderPhone: transfert.senderPhone,
+       //destination: transfert.destinationLocation,
+       //destinationPhone: transfert.receiverPhone,
+       //amount: -montantRetire,
+       //currency: transfert.currency
+    // }).save();
+
+    res.json({ ok: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur lors du retrait' });
+  }
 });
+
 
 app.get('/transferts/get/:id', requireLogin, async(req,res)=>{ try{ const t=await Transfert.findById(req.params.id); res.json(t); }catch(err){res.status(500).json({error:'Transfert introuvable'});} });
 
