@@ -192,15 +192,15 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     html+=`</table>
     <h3>Stocks</h3>
     ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
-    <table><tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+    <table><tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
     stocks.forEach(s=>{
-      html+=`<tr data-id="${s._id}"><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td>
+      html+=`<tr data-id="${s._id}"><td>${s.code}</td><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td>
       <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`;
     });
 
     html+=`</table>
     <h3>Historique Stocks</h3>
-    <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Action</th></tr>`;
+    <table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
     stockHistory.forEach(h=>{
       html+=`<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td>
       <td>
@@ -325,18 +325,18 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
   }
 });
 
+
 app.post('/stocks/delete', requireLogin, async(req,res)=>{
   try{
-    const s=await StockHistory.findByIdAndDelete(req.body.id);
-    if(s){
-      await new StockHistory({action:'Suppression',stockId:s._id,sender:s.sender,destination:s.destination,amount:s.amount,currency:s.currency}).save();
-    }
+    await stocks.findByIdAndDelete(req.body.id);
     res.json({ok:true});
   } catch(err){
     console.error(err);
-    res.status(500).json({error:'Erreur lors de la suppression du stock'});
+    res.status(500).json({error:'Erreur lors de la suppression du stocks'});
   }
 });
+
+
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   try{
