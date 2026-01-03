@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION COMPLETE
+ * APP TRANSFERT + STOCKS – VERSION COMPLETE INTERACTIVE
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -242,13 +242,127 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     });
     html+=`</table>`;
 
-    // Modals, script et code complet
-    html+=`<script>
-      async function printRow(btn){ const row=btn.closest('tr'); const w=window.open(''); w.document.write('<html><body><table border="1">'+row.outerHTML+'</table></body></html>'); w.document.close(); w.print(); }
-      async function deleteTransfert(id){ if(confirm('Supprimer ?')){ await fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); location.reload(); } }
-      async function retirerTransfert(id){ const mode=prompt('Mode de retrait','ESPECE'); await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})}); location.reload(); }
-      async function deleteStock(id){ if(confirm('Supprimer ?')){ await fetch('/stocks/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); location.reload(); } }
-      // Les fonctions openModal, saveTransfert, saveStock, editTransfert, editStock doivent être ajoutées ici pour gérer les formulaires modaux avec code généré.
+    // Modals et Script complet
+    html+=`<!-- Modals -->
+    <div id="transfertModal" class="modal">
+      <div class="modal-content">
+        <h3>Transfert</h3>
+        <input type="hidden" id="transfertId">
+        <label>Code</label><input type="text" id="transfertCode" readonly>
+        <label>Origine</label><input type="text" id="originLocation">
+        <label>Expéditeur</label><input type="text" id="senderFirstName">
+        <label>Téléphone</label><input type="text" id="senderPhone">
+        <label>Destination</label><input type="text" id="destinationLocation">
+        <label>Destinataire</label><input type="text" id="receiverFirstName">
+        <label>Téléphone</label><input type="text" id="receiverPhone">
+        <label>Montant</label><input type="number" id="amount">
+        <label>Frais</label><input type="number" id="fees">
+        <label>Devise</label><select id="currency">
+          <option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option>
+        </select>
+        <label>Mode de retrait</label><select id="recoveryMode">
+          <option>ESPECE</option><option>TRANSFERT</option><option>VIREMENT</option><option>AUTRE</option>
+        </select>
+        <button onclick="saveTransfert()">Enregistrer</button>
+        <button onclick="closeModal('transfertModal')">Fermer</button>
+      </div>
+    </div>
+
+    <div id="stockModal" class="modal">
+      <div class="modal-content">
+        <h3>Stock</h3>
+        <input type="hidden" id="stockId">
+        <label>Code</label><input type="text" id="stockCode" readonly>
+        <label>Expéditeur</label><input type="text" id="stockSender">
+        <label>Téléphone</label><input type="text" id="stockSenderPhone">
+        <label>Destination</label><input type="text" id="stockDestination">
+        <label>Téléphone</label><input type="text" id="stockDestinationPhone">
+        <label>Montant</label><input type="number" id="stockAmount">
+        <label>Devise</label><select id="stockCurrency">
+          <option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option>
+        </select>
+        <button onclick="saveStock()">Enregistrer</button>
+        <button onclick="closeModal('stockModal')">Fermer</button>
+      </div>
+    </div>
+
+    <script>
+    async function printRow(btn){ const row=btn.closest('tr'); const w=window.open(''); w.document.write('<html><body><table border="1">'+row.outerHTML+'</table></body></html>'); w.document.close(); w.print(); }
+
+    function closeModal(id){ document.getElementById(id).style.display='none'; }
+    function openTransfertModal(){ document.getElementById('transfertId').value=''; fetch('/transferts/generateCode').then(r=>r.json()).then(d=>document.getElementById('transfertCode').value=d.code); document.getElementById('transfertModal').style.display='flex'; }
+    function openStockModal(){ document.getElementById('stockId').value=''; fetch('/transferts/generateCode').then(r=>r.json()).then(d=>document.getElementById('stockCode').value=d.code); document.getElementById('stockModal').style.display='flex'; }
+
+    async function saveTransfert(){
+      const data={
+        _id: document.getElementById('transfertId').value || undefined,
+        code: document.getElementById('transfertCode').value,
+        originLocation: document.getElementById('originLocation').value,
+        senderFirstName: document.getElementById('senderFirstName').value,
+        senderPhone: document.getElementById('senderPhone').value,
+        destinationLocation: document.getElementById('destinationLocation').value,
+        receiverFirstName: document.getElementById('receiverFirstName').value,
+        receiverPhone: document.getElementById('receiverPhone').value,
+        amount: parseFloat(document.getElementById('amount').value),
+        fees: parseFloat(document.getElementById('fees').value),
+        recoveryAmount: parseFloat(document.getElementById('amount').value)-parseFloat(document.getElementById('fees').value),
+        currency: document.getElementById('currency').value,
+        recoveryMode: document.getElementById('recoveryMode').value
+      };
+      await fetch('/transferts/form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      location.reload();
+    }
+
+    async function saveStock(){
+      const data={
+        _id: document.getElementById('stockId').value || undefined,
+        code: document.getElementById('stockCode').value,
+        sender: document.getElementById('stockSender').value,
+        senderPhone: document.getElementById('stockSenderPhone').value,
+        destination: document.getElementById('stockDestination').value,
+        destinationPhone: document.getElementById('stockDestinationPhone').value,
+        amount: parseFloat(document.getElementById('stockAmount').value),
+        currency: document.getElementById('stockCurrency').value
+      };
+      await fetch('/stocks/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      location.reload();
+    }
+
+    function editTransfert(id){
+      fetch('/transferts/form/'+id).then(r=>r.json()).then(d=>{
+        document.getElementById('transfertId').value=d._id;
+        document.getElementById('transfertCode').value=d.code;
+        document.getElementById('originLocation').value=d.originLocation || '';
+        document.getElementById('senderFirstName').value=d.senderFirstName || '';
+        document.getElementById('senderPhone').value=d.senderPhone || '';
+        document.getElementById('destinationLocation').value=d.destinationLocation || '';
+        document.getElementById('receiverFirstName').value=d.receiverFirstName || '';
+        document.getElementById('receiverPhone').value=d.receiverPhone || '';
+        document.getElementById('amount').value=d.amount || '';
+        document.getElementById('fees').value=d.fees || '';
+        document.getElementById('currency').value=d.currency || 'GNF';
+        document.getElementById('recoveryMode').value=d.recoveryMode || 'ESPECE';
+        document.getElementById('transfertModal').style.display='flex';
+      });
+    }
+
+    function editStock(id){
+      fetch('/stocks/get/'+id).then(r=>r.json()).then(d=>{
+        document.getElementById('stockId').value=d._id;
+        document.getElementById('stockCode').value=d.code;
+        document.getElementById('stockSender').value=d.sender || '';
+        document.getElementById('stockSenderPhone').value=d.senderPhone || '';
+        document.getElementById('stockDestination').value=d.destination || '';
+        document.getElementById('stockDestinationPhone').value=d.destinationPhone || '';
+        document.getElementById('stockAmount').value=d.amount || '';
+        document.getElementById('stockCurrency').value=d.currency || 'GNF';
+        document.getElementById('stockModal').style.display='flex';
+      });
+    }
+
+    async function deleteTransfert(id){ if(confirm('Supprimer ?')){ await fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); location.reload(); } }
+    async function retirerTransfert(id){ const mode=document.getElementById('recoveryMode').value||'ESPECE'; await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})}); location.reload(); }
+    async function deleteStock(id){ if(confirm('Supprimer ?')){ await fetch('/stocks/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); location.reload(); } }
     </script>`;
 
     html+='</body></html>';
@@ -267,8 +381,14 @@ app.post('/transferts/form', requireLogin, async(req,res)=>{
   } catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du transfert'}); }
 });
 
-app.post('/transferts/delete', requireLogin, async(req,res)=>{ try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); } catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du transfert'}); } });
+app.get('/transferts/form/:id', requireLogin, async(req,res)=>{
+  try{
+    const t = await Transfert.findById(req.params.id);
+    res.json(t);
+  }catch(err){ res.status(500).json({error:'Erreur'});}
+});
 
+app.post('/transferts/delete', requireLogin, async(req,res)=>{ try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); } catch(err){ console.error(err); res.status(500).json({error:'Erreur'}); } });
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   try{
     const {id, mode} = req.body;
@@ -293,7 +413,10 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
   }catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du stock'});}
 });
 
-app.post('/stocks/delete', requireLogin, async(req,res)=>{ try{ await Stock.findByIdAndDelete(req.body.id); res.json({ok:true}); } catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du stock'}); } });
+app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
+  try{ const s=await Stock.findById(req.params.id); res.json(s); } catch(err){ res.status(500).json({error:'Erreur'}); } });
+
+app.post('/stocks/delete', requireLogin, async(req,res)=>{ try{ await Stock.findByIdAndDelete(req.body.id); res.json({ok:true}); } catch(err){ console.error(err); res.status(500).json({error:'Erreur'}); } });
 
 // ================= GENERATE CODE =================
 app.get('/transferts/generateCode', requireLogin, async(req,res)=>{
