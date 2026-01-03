@@ -342,79 +342,16 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
   }
 });
 
-app.post('/transferts/retirer', requireLogin, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  const { id, mode } = req.body;
-  const transfert = await Transfert.findById(id).session(session);
-  try {
-    
-
-   
-    if (!transfert) {
-      throw new Error('Transfert introuvable');
-    }
-
-    if (transfert.retired) {
-      throw new Error('Transfert déjà retiré');
-    }
-
-    const montantRetire = transfert.amount - transfert.fees;
-    if (montantRetire <= 0) {
-      throw new Error('Montant invalide');
-    }
-
-    const StockHistory = await StockHistory.findOne({
-      destination: transfert.destinationLocation,
-      currency: transfert.currency
-    }).session(session);
-
-    if (!StockHistory) {
-      throw new Error('Stock introuvable');
-    }
-
-    if (StockHistory.amount < montantRetire) {
-      throw new Error('Stock insuffisant');
-    }
-
-    // 🔻 DÉBIT DU STOCK
-    StockHistory.amount -= montantRetire;
-    await StockHistory.save({ session });
-
-    // ✅ MARQUER LE TRANSFERT COMME RETIRÉ
-    transfert.retired = true;
-    transfert.retraitHistory.push({
-      date: new Date(),
-      mode
-    });
-    await transfert.save({ session });
-
-    // 🧾 HISTORIQUE
-    await new StockHistory({
-      code: transfert.code,
-      action: 'RETRAIT TRANSFERT',
-      stockId: StockHistory._id,
-      sender: transfert.senderFirstName + ' ' + transfert.senderLastName,
-      senderPhone: transfert.senderPhone,
-      destination: transfert.destinationLocation,
-      amount: montantRetire,
-      currency: transfert.currency
-    }).save({ session });
-
-    // ✅ TOUT OK
-    await session.commitTransaction();
-    session.endSession();
-
-    res.json({ ok: true });
-
-  } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
-    console.error('❌ Retrait erreur:', err.message);
-    res.status(400).json({ error: err.message });
+app.post('/transferts/retirer', requireLogin, async(req,res)=>{
+  try{
+    const {id,mode} = req.body;
+    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+    res.json({ok:true});
+  } catch(err){
+    console.error(err);
+    res.status(500).json({error:'Erreur lors du retrait'});
   }
 });
-
 
 app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
   try{
