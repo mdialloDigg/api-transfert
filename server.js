@@ -346,6 +346,47 @@ app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   try{
     const {id,mode} = req.body;
     await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+
+
+ const transfert = await Transfert.findById(id).session(session);
+    if (!transfert) {
+      throw new Error('Transfert introuvable');
+    }
+
+
+ const stock = await StockHistory.findOne({
+      destination: transfert.destinationLocation,
+      currency: transfert.currency
+    }).session(session);
+
+
+ // 🔻 DÉBIT DU STOCK
+    stock.amount -= montantRetire;
+    await stock.save({ session });
+
+    // ✅ MARQUER LE TRANSFERT COMME RETIRÉ
+    transfert.retired = true;
+    transfert.retraitHistory.push({
+      date: new Date(),
+      mode
+    });
+    await transfert.save({ session });
+
+    // 🧾 HISTORIQUE
+    await new StockHistory({
+      code: transfert.code,
+      stockId: stock._id,
+      sender: transfert.senderFirstName + ' ' + transfert.senderLastName,
+      senderPhone: transfert.senderPhone,
+      destination: transfert.destinationLocation,
+      amount: montantRetire,
+      currency: transfert.currency
+    }).save({ session });
+
+
+
+
+
     res.json({ok:true});
   } catch(err){
     console.error(err);
