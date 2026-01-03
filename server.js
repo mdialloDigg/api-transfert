@@ -248,8 +248,10 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     html+=`</table></div>`;
 
     // =================== Table Stocks ===================
-    ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
-    
+ html+=`<h3>Stocks</h3>`;
+if(req.session.user.permissions.ecriture){
+  html+=`<button type="button" onclick="newStock()">➕ Nouveau Stock</button>`;
+}
 
     // =================== Table Historique Stocks ===================
     html+=`<h3>Historique Stocks</h3>
