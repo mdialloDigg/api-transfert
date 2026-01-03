@@ -1,7 +1,6 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC TELEPHONES ET DROITS
+ * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC MOBILE ET IMPRIMER
  ******************************************************************/
-
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -98,10 +97,6 @@ function setPermissions(username){
   return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
 }
 
-const locations=['France','Belgique','Conakry','Suisse','Atlanta','New York','Allemagne'];
-const currencies=['GNF','EUR','USD','XOF'];
-const retraitModes=['Espèces','Virement','Orange Money','Wave'];
-
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -172,16 +167,32 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     // ================== HTML ==================
     let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-    body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
-    table{width:100%;border-collapse:collapse;margin-bottom:20px;}
-    th,td{border:1px solid #ccc;padding:8px;text-align:left;vertical-align:top;}
-    th{background:#ff8c42;color:white;}
-    button{padding:5px 8px;border:none;border-radius:6px;color:white;cursor:pointer;margin-right:3px;font-size:12px;}
-    .modify{background:#28a745;} .delete{background:#dc3545;} .retirer{background:#ff9900;}
-    a{color:#007bff;text-decoration:none;margin-right:10px;}
-    a:hover{text-decoration:underline;}
-    input,select{padding:5px;margin-right:5px;}
-    </style></head><body>
+    body { font-family: Arial; background:#f0f2f5; margin:0; padding:20px; }
+    h2,h3,h4 { margin-top:20px; color:#333; }
+    a { color:#007bff; text-decoration:none; margin-right:10px; }
+    a:hover { text-decoration:underline; }
+    input, select, button { padding:8px; margin:5px 0; border-radius:6px; border:1px solid #ccc; font-size:14px; }
+    button { cursor:pointer; transition:0.3s; }
+    button:hover { opacity:0.8; }
+    button.modify { background: #28a745; color:white; }
+    button.delete { background: #dc3545; color:white; }
+    button.retirer { background: #ff9900; color:white; }
+    button.print { background: #007bff; color:white; }
+
+    .table-container { width:100%; overflow-x:auto; margin-bottom:20px; }
+    table { border-collapse: collapse; width:100%; min-width:600px; }
+    th, td { border:1px solid #ccc; padding:10px; text-align:left; vertical-align:top; }
+    th { background:#ff8c42; color:white; }
+
+    @media(max-width:768px){
+      table, thead, tbody, th, td, tr { display:block; }
+      thead tr { display:none; }
+      tr { margin-bottom:15px; border-bottom:2px solid #ddd; padding-bottom:10px; }
+      td { border:none; position:relative; padding-left:50%; text-align:left; }
+      td::before { content: attr(data-label); position:absolute; left:10px; top:10px; font-weight:bold; white-space:nowrap; }
+    }
+    </style>
+    </head><body>
     <h2>📊 Dashboard</h2>
     <a href="/logout">🚪 Déconnexion</a>
 
@@ -195,138 +206,102 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       </select>
       <button type="submit">🔍 Filtrer</button>
       ${req.session.user.permissions.ecriture?'<button type="button" onclick="newTransfert()">➕ Nouveau Transfert</button>':''}
-    </form>
+    </form>`;
 
-    <h4>Totaux par destination/devise</h4>
-    <table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
-
+    // Totaux
+    html+=`<h4>Totaux par destination/devise</h4>
+    <div class="table-container"><table>
+    <thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
     for(let dest in totals){
       for(let curr in totals[dest]){
-        html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+        html+=`<tr>
+          <td data-label="Destination">${dest}</td>
+          <td data-label="Devise">${curr}</td>
+          <td data-label="Montant">${totals[dest][curr].amount}</td>
+          <td data-label="Frais">${totals[dest][curr].fees}</td>
+          <td data-label="Reçu">${totals[dest][curr].recovery}</td>
+        </tr>`;
       }
     }
+    html+=`</tbody></table></div>`;
 
-    html+=`</tbody></table>
-    <table>
-    <tr>
-      <th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th>
-    </tr>`;
-
+    // =================== Table Transferts ===================
+    html+=`<div class="table-container"><table>
+    <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transferts.forEach(t=>{
       html+=`<tr data-id="${t._id}">
-        <td>${t.code}</td>
-        <td>${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
-        <td>${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
-        <td>${t.amount}</td>
-        <td>${t.currency}</td>
-        <td>${t.retired?'Retiré':'Non retiré'}</td>
-        <td>
+        <td data-label="Code">${t.code}</td>
+        <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
+        <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
+        <td data-label="Montant">${t.amount}</td>
+        <td data-label="Devise">${t.currency}</td>
+        <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
+        <td data-label="Actions">
           ${req.session.user.permissions.modification?`<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>`:''}
           ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
           ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
         </td>
       </tr>`;
     });
+    html+=`</table></div>`;
 
-    html+=`</table>
-    <h3>Stocks</h3>
+    // =================== Table Stocks ===================
+    html+=`<h3>Stocks</h3>
     ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
-    <h3>Historique Stocks</h3>
-    <table>
-    <tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+    <div class="table-container"><table>
+    <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
+    stocks.forEach(s=>{
+      html+=`<tr data-id="${s._id}">
+        <td data-label="Code">${s.code}</td>
+        <td data-label="Expéditeur">${s.sender}<br>📞 ${s.senderPhone || '-'}</td>
+        <td data-label="Destination">${s.destination}<br>📞 ${s.destinationPhone || '-'}</td>
+        <td data-label="Montant">${s.amount}</td>
+        <td data-label="Devise">${s.currency}</td>
+        <td data-label="Actions">
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="editStock('${s._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${s._id}')">❌</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
+        </td>
+      </tr>`;
+    });
+    html+=`</table></div>`;
 
+    // =================== Table Historique Stocks ===================
+    html+=`<h3>Historique Stocks</h3>
+    <div class="table-container"><table>
+    <tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
     stockHistory.forEach(h=>{
       html+=`<tr>
-        <td>${h.date.toLocaleString()}</td>
-        <td>${h.code}</td>
-        <td>${h.action}</td>
-        <td>${h.sender}<br>📞 ${h.senderPhone || '-'}</td>
-        <td>${h.destination}<br>📞 ${h.destinationPhone || '-'}</td>
-        <td>${h.amount}</td>
-        <td>
+        <td data-label="Date">${h.date.toLocaleString()}</td>
+        <td data-label="Code">${h.code}</td>
+        <td data-label="Action">${h.action}</td>
+        <td data-label="Expéditeur">${h.sender}<br>📞 ${h.senderPhone || '-'}</td>
+        <td data-label="Destination">${h.destination}<br>📞 ${h.destinationPhone || '-'}</td>
+        <td data-label="Montant">${h.amount}</td>
+        <td data-label="Actions">
           ${req.session.user.permissions.modification?`<button class="modify" onclick="editStock('${h._id}')">✏️</button>`:''}
           ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${h._id}')">❌</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
         </td>
       </tr>`;
     });
+    html+=`</table></div>`;
 
-    // ================== SCRIPT ==================
+    // =================== SCRIPT ==================
     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
-    function newTransfert(){
-      const sender=prompt('Expéditeur');
-      const senderPhone=prompt('Téléphone expéditeur');
-      const receiver=prompt('Destinataire');
-      const receiverPhone=prompt('Téléphone destinataire');
-      const amount=parseFloat(prompt('Montant'));
-      const currency=prompt('Devise','GNF');
-      if(sender && receiver && amount) postData('/transferts/form',{
-        senderFirstName: sender,
-        senderPhone,
-        receiverFirstName: receiver,
-        receiverPhone,
-        amount,
-        fees:0,
-        recoveryAmount:amount,
-        currency,
-        userType:'Client'
-      }).then(()=>location.reload());
-    }
-
-    function newStock(){
-      const sender=prompt('Expéditeur');
-      const senderPhone=prompt('Téléphone expéditeur');
-      const destination=prompt('Destination');
-      const destinationPhone=prompt('Téléphone destination');
-      const amount=parseFloat(prompt('Montant'));
-      const currency=prompt('Devise','GNF');
-      if(sender && destination && amount) postData('/stocks/new',{
-        sender, senderPhone, destination, destinationPhone, amount, currency
-      }).then(()=>location.reload());
-    }
-
-    async function editTransfert(id){
-      const t=await (await fetch('/transferts/get/'+id)).json();
-      const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName;
-      const senderPhone=prompt('Téléphone expéditeur', t.senderPhone)||t.senderPhone;
-      const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName;
-      const receiverPhone=prompt('Téléphone destinataire', t.receiverPhone)||t.receiverPhone;
-      const amount=parseFloat(prompt('Montant',t.amount))||t.amount;
-      const currency=prompt('Devise',t.currency)||t.currency;
-      await postData('/transferts/form',{
-        _id:t._id,
-        senderFirstName: sender,
-        senderPhone,
-        receiverFirstName: receiver,
-        receiverPhone,
-        amount,
-        currency
-      });
-      location.reload();
-    }
-
+    function newTransfert() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const receiver=prompt('Destinataire'); const receiverPhone=prompt('Téléphone destinataire'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && receiver && amount) postData('/transferts/form',{senderFirstName: sender,senderPhone,receiverFirstName: receiver,receiverPhone,amount,fees:0,recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());}
+    async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json(); const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName; const senderPhone=prompt('Téléphone expéditeur',t.senderPhone)||t.senderPhone; const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName; const receiverPhone=prompt('Téléphone destinataire',t.receiverPhone)||t.receiverPhone; const amount=parseFloat(prompt('Montant',t.amount))||t.amount; const currency=prompt('Devise',t.currency)||t.currency; await postData('/transferts/form',{_id:t._id,senderFirstName:sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,currency}); location.reload();}
     async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
     async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces'); if(mode){await postData('/transferts/retirer',{id,mode}); location.reload();}}
 
-    async function editStock(id){
-      const s=await (await fetch('/stocks/get/'+id)).json();
-      const sender=prompt('Expéditeur',s.sender)||s.sender;
-      const senderPhone=prompt('Téléphone expéditeur', s.senderPhone)||s.senderPhone;
-      const destination=prompt('Destination',s.destination)||s.destination;
-      const destinationPhone=prompt('Téléphone destination', s.destinationPhone)||s.destinationPhone;
-      const amount=parseFloat(prompt('Montant',s.amount))||s.amount;
-      const currency=prompt('Devise',s.currency)||s.currency;
-      await postData('/stocks/new',{
-        _id:s._id,
-        sender, senderPhone,
-        destination, destinationPhone,
-        amount, currency
-      });
-      location.reload();
-    }
-
+    function newStock() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const destination=prompt('Destination'); const destinationPhone=prompt('Téléphone destination'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && destination && amount) postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}).then(()=>location.reload());}
+    async function editStock(id){const s=await (await fetch('/stocks/get/'+id)).json(); const sender=prompt('Expéditeur',s.sender)||s.sender; const senderPhone=prompt('Téléphone expéditeur',s.senderPhone)||s.senderPhone; const destination=prompt('Destination',s.destination)||s.destination; const destinationPhone=prompt('Téléphone destination',s.destinationPhone)||s.destinationPhone; const amount=parseFloat(prompt('Montant',s.amount))||s.amount; const currency=prompt('Devise',s.currency)||s.currency; await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();}
     async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
+
+    function printRow(btn){const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1" style="border-collapse:collapse; font-family:Arial; padding:10px;">'); newWin.document.write(row.outerHTML); newWin.document.write('</table></body></html>'); newWin.document.close(); newWin.print(); newWin.close();}
     </script>`;
 
     html+='</body></html>';
