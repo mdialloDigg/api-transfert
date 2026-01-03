@@ -32,7 +32,7 @@ const authSchema = new mongoose.Schema({ username: String, password: String, rol
 const Auth = mongoose.model('Auth', authSchema);
 
 const stockSchema = new mongoose.Schema({
-  code: { type: String, unique: true }, sender: String, destination: String, amount: Number, currency: { type: String, default: 'GNF' }, createdAt: { type: Date, default: Date.now }
+  code: { type: String, unique: true }, action: String, sender: String, destination: String, amount: Number, currency: { type: String, default: 'GNF' }, createdAt: { type: Date, default: Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
 
@@ -187,7 +187,8 @@ app.get('/dashboard', requireLogin, async (req, res) => {
 
   html += `</table><h3>Historique Stocks</h3><table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
   stockHistory.forEach(h => {
-    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td></tr>`;
+    html += `<tr><td>${h.date.toLocaleString()}</td><td>${h.code}</td><td>${h.action}</td><td>${h.sender}</td><td>${h.destination}</td><td>${h.amount}</td>
+ <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr></tr>`;
   });
   html += `</table>`;
 
