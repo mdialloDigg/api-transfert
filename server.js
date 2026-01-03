@@ -227,7 +227,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
     // =================== Table Transferts ===================
     html+=`<div class="table-container"><table>
-    <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+    <tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transferts.forEach(t=>{
       html+=`<tr data-id="${t._id}">
         <td data-label="Code">${t.code}</td>
