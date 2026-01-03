@@ -381,6 +381,12 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       return res.status(400).json({ error: 'Stock insuffisant' });
     }
 
+
+
+    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+    res.json({ok:true});
+
+
     stock.amount -= montantRetire;
     stock.updatedAt = new Date();
     await stock.save({ session });
@@ -393,10 +399,6 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       amount: montantRetire,
       currency: transfert.currency
     }).save({ session });
-
-
-    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
-    res.json({ok:true});
 
 
     await session.commitTransaction();
