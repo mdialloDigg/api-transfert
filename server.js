@@ -281,9 +281,9 @@ if(req.session.user.permissions.ecriture){
     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
-    function newTransfert() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const receiver=prompt('Destinataire'); const receiverPhone=prompt('Téléphone destinataire'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && receiver && amount) 
+    function newTransfert() {const originLocation=prompt('Origine'); const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const destinationLocation=prompt('Destination');const receiver=prompt('Destinataire'); const receiverPhone=prompt('Téléphone destinataire'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && receiver && amount) 
 
-postData('/transferts/form',{senderFirstName: sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,fees:parseFloat(prompt('frais')),recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());}
+postData('/transferts/form',{originLocation: originLocation,senderFirstName: sender,senderPhone,destinationLocation: destinationLocation,receiverFirstName:receiver,receiverPhone,amount,fees:parseFloat(prompt('frais')),recoveryAmount:amount,currency,userType:'Client'}).then(()=>location.reload());}
 
 
     async function editTransfert(id){const t=await (await fetch('/transferts/get/'+id)).json(); const sender=prompt('Expéditeur',t.senderFirstName)||t.senderFirstName; const senderPhone=prompt('Téléphone expéditeur',t.senderPhone)||t.senderPhone; const receiver=prompt('Destinataire',t.receiverFirstName)||t.receiverFirstName; const receiverPhone=prompt('Téléphone destinataire',t.receiverPhone)||t.receiverPhone; const amount=parseFloat(prompt('Montant',t.amount))||t.amount; const currency=prompt('Devise',t.currency)||t.currency; await postData('/transferts/form',{_id:t._id,senderFirstName:sender,senderPhone,receiverFirstName:receiver,receiverPhone,amount,currency}); location.reload();}
