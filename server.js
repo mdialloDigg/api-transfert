@@ -234,6 +234,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
         <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
         <td data-label="Montant">${t.amount}</td>
+        <td data-label="Reçu">${t.recoveryAmount}</td>
         <td data-label="Devise">${t.currency}</td>
         <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
         <td data-label="Actions">
@@ -249,28 +250,12 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     // =================== Table Stocks ===================
     html+=`<h3>Stocks</h3>
     ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
-    <div class="table-container"><table>
-    <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
-    stocks.forEach(s=>{
-      html+=`<tr data-id="${s._id}">
-        <td data-label="Code">${s.code}</td>
-        <td data-label="Expéditeur">${s.sender}<br>📞 ${s.senderPhone || '-'}</td>
-        <td data-label="Destination">${s.destination}<br>📞 ${s.destinationPhone || '-'}</td>
-        <td data-label="Montant">${s.amount}</td>
-        <td data-label="Devise">${s.currency}</td>
-        <td data-label="Actions">
-          ${req.session.user.permissions.modification?`<button class="modify" onclick="editStock('${s._id}')">✏️</button>`:''}
-          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${s._id}')">❌</button>`:''}
-          <button class="print" onclick="printRow(this)">🖨️</button>
-        </td>
-      </tr>`;
-    });
-    html+=`</table></div>`;
+    
 
     // =================== Table Historique Stocks ===================
     html+=`<h3>Historique Stocks</h3>
     <div class="table-container"><table>
-    <tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+    <tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
     stockHistory.forEach(h=>{
       html+=`<tr>
         <td data-label="Date">${h.date.toLocaleString()}</td>
