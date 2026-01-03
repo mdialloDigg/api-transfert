@@ -192,13 +192,6 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     html+=`</table>
     <h3>Stocks</h3>
     ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
-    <table><tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
-    stocks.forEach(s=>{
-      html+=`<tr data-id="${s._id}"><td>${s.code}</td><td>${s.sender}</td><td>${s.destination}</td><td>${s.amount}</td>
-      <td><button onclick="editStock('${s._id}')">✏️</button><button onclick="deleteStock('${s._id}')">❌</button></td></tr>`;
-    });
-
-    html+=`</table>
     <h3>Historique Stocks</h3>
     <table><tr><th>Date</th><th>Code</th><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
     stockHistory.forEach(h=>{
