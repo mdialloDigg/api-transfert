@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION CORRIGÉE ET STABLE
+ * TRANSFERT + STOCK APP – STABLE, CSS, RENDER READY
  ******************************************************************/
 
 require('dotenv').config();
@@ -18,76 +18,71 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// ================= DATABASE =================
-mongoose.connect(process.env.MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000
-})
-.then(() => console.log('✅ MongoDB connecté'))
-.catch(err => {
-  console.error('❌ MongoDB:', err.message);
-  process.exit(1);
-});
+/* ================= DATABASE ================= */
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ MongoDB connecté'))
+  .catch(err => {
+    console.error('❌ MongoDB:', err.message);
+    process.exit(1);
+  });
 
-// ================= SCHEMAS =================
-const transfertSchema = new mongoose.Schema({
+/* ================= MODELS ================= */
+const Transfert = mongoose.model('Transfert', new mongoose.Schema({
   senderFirstName: String,
   receiverFirstName: String,
   amount: Number,
-  fees: Number,
-  recoveryAmount: Number,
   currency: String,
   retired: { type: Boolean, default: false },
-  retraitHistory: [{ date: Date, mode: String }],
   code: String,
   createdAt: { type: Date, default: Date.now }
-});
-const Transfert = mongoose.model('Transfert', transfertSchema);
+}));
 
-const stockSchema = new mongoose.Schema({
-  code: String,
+const Stock = mongoose.model('Stock', new mongoose.Schema({
   sender: String,
   destination: String,
   amount: Number,
   currency: String,
   createdAt: { type: Date, default: Date.now }
-});
-const Stock = mongoose.model('Stock', stockSchema);
+}));
 
-const stockHistorySchema = new mongoose.Schema({
+const StockHistory = mongoose.model('StockHistory', new mongoose.Schema({
   action: String,
-  stockId: mongoose.Schema.Types.ObjectId,
   sender: String,
   destination: String,
   amount: Number,
   currency: String,
   date: { type: Date, default: Date.now }
-});
-const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
+}));
 
-const authSchema = new mongoose.Schema({
+const Auth = mongoose.model('Auth', new mongoose.Schema({
   username: String,
   password: String
-});
-const Auth = mongoose.model('Auth', authSchema);
+}));
 
-// ================= UTILS =================
+/* ================= UTILS ================= */
 const requireLogin = (req, res, next) => {
   if (!req.session.user) return res.redirect('/login');
   next();
 };
 
-const genCode = () =>
-  Math.random().toString(36).substring(2, 8).toUpperCase();
+const genCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 
-// ================= LOGIN =================
+/* ================= LOGIN ================= */
 app.get('/login', (req, res) => {
   res.send(`
-  <form method="post">
-    <input name="username" placeholder="Utilisateur" required>
-    <input type="password" name="password" placeholder="Mot de passe" required>
-    <button>Connexion</button>
-  </form>
-  `);
+<style>
+body{font-family:Arial;background:#f4f6f8}
+form{width:300px;margin:120px auto;padding:20px;background:#fff;border-radius:8px}
+input,button{width:100%;padding:10px;margin-top:10px}
+button{background:#2d89ef;color:white;border:none}
+</style>
+<form method="post">
+<h3>Connexion</h3>
+<input name="username" placeholder="Utilisateur" required>
+<input type="password" name="password" placeholder="Mot de passe" required>
+<button>Se connecter</button>
+</form>
+`);
 });
 
 app.post('/login', async (req, res) => {
@@ -101,7 +96,7 @@ app.post('/login', async (req, res) => {
   if (!bcrypt.compareSync(req.body.password, user.password)) {
     return res.send('Mot de passe incorrect');
   }
-  req.session.user = { username: user.username };
+  req.session.user = user.username;
   res.redirect('/dashboard');
 });
 
@@ -109,150 +104,121 @@ app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
-// ================= DASHBOARD =================
+/* ================= DASHBOARD ================= */
 app.get('/dashboard', requireLogin, async (req, res) => {
-  const transferts = await Transfert.find().sort({ createdAt: -1 });
   const stocks = await Stock.find().sort({ createdAt: -1 });
   const history = await StockHistory.find().sort({ date: -1 });
 
   res.send(`
 <!DOCTYPE html>
 <html>
+<head>
+<style>
+body{font-family:Arial;background:#eef2f5;padding:20px}
+h2{margin-bottom:5px}
+table{width:100%;border-collapse:collapse;background:#fff;margin-bottom:30px}
+th,td{border:1px solid #ddd;padding:8px;text-align:center}
+th{background:#2d89ef;color:white}
+button{padding:6px 12px;border:none;border-radius:4px;cursor:pointer}
+.add{background:#28a745;color:white}
+.edit{background:#ffc107}
+.del{background:#dc3545;color:white}
+.top{display:flex;justify-content:space-between;align-items:center}
+</style>
+</head>
 <body>
-<h2>Dashboard</h2>
-<a href="/logout">Déconnexion</a>
 
-<h3>Transferts</h3>
-<button onclick="newTransfert()">➕</button>
-<table border="1">
-${transferts.map(t => `
-<tr>
-<td>${t.code}</td>
-<td>${t.senderFirstName}</td>
-<td>${t.receiverFirstName}</td>
-<td>${t.amount}</td>
-<td>${t.currency}</td>
-<td>${t.retired ? 'Retiré' : 'Non retiré'}</td>
-<td>
-<button onclick="editTransfert('${t._id}')">✏️</button>
-<button onclick="deleteTransfert('${t._id}')">❌</button>
-${!t.retired ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
-</td>
-</tr>`).join('')}
-</table>
+<div class="top">
+<h2>Gestion des Stocks</h2>
+<a href="/logout">Déconnexion</a>
+</div>
+
+<h3>Ajouter un stock</h3>
+<form onsubmit="addStock(event)">
+<input id="sender" placeholder="Expéditeur" required>
+<input id="destination" placeholder="Destination" required>
+<input id="amount" type="number" placeholder="Montant" required>
+<button class="add">Ajouter</button>
+</form>
 
 <h3>Stocks</h3>
-<button onclick="newStock()">➕</button>
-<table border="1">
+<table>
+<tr><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>
 ${stocks.map(s => `
 <tr>
 <td>${s.sender}</td>
 <td>${s.destination}</td>
-<td>${s.amount}</td>
-<td>${s.currency}</td>
+<td>${s.amount} ${s.currency}</td>
 <td>
-<button onclick="editStock('${s._id}')">✏️</button>
-<button onclick="deleteStock('${s._id}')">❌</button>
+<button class="edit" onclick="editStock('${s._id}',${s.amount})">✏️</button>
+<button class="del" onclick="deleteStock('${s._id}')">❌</button>
 </td>
-</tr>`).join('')}
+</tr>
+`).join('')}
 </table>
 
-<h3>Historique Stocks</h3>
-<table border="1">
+<h3>Historique des stocks</h3>
+<table>
+<tr><th>Action</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Date</th></tr>
 ${history.map(h => `
 <tr>
 <td>${h.action}</td>
 <td>${h.sender}</td>
 <td>${h.destination}</td>
-<td>${h.amount}</td>
+<td>${h.amount} ${h.currency}</td>
 <td>${new Date(h.date).toLocaleString()}</td>
-</tr>`).join('')}
+</tr>
+`).join('')}
 </table>
 
 <script>
-async function post(url,data){
-  await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+async function addStock(e){
+  e.preventDefault();
+  await fetch('/stocks/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      sender:sender.value,
+      destination:destination.value,
+      amount:+amount.value,
+      currency:'GNF'
+    })
+  });
   location.reload();
 }
 
-function newTransfert(){
-  post('/transferts/save',{
-    senderFirstName:prompt('Expéditeur'),
-    receiverFirstName:prompt('Destinataire'),
-    amount:+prompt('Montant'),
-    currency:'GNF'
-  });
-}
-function editTransfert(id){
-  post('/transferts/save',{_id:id,amount:+prompt('Nouveau montant')});
-}
-function deleteTransfert(id){
-  if(confirm('Supprimer ?')) post('/transferts/delete',{id});
-}
-function retirerTransfert(id){
-  post('/transferts/retirer',{id,mode:'Espèces'});
+function editStock(id,amt){
+  const n = prompt('Nouveau montant',amt);
+  if(n) fetch('/stocks/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({_id:id,amount:+n})
+  }).then(()=>location.reload());
 }
 
-function newStock(){
-  post('/stocks/save',{
-    sender:prompt('Expéditeur'),
-    destination:prompt('Destination'),
-    amount:+prompt('Montant'),
-    currency:'GNF'
-  });
-}
-function editStock(id){
-  post('/stocks/save',{_id:id,amount:+prompt('Nouveau montant')});
-}
 function deleteStock(id){
-  if(confirm('Supprimer ?')) post('/stocks/delete',{id});
+  if(confirm('Supprimer ?'))
+    fetch('/stocks/delete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id})
+    }).then(()=>location.reload());
 }
 </script>
+
 </body>
 </html>
 `);
 });
 
-// ================= TRANSFERT ROUTES =================
-app.post('/transferts/save', requireLogin, async (req, res) => {
-  if (req.body._id) {
-    await Transfert.findByIdAndUpdate(req.body._id, req.body);
-  } else {
-    await Transfert.create({ ...req.body, code: genCode() });
-  }
-  res.json({ ok: true });
-});
-
-app.post('/transferts/delete', requireLogin, async (req, res) => {
-  await Transfert.findByIdAndDelete(req.body.id);
-  res.json({ ok: true });
-});
-
-app.post('/transferts/retirer', requireLogin, async (req, res) => {
-  await Transfert.findByIdAndUpdate(req.body.id, {
-    retired: true,
-    $push: { retraitHistory: { date: new Date(), mode: req.body.mode } }
-  });
-  res.json({ ok: true });
-});
-
-// ================= STOCK ROUTES =================
+/* ================= STOCK ROUTES ================= */
 app.post('/stocks/save', requireLogin, async (req, res) => {
   if (req.body._id) {
-    await Stock.findByIdAndUpdate(req.body._id, req.body);
+    await Stock.findByIdAndUpdate(req.body._id, { amount: req.body.amount });
   } else {
-    const stock = await Stock.create({ ...req.body, code: genCode() });
-    await StockHistory.create({ action: 'Création', stockId: stock._id, ...req.body });
-  }
-  res.json({ ok: true });
-});
-
-app.post('/stocks/delete', requireLogin, async (req, res) => {
-  const s = await Stock.findByIdAndDelete(req.body.id);
-  if (s) {
+    const s = await Stock.create(req.body);
     await StockHistory.create({
-      action: 'Suppression',
-      stockId: s._id,
+      action: 'Ajout',
       sender: s.sender,
       destination: s.destination,
       amount: s.amount,
@@ -262,6 +228,20 @@ app.post('/stocks/delete', requireLogin, async (req, res) => {
   res.json({ ok: true });
 });
 
-// ================= SERVER =================
+app.post('/stocks/delete', requireLogin, async (req, res) => {
+  const s = await Stock.findByIdAndDelete(req.body.id);
+  if (s) {
+    await StockHistory.create({
+      action: 'Suppression',
+      sender: s.sender,
+      destination: s.destination,
+      amount: s.amount,
+      currency: s.currency
+    });
+  }
+  res.json({ ok: true });
+});
+
+/* ================= SERVER ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('🚀 Serveur prêt sur', PORT));
+app.listen(PORT, () => console.log('🚀 Serveur lancé sur', PORT));
