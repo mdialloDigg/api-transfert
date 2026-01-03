@@ -389,17 +389,17 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     await transfert.save();
 
     // 5️⃣ Historique
-    await new StockHistory({
-      code: transfert.code,
-      action: 'RETRAIT',
-      stockId: stock._id,
-      sender: `${transfert.senderFirstName} ${transfert.senderLastName}`,
-      senderPhone: transfert.senderPhone,
-      destination: transfert.destinationLocation,
-      destinationPhone: transfert.receiverPhone,
-      amount: -montantRetire,
-      currency: transfert.currency
-    }).save();
+    // await new StockHistory({
+     //  code: transfert.code,
+       //action: 'RETRAIT',
+       //stockId: stock._id,
+       //sender: `${transfert.senderFirstName} ${transfert.senderLastName}`,
+       //senderPhone: transfert.senderPhone,
+       //destination: transfert.destinationLocation,
+       //destinationPhone: transfert.receiverPhone,
+       //amount: -montantRetire,
+       //currency: transfert.currency
+    // }).save();
 
     res.json({ ok: true });
 
