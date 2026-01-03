@@ -244,7 +244,13 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         <td data-label="Actions">
           ${req.session.user.permissions.modification?`<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>`:''}
           ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
-          ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+          ${!t.retired && req.session.user.permissions.retrait?`
+<button class="retirer" onclick="window.retirerTransfert('${t._id}')">💰</button>
+
+`:''}
+
+
+
           <button class="print" onclick="printRow(this)">🖨️</button>
         </td>
       </tr>`;
@@ -256,6 +262,10 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 if(req.session.user.permissions.ecriture){
   html+=`<button type="button" onclick="newStock()">➕ Nouveau Stock</button>`;
 }
+
+
+
+
 
     // =================== Table Historique Stocks ===================
     html+=`<h3>Historique Stocks</h3>
@@ -399,6 +409,10 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Erreur lors du retrait' });
   }
+
+window.retirerTransfert = retirerTransfert;
+
+
 });
 
 
