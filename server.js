@@ -302,7 +302,11 @@ async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèce
 
       function newStock() {const sender=prompt('Expéditeur'); const senderPhone=prompt('Téléphone expéditeur'); const destination=prompt('Destination'); const destinationPhone=prompt('Téléphone destination'); const amount=parseFloat(prompt('Montant')); const currency=prompt('Devise','GNF'); if(sender && destination && amount) postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}).then(()=>location.reload());}
     async function editStock(id){const s=await (await fetch('/stocks/get/'+id)).json(); const sender=prompt('Expéditeur',s.sender)||s.sender; const senderPhone=prompt('Téléphone expéditeur',s.senderPhone)||s.senderPhone; const destination=prompt('Destination',s.destination)||s.destination; const destinationPhone=prompt('Téléphone destination',s.destinationPhone)||s.destinationPhone; const amount=parseFloat(prompt('Montant',s.amount))||s.amount; const currency=prompt('Devise',s.currency)||s.currency; await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();}
-    async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
+    
+
+
+async function deleteStock(id){if(!confirm('Supprimer ce stock ?'))return;const r=await fetch('/stocks/delete',{method:'POST',headers:{'Content Type':'application/json'},body:JSON.stringify({id})});const d=await r.json();if(!r.ok){alert(d.error||'Erreur suppression');return;}alert('✅ Stock supprimé');location.reload();}
+
 
     function printRow(btn){const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1" style="border-collapse:collapse; font-family:Arial; padding:10px;">'); newWin.document.write(row.outerHTML); newWin.document.write('</table></body></html>'); newWin.document.close(); newWin.print(); newWin.close();}
     </script>`;
@@ -432,15 +436,18 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
   }
 });
 
-app.post('/stocks/delete', requireLogin, async(req,res)=>{
-  try{
-    await StockHistory.findByIdAndDelete(req.body.id);
-    res.json({ok:true});
-  } catch(err){
+
+app.post('/stocks/delete', requireLogin, async (req, res) => {
+  try {
+    const result = await StockHistory.findByIdAndDelete(req.body.id);
+    if (!result) return res.status(404).json({ error: 'Historique introuvable' });
+    res.json({ ok: true });
+  } catch (err) {
     console.error(err);
-    res.status(500).json({error:'Erreur lors de la suppression du stocks'});
+    res.status(500).json({ error: 'Erreur suppression stock' });
   }
 });
+
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   try{
