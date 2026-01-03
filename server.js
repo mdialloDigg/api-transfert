@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION FINALE RENDER (SANS CONNECT-MONGO)
+ * APP TRANSFERT + STOCKS – VERSION CORRIGÉE ET STABLE
  ******************************************************************/
 
 require('dotenv').config();
@@ -12,30 +12,30 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'secret',
+  resave: false,
+  saveUninitialized: false
+}));
+
 // ================= DATABASE =================
 mongoose.connect(process.env.MONGODB_URI, {
   serverSelectionTimeoutMS: 5000
 })
 .then(() => console.log('✅ MongoDB connecté'))
 .catch(err => {
-  console.error('❌ MongoDB erreur:', err.message);
+  console.error('❌ MongoDB:', err.message);
   process.exit(1);
 });
-
-// ================= SESSION (SANS connect-mongo) =================
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'secret-temp',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false }
-}));
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
   senderFirstName: String,
   receiverFirstName: String,
   amount: Number,
-  currency: { type: String, default: 'GNF' },
+  fees: Number,
+  recoveryAmount: Number,
+  currency: String,
   retired: { type: Boolean, default: false },
   retraitHistory: [{ date: Date, mode: String }],
   code: String,
@@ -44,14 +44,25 @@ const transfertSchema = new mongoose.Schema({
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
 const stockSchema = new mongoose.Schema({
+  code: String,
   sender: String,
   destination: String,
   amount: Number,
-  currency: { type: String, default: 'GNF' },
-  code: String,
+  currency: String,
   createdAt: { type: Date, default: Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
+
+const stockHistorySchema = new mongoose.Schema({
+  action: String,
+  stockId: mongoose.Schema.Types.ObjectId,
+  sender: String,
+  destination: String,
+  amount: Number,
+  currency: String,
+  date: { type: Date, default: Date.now }
+});
+const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
 const authSchema = new mongoose.Schema({
   username: String,
@@ -71,10 +82,9 @@ const genCode = () =>
 // ================= LOGIN =================
 app.get('/login', (req, res) => {
   res.send(`
-  <h2>Connexion</h2>
   <form method="post">
-    <input name="username" placeholder="Utilisateur" required><br>
-    <input type="password" name="password" placeholder="Mot de passe" required><br>
+    <input name="username" placeholder="Utilisateur" required>
+    <input type="password" name="password" placeholder="Mot de passe" required>
     <button>Connexion</button>
   </form>
   `);
@@ -103,12 +113,13 @@ app.get('/logout', (req, res) => {
 app.get('/dashboard', requireLogin, async (req, res) => {
   const transferts = await Transfert.find().sort({ createdAt: -1 });
   const stocks = await Stock.find().sort({ createdAt: -1 });
+  const history = await StockHistory.find().sort({ date: -1 });
 
   res.send(`
 <!DOCTYPE html>
 <html>
 <body>
-<h2>📊 Dashboard</h2>
+<h2>Dashboard</h2>
 <a href="/logout">Déconnexion</a>
 
 <h3>Transferts</h3>
@@ -146,13 +157,21 @@ ${stocks.map(s => `
 </tr>`).join('')}
 </table>
 
+<h3>Historique Stocks</h3>
+<table border="1">
+${history.map(h => `
+<tr>
+<td>${h.action}</td>
+<td>${h.sender}</td>
+<td>${h.destination}</td>
+<td>${h.amount}</td>
+<td>${new Date(h.date).toLocaleString()}</td>
+</tr>`).join('')}
+</table>
+
 <script>
 async function post(url,data){
-  await fetch(url,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(data)
-  });
+  await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   location.reload();
 }
 
@@ -160,7 +179,8 @@ function newTransfert(){
   post('/transferts/save',{
     senderFirstName:prompt('Expéditeur'),
     receiverFirstName:prompt('Destinataire'),
-    amount:+prompt('Montant')
+    amount:+prompt('Montant'),
+    currency:'GNF'
   });
 }
 function editTransfert(id){
@@ -177,7 +197,8 @@ function newStock(){
   post('/stocks/save',{
     sender:prompt('Expéditeur'),
     destination:prompt('Destination'),
-    amount:+prompt('Montant')
+    amount:+prompt('Montant'),
+    currency:'GNF'
   });
 }
 function editStock(id){
@@ -220,16 +241,27 @@ app.post('/stocks/save', requireLogin, async (req, res) => {
   if (req.body._id) {
     await Stock.findByIdAndUpdate(req.body._id, req.body);
   } else {
-    await Stock.create({ ...req.body, code: genCode() });
+    const stock = await Stock.create({ ...req.body, code: genCode() });
+    await StockHistory.create({ action: 'Création', stockId: stock._id, ...req.body });
   }
   res.json({ ok: true });
 });
 
 app.post('/stocks/delete', requireLogin, async (req, res) => {
-  await Stock.findByIdAndDelete(req.body.id);
+  const s = await Stock.findByIdAndDelete(req.body.id);
+  if (s) {
+    await StockHistory.create({
+      action: 'Suppression',
+      stockId: s._id,
+      sender: s.sender,
+      destination: s.destination,
+      amount: s.amount,
+      currency: s.currency
+    });
+  }
   res.json({ ok: true });
 });
 
 // ================= SERVER =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('🚀 Serveur lancé sur le port', PORT));
+app.listen(PORT, () => console.log('🚀 Serveur prêt sur', PORT));
