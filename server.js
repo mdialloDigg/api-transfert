@@ -359,7 +359,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     const montantRetire = transfert.amount - transfert.fees;
 
     // 2️⃣ Trouver le stock correspondant
-    const stock = await Stock.findOne({
+    const stock = await StockHistory.findOne({
       destination: transfert.destinationLocation,
       currency: transfert.currency
     });
