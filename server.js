@@ -334,7 +334,13 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
 
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
   try {
-    const { id, mode } = req.body;
+
+
+    const {id,mode} = req.body;
+    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+    res.json({ok:true});
+
+
 
     const transfert = await Transfert.findById(id);
     if (!transfert) {
@@ -387,6 +393,8 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     await transfert.save();
 
     res.json({ ok: true });
+
+
 
   } catch (err) {
     console.error(err);
