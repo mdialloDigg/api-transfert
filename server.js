@@ -332,16 +332,68 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
   }
 });
 
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  try{
-    const {id,mode} = req.body;
-    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
-    res.json({ok:true});
-  } catch(err){
+app.post('/transferts/retirer', requireLogin, async (req, res) => {
+  try {
+    const { id, mode } = req.body;
+
+    const transfert = await Transfert.findById(id);
+    if (!transfert) {
+      return res.status(404).json({ error: 'Transfert introuvable' });
+    }
+
+    if (transfert.retired) {
+      return res.status(400).json({ error: 'Déjà retiré' });
+    }
+
+    // 🔢 Montant réellement retiré
+    const montantRetire = transfert.amount - transfert.fees;
+
+    // 🔍 Chercher le stock correspondant
+    let stock = await Stock.findOne({
+      destination: transfert.destinationLocation,
+      currency: transfert.currency
+    });
+
+    if (!stock) {
+      return res.status(400).json({
+        error: 'Stock insuffisant ou inexistant pour cette destination/devise'
+      });
+    }
+
+    if (stock.amount < montantRetire) {
+      return res.status(400).json({
+        error: 'Stock insuffisant pour effectuer le retrait'
+      });
+    }
+
+    // ➖ Déduction du stock
+    stock.amount -= montantRetire;
+    stock.updatedAt = new Date();
+    await stock.save();
+
+    // 🧾 Historique stock
+    await new StockHistory({
+      code: transfert.code,
+      action: 'RETRAIT TRANSFERT',
+      stockId: stock._id,
+      destination: transfert.destinationLocation,
+      amount: montantRetire,
+      currency: transfert.currency
+    }).save();
+
+    // ✅ Marquer le transfert comme retiré
+    transfert.retired = true;
+    transfert.retraitHistory.push({ date: new Date(), mode });
+    await transfert.save();
+
+    res.json({ ok: true });
+
+  } catch (err) {
     console.error(err);
-    res.status(500).json({error:'Erreur lors du retrait'});
+    res.status(500).json({ error: 'Erreur lors du retrait' });
   }
 });
+
 
 app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
   try{
