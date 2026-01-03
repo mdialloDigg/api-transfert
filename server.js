@@ -333,51 +333,48 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
 });
 
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
+    const { id, mode } = req.body;
 
-
-    const {id,mode} = req.body;
-    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
-    res.json({ok:true});
-
-
-
-    const transfert = await Transfert.findById(id);
+    const transfert = await Transfert.findById(id).session(session);
     if (!transfert) {
+      await session.abortTransaction();
       return res.status(404).json({ error: 'Transfert introuvable' });
     }
 
     if (transfert.retired) {
+      await session.abortTransaction();
       return res.status(400).json({ error: 'Déjà retiré' });
     }
 
-    // 🔢 Montant réellement retiré
-    const montantRetire = transfert.amount - transfert.fees;
+    if (!transfert.destinationLocation) {
+      await session.abortTransaction();
+      return res.status(400).json({ error: 'Destination non définie' });
+    }
 
-    // 🔍 Chercher le stock correspondant
-    let stock = await Stock.findOne({
+    const montantRetire = transfert.amount - transfert.fees;
+    if (montantRetire <= 0) {
+      await session.abortTransaction();
+      return res.status(400).json({ error: 'Montant retiré invalide' });
+    }
+
+    const stock = await Stock.findOne({
       destination: transfert.destinationLocation,
       currency: transfert.currency
-    });
+    }).session(session);
 
-    if (!stock) {
-      return res.status(400).json({
-        error: 'Stock insuffisant ou inexistant pour cette destination/devise'
-      });
+    if (!stock || stock.amount < montantRetire) {
+      await session.abortTransaction();
+      return res.status(400).json({ error: 'Stock insuffisant' });
     }
 
-    if (stock.amount < montantRetire) {
-      return res.status(400).json({
-        error: 'Stock insuffisant pour effectuer le retrait'
-      });
-    }
-
-    // ➖ Déduction du stock
     stock.amount -= montantRetire;
     stock.updatedAt = new Date();
-    await stock.save();
+    await stock.save({ session });
 
-    // 🧾 Historique stock
     await new StockHistory({
       code: transfert.code,
       action: 'RETRAIT TRANSFERT',
@@ -385,18 +382,20 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       destination: transfert.destinationLocation,
       amount: montantRetire,
       currency: transfert.currency
-    }).save();
+    }).save({ session });
 
-    // ✅ Marquer le transfert comme retiré
     transfert.retired = true;
     transfert.retraitHistory.push({ date: new Date(), mode });
-    await transfert.save();
+    await transfert.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.json({ ok: true });
 
-
-
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     console.error(err);
     res.status(500).json({ error: 'Erreur lors du retrait' });
   }
