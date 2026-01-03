@@ -143,6 +143,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     <h2>Dashboard</h2>
     <a href="/logout">Déconnexion</a>
     <h3>Transferts</h3>
+    <button onclick="openNewTransfert()">➕ Nouveau Transfert</button>
     <div class="table-container"><table>
       <tr>
         <th>Code</th><th>UserType</th><th>Expéditeur</th><th>Destinataire</th>
@@ -175,7 +176,9 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     html+=`</table></div>`;
 
     // ==================== Stocks ====================
-    html+=`<h3>Stocks</h3><div class="table-container"><table>
+    html+=`<h3>Stocks</h3>
+    <button onclick="openNewStock()">➕ Nouveau Stock</button>
+    <div class="table-container"><table>
       <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Date</th><th>Actions</th></tr>`;
     stocks.forEach(s=>{
       html+=`<tr>
@@ -213,11 +216,37 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     html+=`<script>
     async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
     function printRow(btn){const row=btn.closest('tr');const nw=window.open('','PRINT','height=600,width=800');nw.document.write('<html><head><title>Imprimer</title></head><body>');nw.document.write('<table border="1">'+row.outerHTML+'</table></body></html>');nw.document.close();nw.print();nw.close();}
+    
     async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id});location.reload();}}
     async function retirerTransfert(id){const mode=prompt('Mode de retrait','Espèces');if(mode){await postData('/transferts/retirer',{id,mode});location.reload();}}
     async function editTransfert(id){const t=await(await fetch('/transferts/get/'+id)).json(); const data={...t}; const fields=['senderFirstName','senderLastName','senderPhone','receiverFirstName','receiverLastName','receiverPhone','originLocation','destinationLocation','amount','fees','recoveryAmount','currency','userType','recoveryMode']; for(let f of fields){const val=prompt(f,data[f]); if(val!==null)data[f]=val;} await postData('/transferts/form',data);location.reload();}
+
     async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id});location.reload();}}
     async function editStock(id){const s=await(await fetch('/stocks/get/'+id)).json(); const fields=['sender','senderPhone','destination','destinationPhone','amount','currency']; for(let f of fields){const val=prompt(f,s[f]); if(val!==null)s[f]=val;} await postData('/stocks/new',s);location.reload();}
+
+    function openNewTransfert(){
+      const data = {userType:'Client',senderFirstName:'',senderLastName:'',senderPhone:'',receiverFirstName:'',receiverLastName:'',receiverPhone:'',originLocation:'',destinationLocation:'France',amount:0,fees:0,recoveryAmount:0,currency:'GNF',recoveryMode:''};
+      editTransfertForm(data);
+    }
+
+    function openNewStock(){
+      const data={sender:'',senderPhone:'',destination:'France',destinationPhone:'',amount:0,currency:'GNF'};
+      editStockForm(data);
+    }
+
+    async function editTransfertForm(data){
+      const fields=['senderFirstName','senderLastName','senderPhone','receiverFirstName','receiverLastName','receiverPhone','originLocation','destinationLocation','amount','fees','recoveryAmount','currency','userType','recoveryMode'];
+      for(let f of fields){if(f==='destinationLocation'){data[f]=prompt(f+' (France/Guinée)',data[f]);}else if(f==='currency'){data[f]=prompt(f+' (GNF/USD/EUR)',data[f]);}else{const val=prompt(f,data[f]); if(val!==null)data[f]=val;}}
+      await postData('/transferts/form',data);
+      location.reload();
+    }
+
+    async function editStockForm(data){
+      const fields=['sender','senderPhone','destination','destinationPhone','amount','currency'];
+      for(let f of fields){if(f==='destination'){data[f]=prompt(f+' (France/Guinée)',data[f]);}else if(f==='currency'){data[f]=prompt(f+' (GNF/USD/EUR)',data[f]);}else{const val=prompt(f,data[f]); if(val!==null)data[f]=val;}}
+      await postData('/stocks/new',data);
+      location.reload();
+    }
     </script>`;
 
     html+='</body></html>';
@@ -226,16 +255,16 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   } catch(err){console.error(err);res.status(500).send('Erreur serveur');}
 });
 
-// ================= TRANSFERT ROUTES =================
+// ================= ROUTES TRANSFERT =================
 app.post('/transferts/form', requireLogin, async(req,res)=>{
-  try{ const data=req.body; if(data._id) await Transfert.findByIdAndUpdate(data._id,data); else{const code = await generateUniqueCode(); await new Transfert({...data,code,retraitHistory:[]}).save();} res.json({ok:true}); }
+  try{ const data=req.body; if(data._id) await Transfert.findByIdAndUpdate(data._id,data); else{const code=await generateUniqueCode(); await new Transfert({...data,code,retraitHistory:[]}).save();} res.json({ok:true}); }
   catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
 });
 app.post('/transferts/delete', requireLogin, async(req,res)=>{try{await Transfert.findByIdAndDelete(req.body.id);res.json({ok:true});}catch(err){console.error(err);res.status(500).json({error:'Erreur'});}});
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{try{const {id,mode}=req.body;await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});res.json({ok:true});}catch(err){console.error(err);res.status(500).json({error:'Erreur'});}});
 app.get('/transferts/get/:id', requireLogin, async(req,res)=>{try{const t=await Transfert.findById(req.params.id);res.json(t);}catch(err){console.error(err);res.status(500).json({error:'Introuvable'});}});
 
-// ================= STOCK ROUTES =================
+// ================= ROUTES STOCK =================
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   try{ const data=req.body; if(data._id) await Stock.findByIdAndUpdate(data._id,data); else{const code=await generateUniqueCode(); await new Stock({...data,code}).save();} res.json({ok:true}); }
   catch(err){console.error(err);res.status(500).json({error:'Erreur'});}
