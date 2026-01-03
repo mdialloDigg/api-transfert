@@ -355,5 +355,4 @@ app.post('/stocks/delete', requireLogin, async(req,res)=>{
 });
 
 // ================= SERVER =================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log(\`🚀 Serveur lancé sur http://localhost:\${PORT}\`));
+app.listen(PORT, () => console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
