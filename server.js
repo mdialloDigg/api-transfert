@@ -248,7 +248,6 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     html+=`</table></div>`;
 
     // =================== Table Stocks ===================
-    html+=`<h3>Stocks</h3>
     ${req.session.user.permissions.ecriture?'<button type="button" onclick="newStock()">➕ Nouveau Stock</button>':''}
     
 
