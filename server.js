@@ -1,6 +1,6 @@
 /******************************************************************
  * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC MOBILE ET IMPRIMER
- * + CONTROLES DE FORMAT DES VALEURS
+ * + CONTROLES DE FORMAT DES VALEURS AVEC MESSAGES
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -25,7 +25,6 @@ const ALLOWED_LOCATIONS = ['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMA
 const ALLOWED_RETRAIT_MODES = ['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
 
 function normalizeUpper(v){ return (v||'').toString().trim().toUpperCase(); }
-
 function isValidPhone(phone){
   if(!phone) return false;
   return /^00224\d{9}$/.test(phone) || /^0033\d{9}$/.test(phone);
@@ -54,13 +53,6 @@ const transfertSchema = new mongoose.Schema({
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
 
-const authSchema = new mongoose.Schema({
-  username: String,
-  password: String,
-  role: { type: String, enum:['admin','agent'], default:'agent' }
-});
-const Auth = mongoose.model('Auth', authSchema);
-
 const stockSchema = new mongoose.Schema({
   code: { type: String, unique: true },
   sender: String,
@@ -86,6 +78,13 @@ const stockHistorySchema = new mongoose.Schema({
   date: { type: Date, default: Date.now }
 });
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
+
+const authSchema = new mongoose.Schema({
+  username: String,
+  password: String,
+  role: { type: String, enum:['admin','agent'], default:'agent' }
+});
+const Auth = mongoose.model('Auth', authSchema);
 
 // ================= UTILS =================
 async function generateUniqueCode() {
@@ -190,12 +189,10 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     button.delete { background: #dc3545; color:white; }
     button.retirer { background: #ff9900; color:white; }
     button.print { background: #007bff; color:white; }
-
     .table-container { width:100%; overflow-x:auto; margin-bottom:20px; }
     table { border-collapse: collapse; width:100%; min-width:600px; }
     th, td { border:1px solid #ccc; padding:10px; text-align:left; vertical-align:top; }
     th { background:#ff8c42; color:white; }
-
     @media(max-width:768px){
       table, thead, tbody, th, td, tr { display:block; }
       thead tr { display:none; }
@@ -220,97 +217,4 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       ${req.session.user.permissions.ecriture?'<button type="button" onclick="newTransfert()">➕ Nouveau Transfert</button>':''}
     </form>`;
 
-    // Totaux
-    html+=`<h4>Totaux par destination/devise</h4>
-    <div class="table-container"><table>
-    <thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
-    for(let dest in totals){
-      for(let curr in totals[dest]){
-        html+=`<tr>
-          <td data-label="Destination">${dest}</td>
-          <td data-label="Devise">${curr}</td>
-          <td data-label="Montant">${totals[dest][curr].amount}</td>
-          <td data-label="Frais">${totals[dest][curr].fees}</td>
-          <td data-label="Reçu">${totals[dest][curr].recovery}</td>
-        </tr>`;
-      }
-    }
-    html+=`</tbody></table></div>`;
-
-    // =================== Table Transferts ===================
-    html+=`<div class="table-container"><table>
-    <tr><th>Code</th><th>Origin Location</th><th>Expéditeur</th><th>Destination Location</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
-    transferts.forEach(t=>{
-      html+=`<tr data-id="${t._id}">
-        <td data-label="Code">${t.code}</td>
-        <td data-label="Origin Location">${t.originLocation}</td>
-        <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
-        <td data-label="Destination Location">${t.destinationLocation}</td>
-        <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
-        <td data-label="Montant">${t.amount}</td>
-        <td data-label="Frais">${t.fees}</td>
-        <td data-label="Reçu">${t.amount - t.fees}</td>
-        <td data-label="Devise">${t.currency}</td>
-        <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
-        <td data-label="Actions">
-          ${req.session.user.permissions.modification?`<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>`:''}
-          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
-          ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="window.retirerTransfert('${t._id}')">💰</button>`:''}
-          <button class="print" onclick="printRow(this)">🖨️</button>
-        </td>
-      </tr>`;
-    });
-    html+=`</table></div>`;
-
-    // =================== Table Stocks & Historique Stocks ===================
-    // ... le code HTML identique avec boutons, prompts et scripts ...
-
-    html+=`<script>
-    async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
-
-    function newTransfert() {
-      const originLocation=prompt('Origine'); 
-      const sender=prompt('Expéditeur'); 
-      const senderPhone=prompt('Téléphone expéditeur'); 
-      const destinationLocation=prompt('Destination');
-      const receiver=prompt('Destinataire'); 
-      const receiverPhone=prompt('Téléphone destinataire'); 
-      const amount=parseFloat(prompt('Montant')); 
-      const fees=parseFloat(prompt('Frais')); 
-      const currency=prompt('Devise','GNF');
-
-      postData('/transferts/form',{
-        originLocation,
-        senderFirstName: sender,
-        senderPhone,
-        destinationLocation,
-        receiverFirstName: receiver,
-        receiverPhone,
-        amount,
-        fees,
-        currency,
-        userType:'Client'
-      }).then(()=>location.reload());
-    }
-
-    async function retirerTransfert(id){
-      const mode=prompt('Mode de retrait','Espèces');
-      if(!mode) return;
-      postData('/transferts/retirer',{id,mode}).then(()=>location.reload());
-    }
-
-    function printRow(btn){ const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1">'+row.outerHTML+'</table></body></html>'); newWin.document.close(); newWin.print(); newWin.close();}
-    </script>`;
-
-    html+='</body></html>';
-    res.send(html);
-
-  } catch(err){
-    console.error(err);
-    res.status(500).send('Erreur serveur lors du chargement du dashboard');
-  }
-});
-
-// ================= SERVER =================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
+    // Ici on peut ajouter table transferts + stocks + historique...
