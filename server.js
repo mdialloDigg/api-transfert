@@ -1,5 +1,5 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS – VERSION COMPLETE INTERACTIVE
+ * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC MODALS ET TOTAUX
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -31,7 +31,7 @@ const transfertSchema = new mongoose.Schema({
   destinationLocation: String,
   amount: Number,
   fees: Number,
-  recoveryAmount: Number,
+  received: Number,
   currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
   recoveryMode: String,
   retraitHistory: [{ date: Date, mode: String }],
@@ -40,6 +40,13 @@ const transfertSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 const Transfert = mongoose.model('Transfert', transfertSchema);
+
+const authSchema = new mongoose.Schema({
+  username: String,
+  password: String,
+  role: { type: String, enum:['admin','agent'], default:'agent' }
+});
+const Auth = mongoose.model('Auth', authSchema);
 
 const stockSchema = new mongoose.Schema({
   code: { type: String, unique: true },
@@ -67,16 +74,9 @@ const stockHistorySchema = new mongoose.Schema({
 });
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
-const authSchema = new mongoose.Schema({
-  username: String,
-  password: String,
-  role: { type: String, enum:['admin','agent'], default:'agent' }
-});
-const Auth = mongoose.model('Auth', authSchema);
-
 // ================= UTILS =================
 async function generateUniqueCode() {
-  let code, exists = true;
+  let code, exists=true;
   while(exists){
     const letter = String.fromCharCode(65 + Math.floor(Math.random()*26));
     const number = Math.floor(100 + Math.random()*900);
@@ -87,6 +87,12 @@ async function generateUniqueCode() {
 }
 
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
+
+function setPermissions(username){
+  if(username==='a') return { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true };
+  if(username==='admin2') return { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true };
+  return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
+}
 
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
@@ -115,7 +121,7 @@ app.post('/login', async(req,res)=>{
     let user = await Auth.findOne({username});
     if(!user){ const hashed=bcrypt.hashSync(password,10); user=await new Auth({username,password:hashed}).save(); }
     if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-    req.session.user={ username:user.username, role:user.role };
+    req.session.user={ username:user.username, role:user.role, permissions:setPermissions(username) };
     res.redirect('/dashboard');
   }catch(err){ console.error(err); res.status(500).send('Erreur lors de la connexion'); }
 });
@@ -134,10 +140,10 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     let transferts = transfertsRaw.filter(t=>{
       return t.code.toLowerCase().includes(s)
         || t.senderFirstName.toLowerCase().includes(s)
-        || t.senderLastName?.toLowerCase().includes(s)
+        || t.senderLastName.toLowerCase().includes(s)
         || (t.senderPhone||'').toLowerCase().includes(s)
         || t.receiverFirstName.toLowerCase().includes(s)
-        || t.receiverLastName?.toLowerCase().includes(s)
+        || t.receiverLastName.toLowerCase().includes(s)
         || (t.receiverPhone||'').toLowerCase().includes(s);
     });
     if(status==='retire') transferts=transferts.filter(t=>t.retired);
@@ -146,25 +152,46 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
     const totals={};
     transferts.forEach(t=>{
       if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-      if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,recovery:0};
+      if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,received:0};
       totals[t.destinationLocation][t.currency].amount+=t.amount;
       totals[t.destinationLocation][t.currency].fees+=t.fees;
-      totals[t.destinationLocation][t.currency].recovery += (t.amount - t.fees);
+      totals[t.destinationLocation][t.currency].received+=t.received;
     });
 
+    // ================== HTML ==================
     let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-    body{font-family:Arial;margin:0;padding:20px;background:#f0f2f5;}
-    table{border-collapse:collapse;width:100%;margin-bottom:20px;}
-    th,td{border:1px solid #ccc;padding:10px;}
-    th{background:#ff8c42;color:white;}
-    button{padding:5px 10px;margin:2px;cursor:pointer;}
+    body { font-family: Arial; background:#f0f2f5; margin:0; padding:20px; }
+    h2,h3,h4 { margin-top:20px; color:#333; }
+    a { color:#007bff; text-decoration:none; margin-right:10px; }
+    a:hover { text-decoration:underline; }
+    input, select, button { padding:8px; margin:5px 0; border-radius:6px; border:1px solid #ccc; font-size:14px; }
+    button { cursor:pointer; transition:0.3s; }
+    button:hover { opacity:0.8; }
+    button.modify { background: #28a745; color:white; }
+    button.delete { background: #dc3545; color:white; }
+    button.retirer { background: #ff9900; color:white; }
+    button.print { background: #007bff; color:white; }
+    .table-container { width:100%; overflow-x:auto; margin-bottom:20px; }
+    table { border-collapse: collapse; width:100%; min-width:600px; }
+    th, td { border:1px solid #ccc; padding:10px; text-align:left; vertical-align:top; }
+    th { background:#ff8c42; color:white; }
+    @media(max-width:768px){
+      table, thead, tbody, th, td, tr { display:block; }
+      thead tr { display:none; }
+      tr { margin-bottom:15px; border-bottom:2px solid #ddd; padding-bottom:10px; }
+      td { border:none; position:relative; padding-left:50%; text-align:left; }
+      td::before { content: attr(data-label); position:absolute; left:10px; top:10px; font-weight:bold; white-space:nowrap; }
+    }
     .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
-    .modal-content{background:white;padding:20px;border-radius:10px;width:90%;max-width:400px;}
-    input,select{width:100%;padding:8px;margin:5px 0;border-radius:5px;border:1px solid #ccc;}
-    </style></head><body>
+    .modal-content{background:white;padding:20px;border-radius:10px;max-width:400px;width:90%;}
+    .modal-content input, .modal-content select{width:100%;margin-bottom:10px;}
+    </style>
+    </head><body>
     <h2>📊 Dashboard</h2>
     <a href="/logout">🚪 Déconnexion</a>
+
+    <h3>Transferts</h3>
     <form method="get" action="/dashboard">
       <input type="text" name="search" placeholder="Recherche..." value="${search}">
       <select name="status">
@@ -173,256 +200,210 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
       </select>
       <button type="submit">🔍 Filtrer</button>
-      <button type="button" onclick="openTransfertModal()">➕ Nouveau Transfert</button>
-      <button type="button" onclick="openStockModal()">➕ Nouveau Stock</button>
-    </form>`;
+      ${req.session.user.permissions.ecriture?'<button type="button" onclick="openTransfertModal()">➕ Nouveau Transfert</button>':''}
+    </form>
 
-    // Totaux
-    html+=`<h3>Totaux par destination/devise</h3><table><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr>`;
+    <h4>Totaux par destination/devise</h4>
+    <div class="table-container"><table>
+    <thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
     for(let dest in totals){
       for(let curr in totals[dest]){
-        html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+        html+=`<tr>
+          <td data-label="Destination">${dest}</td>
+          <td data-label="Devise">${curr}</td>
+          <td data-label="Montant">${totals[dest][curr].amount}</td>
+          <td data-label="Frais">${totals[dest][curr].fees}</td>
+          <td data-label="Reçu">${totals[dest][curr].received}</td>
+        </tr>`;
       }
     }
-    html+=`</table>`;
+    html+=`</tbody></table></div>`;
 
-    // Transferts
-    html+=`<h3>Transferts</h3><table><tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+    // ================== Table Transferts ==================
+    html+=`<div class="table-container"><table>
+    <tr><th>Code</th><th>Origin</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
     transferts.forEach(t=>{
       html+=`<tr>
-      <td>${t.code}</td>
-      <td>${t.originLocation}</td>
-      <td>${t.senderFirstName} ${t.senderLastName || ''} 📞 ${t.senderPhone || '-'}</td>
-      <td>${t.destinationLocation}</td>
-      <td>${t.receiverFirstName} ${t.receiverLastName || ''} 📞 ${t.receiverPhone || '-'}</td>
-      <td>${t.amount}</td>
-      <td>${t.fees}</td>
-      <td>${t.amount - t.fees}</td>
-      <td>${t.currency}</td>
-      <td>${t.retired?'Retiré':'Non retiré'}</td>
-      <td>
-        <button onclick="editTransfert('${t._id}')">✏️</button>
-        <button onclick="deleteTransfert('${t._id}')">❌</button>
-        ${!t.retired?`<button onclick="retirerTransfert('${t._id}')">💰</button>`:''}
-        <button onclick="printRow(this)">🖨️</button>
-      </td>
+        <td data-label="Code">${t.code}</td>
+        <td data-label="Origin">${t.originLocation}</td>
+        <td data-label="Expéditeur">${t.senderFirstName}<br>📞 ${t.senderPhone||'-'}</td>
+        <td data-label="Destination">${t.destinationLocation}</td>
+        <td data-label="Destinataire">${t.receiverFirstName}<br>📞 ${t.receiverPhone||'-'}</td>
+        <td data-label="Montant">${t.amount}</td>
+        <td data-label="Frais">${t.fees}</td>
+        <td data-label="Reçu">${t.received}</td>
+        <td data-label="Devise">${t.currency}</td>
+        <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
+        <td data-label="Actions">
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="openTransfertModal('${t._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
+          ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
+        </td>
       </tr>`;
     });
-    html+=`</table>`;
+    html+=`</table></div>`;
 
-    // Stocks
-    html+=`<h3>Stocks</h3><table><tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
+    // ================== Table Stocks ==================
+    html+=`<h3>Stocks</h3>`;
+    if(req.session.user.permissions.ecriture) html+=`<button onclick="openStockModal()">➕ Nouveau Stock</button>`;
+    html+=`<div class="table-container"><table>
+    <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
     stocks.forEach(s=>{
       html+=`<tr>
-      <td>${s.code}</td>
-      <td>${s.sender} 📞 ${s.senderPhone || '-'}</td>
-      <td>${s.destination} 📞 ${s.destinationPhone || '-'}</td>
-      <td>${s.amount}</td>
-      <td>${s.currency}</td>
-      <td>
-        <button onclick="editStock('${s._id}')">✏️</button>
-        <button onclick="deleteStock('${s._id}')">❌</button>
-        <button onclick="printRow(this)">🖨️</button>
-      </td>
+        <td data-label="Code">${s.code}</td>
+        <td data-label="Expéditeur">${s.sender}<br>📞 ${s.senderPhone||'-'}</td>
+        <td data-label="Destination">${s.destination}<br>📞 ${s.destinationPhone||'-'}</td>
+        <td data-label="Montant">${s.amount}</td>
+        <td data-label="Devise">${s.currency}</td>
+        <td data-label="Actions">
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="openStockModal('${s._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${s._id}')">❌</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
+        </td>
       </tr>`;
     });
-    html+=`</table>`;
+    html+=`</table></div>`;
 
-    // Historique stocks
-    html+=`<h3>Historique Stocks</h3><table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
+    // ================== Stock History ==================
+    html+=`<h3>Historique Stocks</h3>
+    <div class="table-container"><table>
+    <tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th></tr>`;
     stockHistory.forEach(h=>{
       html+=`<tr>
-      <td>${new Date(h.date).toLocaleString()}</td>
-      <td>${h.code}</td>
-      <td>${h.sender} 📞 ${h.senderPhone || '-'}</td>
-      <td>${h.destination} 📞 ${h.destinationPhone || '-'}</td>
-      <td>${h.amount}</td>
-      <td>${h.currency}</td>
+        <td data-label="Date">${new Date(h.date).toLocaleString()}</td>
+        <td data-label="Code">${h.code}</td>
+        <td data-label="Expéditeur">${h.sender}<br>📞 ${h.senderPhone||'-'}</td>
+        <td data-label="Destination">${h.destination}<br>📞 ${h.destinationPhone||'-'}</td>
+        <td data-label="Montant">${h.amount}</td>
       </tr>`;
     });
-    html+=`</table>`;
+    html+=`</table></div>`;
 
-    // Modals et Script complet
-    html+=`<!-- Modals -->
-    <div id="transfertModal" class="modal">
-      <div class="modal-content">
-        <h3>Transfert</h3>
-        <input type="hidden" id="transfertId">
-        <label>Code</label><input type="text" id="transfertCode" readonly>
-        <label>Origine</label><input type="text" id="originLocation">
-        <label>Expéditeur</label><input type="text" id="senderFirstName">
-        <label>Téléphone</label><input type="text" id="senderPhone">
-        <label>Destination</label><input type="text" id="destinationLocation">
-        <label>Destinataire</label><input type="text" id="receiverFirstName">
-        <label>Téléphone</label><input type="text" id="receiverPhone">
-        <label>Montant</label><input type="number" id="amount">
-        <label>Frais</label><input type="number" id="fees">
-        <label>Devise</label><select id="currency">
-          <option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option>
-        </select>
-        <label>Mode de retrait</label><select id="recoveryMode">
-          <option>ESPECE</option><option>TRANSFERT</option><option>VIREMENT</option><option>AUTRE</option>
-        </select>
-        <button onclick="saveTransfert()">Enregistrer</button>
-        <button onclick="closeModal('transfertModal')">Fermer</button>
-      </div>
-    </div>
+    // ================== MODALS ==================
+    html+=`
+<div id="transfertModal" class="modal">
+  <div class="modal-content">
+    <h3>Transfert</h3>
+    <input id="t_code" readonly placeholder="Code généré">
+    <input id="t_origin" placeholder="Origine">
+    <input id="t_sender" placeholder="Nom expéditeur">
+    <input id="t_senderPhone" placeholder="Téléphone expéditeur">
+    <input id="t_destination" placeholder="Destination">
+    <input id="t_receiver" placeholder="Nom destinataire">
+    <input id="t_receiverPhone" placeholder="Téléphone destinataire">
+    <input id="t_amount" type="number" placeholder="Montant">
+    <input id="t_fees" type="number" placeholder="Frais">
+    <input id="t_received" readonly placeholder="Reçu">
+    <select id="t_currency">
+      <option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option>
+    </select>
+    <select id="t_recoveryMode">
+      <option>ESPECE</option><option>TRANSFERT</option><option>VIREMENT</option><option>AUTRE</option>
+    </select>
+    <button onclick="saveTransfert()">Enregistrer</button>
+    <button onclick="closeTransfertModal()">Fermer</button>
+  </div>
+</div>
 
-    <div id="stockModal" class="modal">
-      <div class="modal-content">
-        <h3>Stock</h3>
-        <input type="hidden" id="stockId">
-        <label>Code</label><input type="text" id="stockCode" readonly>
-        <label>Expéditeur</label><input type="text" id="stockSender">
-        <label>Téléphone</label><input type="text" id="stockSenderPhone">
-        <label>Destination</label><input type="text" id="stockDestination">
-        <label>Téléphone</label><input type="text" id="stockDestinationPhone">
-        <label>Montant</label><input type="number" id="stockAmount">
-        <label>Devise</label><select id="stockCurrency">
-          <option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option>
-        </select>
-        <button onclick="saveStock()">Enregistrer</button>
-        <button onclick="closeModal('stockModal')">Fermer</button>
-      </div>
-    </div>
+<div id="stockModal" class="modal">
+  <div class="modal-content">
+    <h3>Stock</h3>
+    <input id="s_code" readonly placeholder="Code généré">
+    <input id="s_sender" placeholder="Expéditeur">
+    <input id="s_senderPhone" placeholder="Téléphone expéditeur">
+    <input id="s_destination" placeholder="Destination">
+    <input id="s_destinationPhone" placeholder="Téléphone destination">
+    <input id="s_amount" type="number" placeholder="Montant">
+    <select id="s_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
+    <button onclick="saveStock()">Enregistrer</button>
+    <button onclick="closeStockModal()">Fermer</button>
+  </div>
+</div>`;
 
-    <script>
-    async function printRow(btn){ const row=btn.closest('tr'); const w=window.open(''); w.document.write('<html><body><table border="1">'+row.outerHTML+'</table></body></html>'); w.document.close(); w.print(); }
+    // ================== SCRIPT ==================
+    html+=`<script>
+const ALLOWED_CURRENCIES=['GNF','XOF','EUR','USD'];
+const ALLOWED_LOCATIONS=['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
+const ALLOWED_RETRAIT_MODES=['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
+function isValidPhone(phone){return /^00224\\d{9}$/.test(phone)||/^0033\\d{9}$/.test(phone);}
+function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
+function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+let currentTransfertId=null; let currentStockId=null;
 
-    function closeModal(id){ document.getElementById(id).style.display='none'; }
-    function openTransfertModal(){ document.getElementById('transfertId').value=''; fetch('/transferts/generateCode').then(r=>r.json()).then(d=>document.getElementById('transfertCode').value=d.code); document.getElementById('transfertModal').style.display='flex'; }
-    function openStockModal(){ document.getElementById('stockId').value=''; fetch('/transferts/generateCode').then(r=>r.json()).then(d=>document.getElementById('stockCode').value=d.code); document.getElementById('stockModal').style.display='flex'; }
+function openTransfertModal(id=null){currentTransfertId=id;document.getElementById('transfertModal').style.display='flex';if(id){fetch('/transferts/get/'+id).then(r=>r.json()).then(t=>{document.getElementById('t_code').value=t.code;document.getElementById('t_origin').value=t.originLocation;document.getElementById('t_sender').value=t.senderFirstName;document.getElementById('t_senderPhone').value=t.senderPhone;document.getElementById('t_destination').value=t.destinationLocation;document.getElementById('t_receiver').value=t.receiverFirstName;document.getElementById('t_receiverPhone').value=t.receiverPhone;document.getElementById('t_amount').value=t.amount;document.getElementById('t_fees').value=t.fees;document.getElementById('t_received').value=t.received;document.getElementById('t_currency').value=t.currency;document.getElementById('t_recoveryMode').value=t.recoveryMode;});}else{document.getElementById('t_code').value='';document.getElementById('t_origin').value='';document.getElementById('t_sender').value='';document.getElementById('t_senderPhone').value='';document.getElementById('t_destination').value='';document.getElementById('t_receiver').value='';document.getElementById('t_receiverPhone').value='';document.getElementById('t_amount').value='';document.getElementById('t_fees').value='';document.getElementById('t_received').value='';document.getElementById('t_currency').value='GNF';document.getElementById('t_recoveryMode').value='ESPECE';}}
+function closeTransfertModal(){document.getElementById('transfertModal').style.display='none';currentTransfertId=null;}
+function saveTransfert(){const originLocation=normalizeUpper(document.getElementById('t_origin').value);const sender=document.getElementById('t_sender').value.trim();const senderPhone=document.getElementById('t_senderPhone').value.trim();const destinationLocation=normalizeUpper(document.getElementById('t_destination').value);const receiver=document.getElementById('t_receiver').value.trim();const receiverPhone=document.getElementById('t_receiverPhone').value.trim();const amount=parseFloat(document.getElementById('t_amount').value);const fees=parseFloat(document.getElementById('t_fees').value);const currency=normalizeUpper(document.getElementById('t_currency').value);const recoveryMode=normalizeUpper(document.getElementById('t_recoveryMode').value);const received=amount-fees;if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide');return;}if(!sender){alert('Nom expéditeur obligatoire');return;}if(!isValidPhone(senderPhone)){alert('Téléphone expéditeur invalide');return;}if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}if(!receiver){alert('Nom destinataire obligatoire');return;}if(!isValidPhone(receiverPhone)){alert('Téléphone destinataire invalide');return;}if(isNaN(amount)||amount<=0){alert('Montant invalide');return;}if(isNaN(fees)||fees<0){alert('Frais invalide');return;}if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
+postData('/transferts/form',{_id:currentTransfertId,originLocation,senderFirstName:sender,senderPhone,destinationLocation,receiverFirstName:receiver,receiverPhone,amount,fees,received,currency,recoveryMode,userType:'Client'}).then(r=>{alert('✅ Transfert enregistré');location.reload();});
 
-    async function saveTransfert(){
-      const data={
-        _id: document.getElementById('transfertId').value || undefined,
-        code: document.getElementById('transfertCode').value,
-        originLocation: document.getElementById('originLocation').value,
-        senderFirstName: document.getElementById('senderFirstName').value,
-        senderPhone: document.getElementById('senderPhone').value,
-        destinationLocation: document.getElementById('destinationLocation').value,
-        receiverFirstName: document.getElementById('receiverFirstName').value,
-        receiverPhone: document.getElementById('receiverPhone').value,
-        amount: parseFloat(document.getElementById('amount').value),
-        fees: parseFloat(document.getElementById('fees').value),
-        recoveryAmount: parseFloat(document.getElementById('amount').value)-parseFloat(document.getElementById('fees').value),
-        currency: document.getElementById('currency').value,
-        recoveryMode: document.getElementById('recoveryMode').value
-      };
-      await fetch('/transferts/form',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-      location.reload();
-    }
-
-    async function saveStock(){
-      const data={
-        _id: document.getElementById('stockId').value || undefined,
-        code: document.getElementById('stockCode').value,
-        sender: document.getElementById('stockSender').value,
-        senderPhone: document.getElementById('stockSenderPhone').value,
-        destination: document.getElementById('stockDestination').value,
-        destinationPhone: document.getElementById('stockDestinationPhone').value,
-        amount: parseFloat(document.getElementById('stockAmount').value),
-        currency: document.getElementById('stockCurrency').value
-      };
-      await fetch('/stocks/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-      location.reload();
-    }
-
-    function editTransfert(id){
-      fetch('/transferts/form/'+id).then(r=>r.json()).then(d=>{
-        document.getElementById('transfertId').value=d._id;
-        document.getElementById('transfertCode').value=d.code;
-        document.getElementById('originLocation').value=d.originLocation || '';
-        document.getElementById('senderFirstName').value=d.senderFirstName || '';
-        document.getElementById('senderPhone').value=d.senderPhone || '';
-        document.getElementById('destinationLocation').value=d.destinationLocation || '';
-        document.getElementById('receiverFirstName').value=d.receiverFirstName || '';
-        document.getElementById('receiverPhone').value=d.receiverPhone || '';
-        document.getElementById('amount').value=d.amount || '';
-        document.getElementById('fees').value=d.fees || '';
-        document.getElementById('currency').value=d.currency || 'GNF';
-        document.getElementById('recoveryMode').value=d.recoveryMode || 'ESPECE';
-        document.getElementById('transfertModal').style.display='flex';
-      });
-    }
-
-    function editStock(id){
-      fetch('/stocks/get/'+id).then(r=>r.json()).then(d=>{
-        document.getElementById('stockId').value=d._id;
-        document.getElementById('stockCode').value=d.code;
-        document.getElementById('stockSender').value=d.sender || '';
-        document.getElementById('stockSenderPhone').value=d.senderPhone || '';
-        document.getElementById('stockDestination').value=d.destination || '';
-        document.getElementById('stockDestinationPhone').value=d.destinationPhone || '';
-        document.getElementById('stockAmount').value=d.amount || '';
-        document.getElementById('stockCurrency').value=d.currency || 'GNF';
-        document.getElementById('stockModal').style.display='flex';
-      });
-    }
-
-    async function deleteTransfert(id){ if(confirm('Supprimer ?')){ await fetch('/transferts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); location.reload(); } }
-    async function retirerTransfert(id){ const mode=document.getElementById('recoveryMode').value||'ESPECE'; await fetch('/transferts/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,mode})}); location.reload(); }
-    async function deleteStock(id){ if(confirm('Supprimer ?')){ await fetch('/stocks/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); location.reload(); } }
-    </script>`;
+}
+function openStockModal(id=null){currentStockId=id;document.getElementById('stockModal').style.display='flex';if(id){fetch('/stocks/get/'+id).then(r=>r.json()).then(s=>{document.getElementById('s_code').value=s.code;document.getElementById('s_sender').value=s.sender;document.getElementById('s_senderPhone').value=s.senderPhone;document.getElementById('s_destination').value=s.destination;document.getElementById('s_destinationPhone').value=s.destinationPhone;document.getElementById('s_amount').value=s.amount;document.getElementById('s_currency').value=s.currency;});}else{document.getElementById('s_code').value='';document.getElementById('s_sender').value='';document.getElementById('s_senderPhone').value='';document.getElementById('s_destination').value='';document.getElementById('s_destinationPhone').value='';document.getElementById('s_amount').value='';document.getElementById('s_currency').value='GNF';}}
+function closeStockModal(){document.getElementById('stockModal').style.display='none';currentStockId=null;}
+function saveStock(){const sender=document.getElementById('s_sender').value.trim();const senderPhone=document.getElementById('s_senderPhone').value.trim();const destination=normalizeUpper(document.getElementById('s_destination').value);const destinationPhone=document.getElementById('s_destinationPhone').value.trim();const amount=parseFloat(document.getElementById('s_amount').value);const currency=normalizeUpper(document.getElementById('s_currency').value);if(!sender){alert('Expéditeur obligatoire');return;}if(!isValidPhone(senderPhone)){alert('Téléphone expéditeur invalide');return;}if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}if(!isValidPhone(destinationPhone)){alert('Téléphone destination invalide');return;}if(isNaN(amount)||amount<=0){alert('Montant invalide');return;}if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}postData('/stocks/new',{_id:currentStockId,sender,senderPhone,destination,destinationPhone,amount,currency}).then(r=>{alert('✅ Stock enregistré');location.reload();});}
+function deleteTransfert(id){if(confirm('Supprimer ce transfert?')) postData('/transferts/delete',{id}).then(()=>location.reload());}
+function deleteStock(id){if(confirm('Supprimer ce stock?')) postData('/stocks/delete',{id}).then(()=>location.reload());}
+function retirerTransfert(id){const mode=normalizeUpper(prompt('Mode retrait','ESPECE'));if(!ALLOWED_RETRAIT_MODES.includes(mode)){alert('Mode invalide');return;}postData('/transferts/retirer',{id,mode}).then(()=>location.reload());}
+function printRow(btn){const row=btn.closest('tr');const w=window.open('');w.document.write('<html><body><table border="1">'+row.outerHTML+'</table></body></html>');w.document.close();w.print();w.close();}
+</script>`;
 
     html+='</body></html>';
     res.send(html);
-  } catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
+  }catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
 });
 
-// ================= ROUTES TRANSFERT =================
+// ================== TRANSFERT ROUTES ==================
 app.post('/transferts/form', requireLogin, async(req,res)=>{
   try{
     const data=req.body;
-    if(!data.code) data.code = await generateUniqueCode();
-    if(data._id) await Transfert.findByIdAndUpdate(data._id,data);
-    else await new Transfert({...data, retraitHistory:[]}).save();
-    res.json({ok:true, code:data.code});
-  } catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du transfert'}); }
+    if(data._id) await Transfert.findByIdAndUpdate(data._id,{...data});
+    else{
+      const code = data.code || await generateUniqueCode();
+      await new Transfert({...data,code,retraitHistory:[]}).save();
+    }
+    res.json({ok:true});
+  }catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du transfert'}); }
 });
 
-app.get('/transferts/form/:id', requireLogin, async(req,res)=>{
-  try{
-    const t = await Transfert.findById(req.params.id);
-    res.json(t);
-  }catch(err){ res.status(500).json({error:'Erreur'});}
+app.post('/transferts/delete', requireLogin, async(req,res)=>{
+  try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); }
+  catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du transfert'}); }
 });
 
-app.post('/transferts/delete', requireLogin, async(req,res)=>{ try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); } catch(err){ console.error(err); res.status(500).json({error:'Erreur'}); } });
 app.post('/transferts/retirer', requireLogin, async(req,res)=>{
   try{
-    const {id, mode} = req.body;
-    const t = await Transfert.findById(id);
-    if(!t || t.retired) return res.status(400).json({error:'Transfert introuvable ou déjà retiré'});
-    t.retired = true;
-    t.retraitHistory.push({date:new Date(), mode});
+    const {id,mode}=req.body;
+    const t=await Transfert.findById(id);
+    if(!t) return res.status(404).json({error:'Transfert introuvable'});
+    if(t.retired) return res.status(400).json({error:'Déjà retiré'});
+    t.retired=true;
+    t.retraitHistory.push({date:new Date(),mode});
     await t.save();
     res.json({ok:true});
-  }catch(err){ console.error(err); res.status(500).json({error:'Erreur retrait'});}
+  }catch(err){console.error(err);res.status(500).json({error:'Erreur lors du retrait'});}
 });
 
-// ================= ROUTES STOCK =================
+app.get('/transferts/get/:id', requireLogin, async(req,res)=>{ try{ const t=await Transfert.findById(req.params.id); res.json(t); }catch(err){res.status(500).json({error:'Transfert introuvable'});} });
+
+// ================== STOCK ROUTES ==================
 app.post('/stocks/new', requireLogin, async(req,res)=>{
   try{
     const data=req.body;
-    if(!data.code) data.code = await generateUniqueCode();
-    if(data._id) await Stock.findByIdAndUpdate(data._id,data);
-    else await new Stock(data).save();
-    await new StockHistory({...data, action:'CREATION'}).save();
-    res.json({ok:true, code:data.code});
-  }catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du stock'});}
+    if(data._id) await Stock.findByIdAndUpdate(data._id,{...data});
+    else{
+      const code = data.code || await generateUniqueCode();
+      await new Stock({...data,code}).save();
+      await new StockHistory({...data,code,action:'CREATION',date:new Date()}).save();
+    }
+    res.json({ok:true});
+  }catch(err){console.error(err);res.status(500).json({error:'Erreur lors de l\'enregistrement du stock'});}
 });
 
-app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
-  try{ const s=await Stock.findById(req.params.id); res.json(s); } catch(err){ res.status(500).json({error:'Erreur'}); } });
-
-app.post('/stocks/delete', requireLogin, async(req,res)=>{ try{ await Stock.findByIdAndDelete(req.body.id); res.json({ok:true}); } catch(err){ console.error(err); res.status(500).json({error:'Erreur'}); } });
-
-// ================= GENERATE CODE =================
-app.get('/transferts/generateCode', requireLogin, async(req,res)=>{
-  const code = await generateUniqueCode();
-  res.json({code});
+app.post('/stocks/delete', requireLogin, async(req,res)=>{
+  try{ await Stock.findByIdAndDelete(req.body.id); res.json({ok:true}); }
+  catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du stock'});}
 });
+
+app.get('/stocks/get/:id', requireLogin, async(req,res)=>{ try{ const s=await Stock.findById(req.params.id); res.json(s);}catch(err){res.status(500).json({error:'Stock introuvable'});} });
 
 // ================= SERVER =================
 const PORT = process.env.PORT || 3000;
