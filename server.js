@@ -394,14 +394,17 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       currency: transfert.currency
     }).save({ session });
 
-    transfert.retired = true;
-    transfert.retraitHistory.push({ date: new Date(), mode });
-    await transfert.save({ session });
+
+    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+    res.json({ok:true});
+
 
     await session.commitTransaction();
     session.endSession();
 
-    res.json({ ok: true });
+
+
+
 
   } catch (err) {
     await session.abortTransaction();
