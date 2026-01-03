@@ -342,57 +342,69 @@ app.post('/transferts/delete', requireLogin, async(req,res)=>{
   }
 });
 
-app.post('/transferts/retirer', requireLogin, async(req,res)=>{
-  try{
-    const {id,mode} = req.body;
-    await Transfert.findByIdAndUpdate(id,{retired:true,$push:{retraitHistory:{date:new Date(),mode}}});
+app.post('/transferts/retirer', requireLogin, async (req, res) => {
+  try {
+    const { id, mode } = req.body;
 
-
- const transfert = await Transfert.findById(id).session(session);
+    // 1️⃣ Récupérer le transfert
+    const transfert = await Transfert.findById(id);
     if (!transfert) {
-      throw new Error('Transfert introuvable');
+      return res.status(404).json({ error: 'Transfert introuvable' });
     }
 
+    if (transfert.retired) {
+      return res.status(400).json({ error: 'Déjà retiré' });
+    }
 
- const stock = await StockHistory.findOne({
+    const montantRetire = transfert.amount - transfert.fees;
+
+    // 2️⃣ Trouver le stock correspondant
+    const stock = await Stock.findOne({
       destination: transfert.destinationLocation,
       currency: transfert.currency
-    }).session(session);
+    });
 
+    if (!stock) {
+      return res.status(400).json({ error: 'Stock introuvable' });
+    }
 
- // 🔻 DÉBIT DU STOCK
+    if (stock.amount < montantRetire) {
+      return res.status(400).json({ error: 'Stock insuffisant' });
+    }
+
+    // 3️⃣ Débiter le stock
     stock.amount -= montantRetire;
-    await stock.save({ session });
+    await stock.save();
 
-    // ✅ MARQUER LE TRANSFERT COMME RETIRÉ
+    // 4️⃣ Marquer le transfert comme retiré
     transfert.retired = true;
     transfert.retraitHistory.push({
       date: new Date(),
       mode
     });
-    await transfert.save({ session });
+    await transfert.save();
 
-    // 🧾 HISTORIQUE
+    // 5️⃣ Historique
     await new StockHistory({
       code: transfert.code,
+      action: 'RETRAIT',
       stockId: stock._id,
-      sender: transfert.senderFirstName + ' ' + transfert.senderLastName,
+      sender: `${transfert.senderFirstName} ${transfert.senderLastName}`,
       senderPhone: transfert.senderPhone,
       destination: transfert.destinationLocation,
+      destinationPhone: transfert.receiverPhone,
       amount: montantRetire,
       currency: transfert.currency
-    }).save({ session });
+    }).save();
 
+    res.json({ ok: true });
 
-
-
-
-    res.json({ok:true});
-  } catch(err){
+  } catch (err) {
     console.error(err);
-    res.status(500).json({error:'Erreur lors du retrait'});
+    res.status(500).json({ error: 'Erreur lors du retrait' });
   }
 });
+
 
 app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
   try{
