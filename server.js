@@ -328,7 +328,7 @@ app.post('/stocks/new', requireLogin, async(req,res)=>{
 
 app.post('/stocks/delete', requireLogin, async(req,res)=>{
   try{
-    await stocks.findByIdAndDelete(req.body.id);
+    await StockHistory.findByIdAndDelete(req.body.id);
     res.json({ok:true});
   } catch(err){
     console.error(err);
