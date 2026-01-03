@@ -340,7 +340,7 @@ app.post('/stocks/delete', requireLogin, async(req,res)=>{
 
 app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
   try{
-    const s = await StockHistory.findById(req.params.id);
+    const s = await Stock.findById(req.params.id);
     res.json(s);
   } catch(err){
     console.error(err);
