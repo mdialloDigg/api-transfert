@@ -1,6 +1,6 @@
 /******************************************************************
  * APP TRANSFERT + STOCKS – VERSION COMPLETE AVEC MOBILE ET IMPRIMER
- * + CONTROLES DE FORMAT DES VALEURS AVEC MESSAGES
+ * + CONTROLES DE FORMAT ET CRUD COMPLET
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -19,16 +19,12 @@ mongoose.connect(mongoUri)
   .then(() => console.log('✅ MongoDB connecté'))
   .catch(err => { console.error('❌ Erreur MongoDB:', err.message); process.exit(1); });
 
-// ================= CONTROLES FORMAT =================
+// ================= CONSTANTES =================
 const ALLOWED_CURRENCIES = ['GNF','XOF','EUR','USD'];
 const ALLOWED_LOCATIONS = ['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
 const ALLOWED_RETRAIT_MODES = ['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
-
 function normalizeUpper(v){ return (v||'').toString().trim().toUpperCase(); }
-function isValidPhone(phone){
-  if(!phone) return false;
-  return /^00224\d{9}$/.test(phone) || /^0033\d{9}$/.test(phone);
-}
+function isValidPhone(phone){ return /^00224\d{9}$/.test(phone) || /^0033\d{9}$/.test(phone); }
 
 // ================= SCHEMAS =================
 const transfertSchema = new mongoose.Schema({
@@ -44,7 +40,7 @@ const transfertSchema = new mongoose.Schema({
   amount: Number,
   fees: Number,
   recoveryAmount: Number,
-  currency: { type: String, enum:['GNF','EUR','USD','XOF'], default:'GNF' },
+  currency: { type: String, enum: ALLOWED_CURRENCIES, default:'GNF' },
   recoveryMode: String,
   retraitHistory: [{ date: Date, mode: String }],
   retired: { type: Boolean, default: false },
@@ -60,7 +56,7 @@ const stockSchema = new mongoose.Schema({
   destination: String,
   destinationPhone: String,
   amount: Number,
-  currency: { type: String, default:'GNF' },
+  currency: { type: String, enum: ALLOWED_CURRENCIES, default:'GNF' },
   createdAt: { type: Date, default: Date.now }
 });
 const Stock = mongoose.model('Stock', stockSchema);
@@ -215,6 +211,234 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       </select>
       <button type="submit">🔍 Filtrer</button>
       ${req.session.user.permissions.ecriture?'<button type="button" onclick="newTransfert()">➕ Nouveau Transfert</button>':''}
-    </form>`;
+    </form>
 
-    // Ici on peut ajouter table transferts + stocks + historique...
+    <h4>Totaux par destination/devise</h4>
+    <div class="table-container"><table>
+    <thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
+    for(let dest in totals){
+      for(let curr in totals[dest]){
+        html+=`<tr>
+          <td data-label="Destination">${dest}</td>
+          <td data-label="Devise">${curr}</td>
+          <td data-label="Montant">${totals[dest][curr].amount}</td>
+          <td data-label="Frais">${totals[dest][curr].fees}</td>
+          <td data-label="Reçu">${totals[dest][curr].recovery}</td>
+        </tr>`;
+      }
+    }
+    html+=`</tbody></table></div>`;
+
+    // =================== Table Transferts ===================
+    html+=`<div class="table-container"><table>
+    <tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+    transferts.forEach(t=>{
+      html+=`<tr data-id="${t._id}">
+        <td data-label="Code">${t.code}</td>
+        <td data-label="Origine">${t.originLocation}</td>
+        <td data-label="Expéditeur">${t.senderFirstName} ${t.senderLastName}<br>📞 ${t.senderPhone || '-'}</td>
+        <td data-label="Destination">${t.destinationLocation}</td>
+        <td data-label="Destinataire">${t.receiverFirstName} ${t.receiverLastName}<br>📞 ${t.receiverPhone || '-'}</td>
+        <td data-label="Montant">${t.amount}</td>
+        <td data-label="Frais">${t.fees}</td>
+        <td data-label="Reçu">${t.amount - t.fees}</td>
+        <td data-label="Devise">${t.currency}</td>
+        <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
+        <td data-label="Actions">
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="editTransfert('${t._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteTransfert('${t._id}')">❌</button>`:''}
+          ${!t.retired && req.session.user.permissions.retrait?`<button class="retirer" onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
+        </td>
+      </tr>`;
+    });
+    html+=`</table></div>`;
+
+    // =================== Table Stocks ===================
+    html+=`<h3>Stocks</h3>`;
+    if(req.session.user.permissions.ecriture){
+      html+=`<button type="button" onclick="newStock()">➕ Nouveau Stock</button>`;
+    }
+    html+=`<div class="table-container"><table>
+    <tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
+    stocks.forEach(s=>{
+      html+=`<tr data-id="${s._id}">
+        <td data-label="Code">${s.code}</td>
+        <td data-label="Expéditeur">${s.sender}<br>📞 ${s.senderPhone || '-'}</td>
+        <td data-label="Destination">${s.destination}<br>📞 ${s.destinationPhone || '-'}</td>
+        <td data-label="Montant">${s.amount}</td>
+        <td data-label="Devise">${s.currency}</td>
+        <td data-label="Actions">
+          ${req.session.user.permissions.modification?`<button class="modify" onclick="editStock('${s._id}')">✏️</button>`:''}
+          ${req.session.user.permissions.suppression?`<button class="delete" onclick="deleteStock('${s._id}')">❌</button>`:''}
+          <button class="print" onclick="printRow(this)">🖨️</button>
+        </td>
+      </tr>`;
+    });
+    html+=`</table></div>`;
+
+    // =================== Historique Stocks ===================
+    html+=`<h3>Historique Stocks</h3>
+    <div class="table-container"><table>
+    <tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Actions</th></tr>`;
+    stockHistory.forEach(h=>{
+      html+=`<tr>
+        <td data-label="Date">${h.date.toLocaleString()}</td>
+        <td data-label="Code">${h.code}</td>
+        <td data-label="Expéditeur">${h.sender}<br>📞 ${h.senderPhone || '-'}</td>
+        <td data-label="Destination">${h.destination}<br>📞 ${h.destinationPhone || '-'}</td>
+        <td data-label="Montant">${h.amount}</td>
+        <td data-label="Actions">
+          <button class="print" onclick="printRow(this)">🖨️</button>
+        </td>
+      </tr>`;
+    });
+    html+=`</table></div>`;
+
+    // =================== SCRIPT ==================
+    html+=`<script>
+    async function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+
+    function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
+    const ALLOWED_CURRENCIES=['GNF','XOF','EUR','USD'];
+    const ALLOWED_LOCATIONS=['FRANCE','LABE','CONAKRY','SUISSE','BELGIQUE','ALLEMAGNE','USA'];
+    const ALLOWED_RETRAIT_MODES=['ESPECE','TRANSFERT','VIREMENT','AUTRE'];
+    function isValidPhone(phone){return /^00224\\d{9}$/.test(phone) || /^0033\\d{9}$/.test(phone);}
+
+    async function newTransfert(){
+      let originLocation=normalizeUpper(prompt('Origine (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)'));
+      if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide !');return;}
+      let sender=prompt('Nom expéditeur'); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destinationLocation=normalizeUpper(prompt('Destination (FRANCE, LABE, CONAKRY, SUISSE, BELGIQUE, ALLEMAGNE, USA)')); if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}
+      let receiver=prompt('Nom destinataire'); if(!receiver){alert('Nom obligatoire');return;}
+      let receiverPhone=prompt('Téléphone destinataire (00224XXXXXXXXX ou 0033XXXXXXXXX)'); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant')); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let fees=parseFloat(prompt('Frais')); if(isNaN(fees) || fees<0){alert('Frais invalide');return;}
+      let currency=normalizeUpper(prompt('Devise (GNF,XOF,EUR,USD)','GNF')); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      let recoveryMode=normalizeUpper(prompt('Mode de retrait (ESPECE, TRANSFERT, VIREMENT, AUTRE)','ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
+
+      await postData('/transferts/form',{
+        userType:'Client', originLocation, senderFirstName:sender, senderPhone,
+        destinationLocation, receiverFirstName:receiver, receiverPhone,
+        amount, fees, recoveryAmount: amount-fees, currency, recoveryMode
+      });
+      location.reload();
+    }
+
+    async function editTransfert(id){
+      const t=await (await fetch('/transferts/get/'+id)).json();
+      let originLocation=normalizeUpper(prompt('Origine',t.originLocation)); if(!ALLOWED_LOCATIONS.includes(originLocation)){alert('Origine invalide');return;}
+      let sender=prompt('Nom expéditeur',t.senderFirstName); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur',t.senderPhone); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destinationLocation=normalizeUpper(prompt('Destination',t.destinationLocation)); if(!ALLOWED_LOCATIONS.includes(destinationLocation)){alert('Destination invalide');return;}
+      let receiver=prompt('Nom destinataire',t.receiverFirstName); if(!receiver){alert('Nom obligatoire');return;}
+      let receiverPhone=prompt('Téléphone destinataire',t.receiverPhone); if(!isValidPhone(receiverPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant',t.amount)); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let fees=parseFloat(prompt('Frais',t.fees)); if(isNaN(fees) || fees<0){alert('Frais invalide');return;}
+      let currency=normalizeUpper(prompt('Devise',t.currency)); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      let recoveryMode=normalizeUpper(prompt('Mode de retrait',t.recoveryMode||'ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(recoveryMode)){alert('Mode de retrait invalide');return;}
+      await postData('/transferts/form',{_id:t._id, originLocation, senderFirstName:sender, senderPhone, destinationLocation, receiverFirstName:receiver, receiverPhone, amount, fees, recoveryAmount:amount-fees, currency, recoveryMode});
+      location.reload();
+    }
+
+    async function deleteTransfert(id){if(confirm('Supprimer ce transfert ?')){await postData('/transferts/delete',{id}); location.reload();}}
+    async function retirerTransfert(id){
+      let mode=normalizeUpper(prompt('Mode de retrait','ESPECE')); if(!ALLOWED_RETRAIT_MODES.includes(mode)){alert('Mode invalide');return;}
+      const res=await postData('/transferts/retirer',{id,mode}); if(!res.ok){alert(res.error||'Erreur');return;} alert('✅ Retrait effectué'); location.reload();
+    }
+
+    async function newStock(){
+      let sender=prompt('Expéditeur'); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur'); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destination=normalizeUpper(prompt('Destination')); if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}
+      let destinationPhone=prompt('Téléphone destination'); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant')); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let currency=normalizeUpper(prompt('Devise','GNF')); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      await postData('/stocks/new',{sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();
+    }
+
+    async function editStock(id){
+      const s=await (await fetch('/stocks/get/'+id)).json();
+      let sender=prompt('Expéditeur',s.sender); if(!sender){alert('Nom obligatoire');return;}
+      let senderPhone=prompt('Téléphone expéditeur',s.senderPhone); if(!isValidPhone(senderPhone)){alert('Téléphone invalide');return;}
+      let destination=normalizeUpper(prompt('Destination',s.destination)); if(!ALLOWED_LOCATIONS.includes(destination)){alert('Destination invalide');return;}
+      let destinationPhone=prompt('Téléphone destination',s.destinationPhone); if(!isValidPhone(destinationPhone)){alert('Téléphone invalide');return;}
+      let amount=parseFloat(prompt('Montant',s.amount)); if(isNaN(amount) || amount<=0){alert('Montant invalide');return;}
+      let currency=normalizeUpper(prompt('Devise',s.currency)); if(!ALLOWED_CURRENCIES.includes(currency)){alert('Devise invalide');return;}
+      await postData('/stocks/new',{_id:s._id,sender,senderPhone,destination,destinationPhone,amount,currency}); location.reload();
+    }
+
+    async function deleteStock(id){if(confirm('Supprimer ce stock ?')){await postData('/stocks/delete',{id}); location.reload();}}
+
+    function printRow(btn){const row=btn.closest('tr'); const newWin=window.open(''); newWin.document.write('<html><head><title>Impression</title></head><body>'); newWin.document.write('<table border="1" style="border-collapse:collapse; font-family:Arial; padding:10px;">'); newWin.document.write(row.outerHTML); newWin.document.write('</table></body></html>'); newWin.document.close(); newWin.print(); newWin.close();}
+    </script>`;
+
+    html+='</body></html>';
+    res.send(html);
+  } catch(err){ console.error(err); res.status(500).send('Erreur serveur'); }
+});
+
+// ================= TRANSFERT ROUTES =================
+app.post('/transferts/form', requireLogin, async(req,res)=>{
+  try{
+    const data=req.body;
+    if(data._id) await Transfert.findByIdAndUpdate(data._id,{...data});
+    else{
+      const code = data.code || await generateUniqueCode();
+      await new Transfert({...data,code,retraitHistory:[]}).save();
+    }
+    res.json({ok:true});
+  } catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de l\'enregistrement du transfert'}); }
+});
+
+app.post('/transferts/delete', requireLogin, async(req,res)=>{
+  try{ await Transfert.findByIdAndDelete(req.body.id); res.json({ok:true}); }
+  catch(err){ console.error(err); res.status(500).json({error:'Erreur lors de la suppression du transfert'}); }
+});
+
+app.post('/transferts/retirer', requireLogin, async (req,res)=>{
+  try{
+    const { id, mode }=req.body;
+    const transfert = await Transfert.findById(id); if(!transfert) return res.status(404).json({error:'Transfert introuvable'});
+    if(transfert.retired) return res.status(400).json({error:'Déjà retiré'});
+    const montantRetire = transfert.amount - transfert.fees;
+    const stock = await StockHistory.findOne({destination:transfert.destinationLocation, currency:transfert.currency});
+    if(!stock || stock.amount<montantRetire) return res.status(400).json({error:'Stock insuffisant'});
+    stock.amount -= montantRetire; await stock.save();
+    transfert.retired=true; transfert.retraitHistory.push({date:new Date(),mode}); await transfert.save();
+    res.json({ok:true});
+  } catch(err){ console.error(err); res.status(500).json({error:'Erreur retrait'});}
+});
+
+app.get('/transferts/get/:id', requireLogin, async(req,res)=>{
+  try{ const t = await Transfert.findById(req.params.id); res.json(t); } 
+  catch(err){ console.error(err); res.status(500).json({error:'Transfert introuvable'}); }
+});
+
+// ================= STOCK ROUTES =================
+app.post('/stocks/new', requireLogin, async(req,res)=>{
+  try{
+    const data=req.body;
+    if(data._id) await StockHistory.findByIdAndUpdate(data._id,{...data});
+    else{
+      const code = data.code || await generateUniqueCode();
+      await new StockHistory({...data,code}).save();
+    }
+    res.json({ok:true});
+  } catch(err){ console.error(err); res.status(500).json({error:'Erreur stock'}); }
+});
+
+app.post('/stocks/delete', requireLogin, async(req,res)=>{
+  try{ await StockHistory.findByIdAndDelete(req.body.id); res.json({ok:true}); }
+  catch(err){ console.error(err); res.status(500).json({error:'Erreur suppression stock'}); }
+});
+
+app.get('/stocks/get/:id', requireLogin, async(req,res)=>{
+  try{ const s = await StockHistory.findById(req.params.id); res.json(s); }
+  catch(err){ console.error(err); res.status(500).json({error:'Stock introuvable'}); }
+});
+
+// ================= SERVER =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
