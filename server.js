@@ -263,7 +263,6 @@ if(req.session.user.permissions.ecriture){
       html+=`<tr>
         <td data-label="Date">${h.date.toLocaleString()}</td>
         <td data-label="Code">${h.code}</td>
-        <td data-label="Action">${h.action}</td>
         <td data-label="Expéditeur">${h.sender}<br>📞 ${h.senderPhone || '-'}</td>
         <td data-label="Destination">${h.destination}<br>📞 ${h.destinationPhone || '-'}</td>
         <td data-label="Montant">${h.amount}</td>
