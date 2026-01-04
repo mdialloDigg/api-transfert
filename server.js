@@ -218,7 +218,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
   // =================== Stock Table ===================
   html+=`<h3>  </h3>
-  <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
+  <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
   stockHistory.forEach(h=>{
     html+=`<tr>
       <td>${new Date(h.date).toLocaleString()}</td>
@@ -444,7 +444,7 @@ function saveStock(){
 }
 function deleteStock(id){
   if(confirm('Supprimer ?'))
-    postData('/StockHistory/delete',{id}).then(()=>location.reload());
+    postData('/Stock/delete',{id}).then(()=>location.reload());
 }
 
 /* ================= CLIENT ================= */
