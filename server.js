@@ -56,7 +56,7 @@ const stockSchema = new mongoose.Schema({
 });
 const Stock = mongoose.model('Stock', stockSchema);
 
-const stockHistorySchema = new mongoose.Schema({
+const StockSchema = new mongoose.Schema({
   code: String,
   action: String,
   stockId: mongoose.Schema.Types.ObjectId,
@@ -70,7 +70,7 @@ const stockHistorySchema = new mongoose.Schema({
   date: { type: Date, default: Date.now }
 });
 
-const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
+const Stock = mongoose.model('Stock', StockSchema);
 
 const clientSchema = new mongoose.Schema({
   firstName: String,
@@ -154,7 +154,7 @@ app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); 
 app.get('/dashboard', requireLogin, async(req,res)=>{
   const transferts = await Transfert.find().sort({createdAt:-1});
   const stocks = await Stock.find().sort({createdAt:-1});
-  const stockHistory = await StockHistory.find().sort({date:-1});
+  const Stock = await Stock.find().sort({date:-1});
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
 
@@ -208,7 +208,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   // =================== Stock Table ===================
   html+=`<h3>  </h3>
   <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
-  stockHistory.forEach(h=>{
+  Stock.forEach(h=>{
     html+=`<tr>
       <td>${new Date(h.date).toLocaleString()}</td>
       <td>${h.code}</td>
@@ -406,7 +406,7 @@ function openStockModal(id = null) {
     return;
   }
 
-  fetch('/StockHistory/' + id)
+  fetch('/Stock/' + id)
     .then(r => r.json())
     .then(s => {
       s_sender.value = s.sender;
@@ -419,7 +419,7 @@ function openStockModal(id = null) {
 }
 
 function saveStock() {
-  fetch('/StockHistory/new', {
+  fetch('/Stock/new', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -437,7 +437,7 @@ function saveStock() {
 function deleteStock(id) {
   if (!confirm('Supprimer cet élément ?')) return;
 
-  fetch('/StockHistory/delete', {
+  fetch('/Stock/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id })
@@ -612,7 +612,7 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
     stock.amount -= montantRetire;
     await stock.save();
 
-   /* await StockHistory.create({
+   /* await Stock.create({
       code: t.code,
       action: 'RETRAIT',
       stockId: stock._id,
@@ -644,23 +644,23 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 ======================= */
 
 /* ===== LIST ===== */
-app.get('/StockHistory', async (req, res) => {
-  const stockHistory = await StockHistory.find().sort({ createdAt: -1 });
-  res.json(stockHistory);
+app.get('/Stock', async (req, res) => {
+  const Stock = await Stock.find().sort({ createdAt: -1 });
+  res.json(Stock);
 });
 
 /* ===== GET ONE (EDIT) ===== */
-app.get('/StockHistory/:id', async (req, res) => {
-  const stock = await StockHistory.findById(req.params.id);
+app.get('/Stock/:id', async (req, res) => {
+  const stock = await Stock.findById(req.params.id);
   res.json(stock);
 });
 
 /* ===== CREATE / UPDATE ===== */
-app.post('/StockHistory/new', async (req, res) => {
+app.post('/Stock/new', async (req, res) => {
   try {
     if (req.body._id) {
       /* UPDATE */
-      await StockHistory.findByIdAndUpdate(
+      await Stock.findByIdAndUpdate(
         req.body._id,
         {
           sender: req.body.sender,
@@ -674,7 +674,7 @@ app.post('/StockHistory/new', async (req, res) => {
       );
     } else {
       /* CREATE */
-      await new StockHistory({
+      await new Stock({
         code: await generateUniqueCode(),
         sender: req.body.sender,
         senderPhone: req.body.senderPhone,
@@ -694,9 +694,9 @@ app.post('/StockHistory/new', async (req, res) => {
 });
 
 /* ===== DELETE ===== */
-app.post('/StockHistory/delete', async (req, res) => {
+app.post('/Stock/delete', async (req, res) => {
   try {
-    await StockHistory.findByIdAndUpdate(
+    await Stock.findByIdAndUpdate(
       req.body.id,
       { action: 'SUPPRESSION' }
     );
