@@ -658,24 +658,11 @@ app.post('/stock/new', requireLogin, async (req, res) => {
   }
 });
 
-
-app.post('/stock/delete', requireLogin, async (req, res) => {
-  try {
-    const stock = await StockHistory.findById(req.body.id);
-    if (stock) {
-      await StockHistory.create({
-        action: 'SUPPRESSION',
-        stockId: stock._id,
-        ...stock.toObject(),
-      });
-      await StockHistory.findByIdAndDelete(req.body.id);
-    }
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
-  }
+app.post('/stock/delete', async (req, res) => {
+  await StockHistory.findByIdAndDelete(req.body.id);
+  res.json({ success: true });
 });
+
 
 // ================== CLIENT ==================
 app.post('/client/new', async (req, res) => {
