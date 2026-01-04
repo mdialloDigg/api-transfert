@@ -414,7 +414,7 @@ function openStockModal(id = null) {
     return;
   }
 
-  fetch('/StockHistory/' + id)
+  fetch('/stock/' + id)  // <-- ici
     .then(r => r.json())
     .then(s => {
       s_code.value = s.code;
@@ -427,24 +427,21 @@ function openStockModal(id = null) {
     });
 }
 
-function closeStockModal(){
-  stockModal.style.display='none';
-  currentStockId=null;
+function saveStock() {
+  postData('/stock/new', {   // <-- ici
+    _id: currentStockId,
+    sender: s_sender.value,
+    senderPhone: s_senderPhone.value,
+    destination: s_destination.value,
+    destinationPhone: s_destinationPhone.value,
+    amount: parseFloat(s_amount.value),
+    currency: s_currency.value,
+  }).then(() => location.reload());
 }
-function saveStock(){
-  postData('/StockHistory/new',{
-    _id:currentStockId,
-    sender:s_sender.value,
-    senderPhone:s_senderPhone.value,
-    destination:s_destination.value,
-    destinationPhone:s_destinationPhone.value,
-    amount:parseFloat(s_amount.value),
-    currency:s_currency.value
-  }).then(()=>location.reload());
-}
-function deleteStock(id){
-  if(confirm('Supprimer ?'))
-    postData('/StockHistory/delete',{id}).then(()=>location.reload());
+
+function deleteStock(id) {
+  if (confirm('Supprimer ?'))
+    postData('/stock/delete', { id }).then(() => location.reload()); // <-- ici
 }
 
 /* ================= CLIENT ================= */
@@ -624,40 +621,62 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 // ================== CRUD STOCK ==================
 
 /* GET */
-app.get('/StockHistory/:id', requireLogin, async (req, res) => {
-  res.json(await StockHistory.findById(req.params.id));
+app.get('/stock/:id', requireLogin, async (req, res) => {
+  const stock = await Stock.findById(req.params.id);
+  res.json(stock);
 });
 
+
 /* CREATE / UPDATE */
-app.post('/StockHistory/new', requireLogin, async (req, res) => {
+app.post('/stock/new', requireLogin, async (req, res) => {
   try {
     let stock;
 
     if (req.body._id) {
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
-      //await StockHistory.create({ action: 'MODIFICATION', stockId: stock._id, ...stock.toObject() });
+      // Modification du stock existant
+      stock = await Stock.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      await StockHistory.create({
+        action: 'MODIFICATION',
+        stockId: stock._id,
+        ...stock.toObject(),
+      });
     } else {
+      // Création d'un nouveau stock
       req.body.code = await generateUniqueCode();
-      stock = await new StockHistory(req.body).save();
-      //await StockHistory.create({ action: 'CREATION', stockId: stock._id, ...stock.toObject() });
+      stock = await new Stock(req.body).save();
+      await StockHistory.create({
+        action: 'CREATION',
+        stockId: stock._id,
+        ...stock.toObject(),
+      });
     }
 
     res.json({ success: true });
-  } catch (e) {
-    console.error(e);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ success: false });
   }
 });
 
-/* DELETE */
-app.post('/StockHistory/delete', requireLogin, async (req, res) => {
-  const stock = await StockHistory.findById(req.body.id);
-  if (stock) {
-    await StockHistory.create({ action: 'SUPPRESSION', stockId: stock._id, ...stock.toObject() });
-    await StockHistory.findByIdAndDelete(req.body.id);
+
+app.post('/stock/delete', requireLogin, async (req, res) => {
+  try {
+    const stock = await Stock.findById(req.body.id);
+    if (stock) {
+      await StockHistory.create({
+        action: 'SUPPRESSION',
+        stockId: stock._id,
+        ...stock.toObject(),
+      });
+      await Stock.findByIdAndDelete(req.body.id);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
   }
-  res.json({ success: true });
 });
+
 // ================== CLIENT ==================
 app.post('/client/new', async (req, res) => {
   if (req.body._id)
