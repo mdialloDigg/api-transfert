@@ -492,9 +492,9 @@ app.post('/transferts/delete', async(req,res)=>{ await transferts.findByIdAndDel
 app.post('/transferts/retirer', async(req,res)=>{ const t=await transferts.findById(req.body.id); if(t){ t.retired=true; t.retraitHistory.push({date:new Date(),mode:req.body.mode}); await t.save(); } res.json({success:true}); });
 
 // Idem pour stock
-app.post('/stock/new', async(req,res)=>{ if(req.body._id) await stock.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Stock(req.body).save(); 
+app.post('/stocks/new', async(req,res)=>{ if(req.body._id) await stock.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Stock(req.body).save(); 
 res.json({success:true}); });
-app.post('/stock/delete', async(req,res)=>{ await stock.findByIdAndDelete(req.body.id); res.json({success:true}); });
+app.post('/stocks/delete', async(req,res)=>{ await stock.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
 // Client
 app.post('/client/new', async(req,res)=>{ if(req.body._id) await Client.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Client(req.body).save(); res.json({success:true}); });
