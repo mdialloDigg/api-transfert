@@ -389,26 +389,24 @@ function retirerTransfert(id){
 }
 
 /* ================= STOCK ================= */
-
-
-let currentStockId = null;
-
 function openStockModal(id = null) {
   currentStockId = id;
+  stockModal.style.display = 'flex';
 
   if (!id) {
+    s_code.value = '';
     s_sender.value = '';
     s_senderPhone.value = '';
     s_destination.value = '';
     s_destinationPhone.value = '';
     s_amount.value = '';
-    s_currency.value = '';
     return;
   }
 
-  fetch('/StockHistory/' + id)
+  fetch('/stock/' + id)
     .then(r => r.json())
     .then(s => {
+      s_code.value = s.code;
       s_sender.value = s.sender;
       s_senderPhone.value = s.senderPhone;
       s_destination.value = s.destination;
@@ -418,34 +416,25 @@ function openStockModal(id = null) {
     });
 }
 
-function saveStock() {
-  fetch('/StockHistory/new', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      _id: currentStockId,
-      sender: s_sender.value,
-      senderPhone: s_senderPhone.value,
-      destination: s_destination.value,
-      destinationPhone: s_destinationPhone.value,
-      amount: Number(s_amount.value),
-      currency: s_currency.value
-    })
-  }).then(() => location.reload());
+function closeStockModal(){
+  stockModal.style.display='none';
+  currentStockId=null;
 }
-
-function deleteStock(id) {
-  if (!confirm('Supprimer cet élément ?')) return;
-
-  fetch('/StockHistory/delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id })
-  }).then(() => location.reload());
+function saveStock(){
+  postData('/StockHistory/new',{
+    _id:currentStockId,
+    sender:s_sender.value,
+    senderPhone:s_senderPhone.value,
+    destination:s_destination.value,
+    destinationPhone:s_destinationPhone.value,
+    amount:parseFloat(s_amount.value),
+    currency:s_currency.value
+  }).then(()=>location.reload());
 }
-
-
-
+function deleteStock(id){
+  if(confirm('Supprimer ?'))
+    postData('/StockHistory/delete',{id}).then(()=>location.reload());
+}
 
 /* ================= CLIENT ================= */
 function openClientModal(id=null){
