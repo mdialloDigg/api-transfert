@@ -661,14 +661,14 @@ app.post('/stock/new', requireLogin, async (req, res) => {
 
 app.post('/stock/delete', requireLogin, async (req, res) => {
   try {
-    const stock = await Stock.findById(req.body.id);
+    const stock = await StockHistory.findById(req.body._id);
     if (stock) {
       await StockHistory.create({
         action: 'SUPPRESSION',
         stockId: stock._id,
         ...stock.toObject(),
       });
-      await Stock.findByIdAndDelete(req.body.id);
+      await StockHistory.findByIdAndDelete(req.body._id);
     }
     res.json({ success: true });
   } catch (err) {
