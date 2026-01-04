@@ -65,9 +65,11 @@ const stockHistorySchema = new mongoose.Schema({
   destination: String,
   destinationPhone: String,
   amount: Number,
+  balance: Number, // ✅ AJOUT ICI
   currency: String,
   date: { type: Date, default: Date.now }
 });
+
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
 const clientSchema = new mongoose.Schema({
@@ -581,41 +583,31 @@ app.post('/transfert/delete', async (req, res) => {
   res.json({ success: true });
 });
 
+
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
   try {
     const { id, mode } = req.body;
 
-    // 1️⃣ Transfert
     const t = await Transfert.findById(id);
-    if (!t) {
-      return res.status(404).json({ error: 'Transfert introuvable' });
-    }
-
-    if (t.retired) {
-      return res.status(400).json({ error: 'Déjà retiré' });
-    }
+    if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
+    if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
 
     const montantRetire = t.amount - t.fees;
 
-    // 2️⃣ Stock réel
     const stock = await Stock.findOne({
       destination: t.destinationLocation,
       currency: t.currency
     });
 
-    if (!stock) {
-      return res.status(400).json({ error: 'Stock introuvable' });
-    }
-
-    if (stock.amount < montantRetire) {
+    if (!stock) return res.status(400).json({ error: 'Stock introuvable' });
+    if (stock.amount < montantRetire)
       return res.status(400).json({ error: 'Stock insuffisant' });
-    }
 
-    // 3️⃣ Débit du stock
+    // 🔥 Débit stock réel
     stock.amount -= montantRetire;
     await stock.save();
 
-    // 4️⃣ Historique stock (débit)
+    // 🔥 Historique stock (ligne de débit)
     await StockHistory.create({
       code: t.code,
       action: 'RETRAIT',
@@ -625,16 +617,13 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       destination: t.destinationLocation,
       destinationPhone: t.receiverPhone,
       amount: montantRetire,
-      balance: stock.amount, // 🔥 solde après retrait
+      balance: stock.amount,
       currency: t.currency
     });
 
-    // 5️⃣ Marquer le transfert comme retiré
+    // 🔥 Marquer le transfert
     t.retired = true;
-    t.retraitHistory.push({
-      date: new Date(),
-      mode
-    });
+    t.retraitHistory.push({ date: new Date(), mode });
     await t.save();
 
     res.json({ success: true });
@@ -646,55 +635,6 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
 });
 
 
-
-/*
-app.post('/transferts/retirer', requireLogin, async (req, res) => {
-  try {
-    const { id, mode } = req.body;
-
-    // 1️⃣ Récupérer le transfert
-    const t = await Transfert.findById(req.body.id);
-    if (!t) {
-      return res.status(404).json({ error: 'Transfert introuvable' });
-    }
-
-    if (t.retired) {
-      return res.status(400).json({ error: 'Déjà retiré' });
-    }
-
-    const montantRetire = t.amount - t.fees;
-
-    // 2️⃣ Trouver le stock correspondant
-    const stock = await StockHistory.findOne({
-      destination: t.destinationLocation,
-      currency: t.currency
-    });
-
-    if (!stock) {
-      return res.status(400).json({ error: 'Stock introuvable' });
-    }
-
-    if (stock.amount < montantRetire) {
-      return res.status(400).json({ error: 'Stock insuffisant' });
-    }
-
-    // 3️⃣ Débiter le stock
-    stock.amount -= montantRetire;
-    await stock.save();
-
-
-    // 5️⃣ Marquer le transfert comme retiré
-  t.retired = true;
-  t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
-  await t.save();
-  res.json({ success: true });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur lors du retrait' });
-  }
-});
-*/
 
 // ================== CRUD STOCK ==================
 app.post('/stock/new', async (req, res) => {
