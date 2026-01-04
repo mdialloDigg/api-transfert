@@ -644,11 +644,11 @@ app.post('/stock/new', requireLogin, async (req, res) => {
       // Création d'un nouveau stock
       req.body.code = await generateUniqueCode();
       stock = await new StockHistory(req.body).save();
-      await StockHistory.create({
-        action: 'CREATION',
-        stockId: stock._id,
-        ...stock.toObject(),
-      });
+      //await StockHistory.create({
+      //  action: 'CREATION',
+      //  stockId: stock._id,
+     //   ...stock.toObject(),
+     // });
     }
 
     res.json({ success: true });
