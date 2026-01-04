@@ -487,13 +487,13 @@ app.get('/export/excel', requireLogin, async(req,res)=>{
 
 
 // ================== CRUD Routes ==================
-app.post('/transferts/new', async(req,res)=>{ const data=req.body; if(data._id) await Transfert.findByIdAndUpdate(data._id,data,{new:true}); else{ data.code=await generateUniqueCode(); await new Transfert(data).save(); } res.json({success:true}); });
-app.post('/transferts/delete', async(req,res)=>{ await Transfert.findByIdAndDelete(req.body.id); res.json({success:true}); });
-app.post('/transferts/retirer', async(req,res)=>{ const t=await Transfert.findById(req.body.id); if(t){ t.retired=true; t.retraitHistory.push({date:new Date(),mode:req.body.mode}); await t.save(); } res.json({success:true}); });
+app.post('/transferts/new', async(req,res)=>{ const data=req.body; if(data._id) await transferts.findByIdAndUpdate(data._id,data,{new:true}); else{ data.code=await generateUniqueCode(); await new transferts(data).save(); } res.json({success:true}); });
+app.post('/transferts/delete', async(req,res)=>{ await transferts.findByIdAndDelete(req.body.id); res.json({success:true}); });
+app.post('/transferts/retirer', async(req,res)=>{ const t=await transferts.findById(req.body.id); if(t){ t.retired=true; t.retraitHistory.push({date:new Date(),mode:req.body.mode}); await t.save(); } res.json({success:true}); });
 
 // Idem pour stock
-app.post('/stocks/new', async(req,res)=>{ if(req.body._id) await StockHistory.findByIdAndUpdate(req.body._id,req.body,{new:true}); else{ req.body.code=await generateUniqueCode(); await new Stock(req.body).save(); } res.json({success:true}); });
-app.post('/stocks/delete', async(req,res)=>{ await StockHistory.findByIdAndDelete(req.body.id); res.json({success:true}); });
+app.post('/stock/new', async(req,res)=>{ if(req.body._id) await stock.findByIdAndUpdate(req.body._id,req.body,{new:true}); else{ req.body.code=await generateUniqueCode(); await new Stock(req.body).save(); } res.json({success:true}); });
+app.post('/stock/delete', async(req,res)=>{ await stock.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
 // Client
 app.post('/client/new', async(req,res)=>{ if(req.body._id) await Client.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Client(req.body).save(); res.json({success:true}); });
