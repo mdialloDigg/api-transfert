@@ -1,11 +1,14 @@
 /******************************************************************
- * APP TRANSFERT + STOCKS + CLIENTS + RATES – VERSION COMPLETE
+ * APP TRANSFERT + STOCKS + CLIENTS + RATES + EXPORT + HISTORY
+ * COMPLET : Dashboard avec modals CRUD et design existant
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -105,13 +108,11 @@ async function generateUniqueCode() {
 }
 
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
-
 function setPermissions(username){
   if(username==='a') return { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true };
   if(username==='admin2') return { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true };
   return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
 }
-
 function isValidPhone(phone){return /^00224\d{9}$/.test(phone)||/^0033\d{9}$/.test(phone);}
 function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
 
@@ -135,7 +136,6 @@ app.get('/login',(req,res)=>{
   </form>
   </div></body></html>`);
 });
-
 app.post('/login', async(req,res)=>{
   try{
     const {username,password} = req.body;
@@ -146,212 +146,255 @@ app.post('/login', async(req,res)=>{
     res.redirect('/dashboard');
   }catch(err){ console.error(err); res.status(500).send('Erreur lors de la connexion'); }
 });
-
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
 // ================= DASHBOARD =================
 app.get('/dashboard', requireLogin, async(req,res)=>{
-  try{
-    const { search='', status='all' } = req.query;
-    const transfertsRaw = await Transfert.find().sort({createdAt:-1});
-    const stocks = await Stock.find().sort({createdAt:-1});
-    const stockHistory = await StockHistory.find().sort({date:-1});
-    const clients = await Client.find().sort({createdAt:-1});
-    const rates = await Rate.find().sort({createdAt:-1});
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  const stocks = await Stock.find().sort({createdAt:-1});
+  const stockHistory = await StockHistory.find().sort({date:-1});
+  const clients = await Client.find().sort({createdAt:-1});
+  const rates = await Rate.find().sort({createdAt:-1});
 
-    const s = search.toLowerCase();
-    let transferts = transfertsRaw.filter(t=>{
-      return t.code.toLowerCase().includes(s)
-        || (t.senderFirstName||'').toLowerCase().includes(s)
-        || (t.receiverFirstName||'').toLowerCase().includes(s)
-        || (t.senderPhone||'').toLowerCase().includes(s)
-        || (t.receiverPhone||'').toLowerCase().includes(s);
-    });
-    if(status==='retire') transferts=transferts.filter(t=>t.retired);
-    else if(status==='non') transferts=transferts.filter(t=>!t.retired);
+  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+  body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
+  h2,h3,h4{margin-top:20px;color:#333;}
+  a{margin-right:10px;text-decoration:none;color:#007bff;}a:hover{text-decoration:underline;}
+  table{border-collapse:collapse;width:100%;margin-bottom:20px;}
+  th,td{border:1px solid #ccc;padding:8px;}
+  th{background:#ff8c42;color:white;}
+  button{margin:2px;padding:5px 10px;cursor:pointer;}
+  .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
+  .modal-content{background:white;padding:20px;border-radius:10px;max-width:500px;width:90%;overflow:auto;}
+  input,select{width:100%;padding:6px;margin-bottom:10px;}
+  </style></head><body>
+  <h2>📊 Dashboard</h2>
+  <a href="/logout">🚪 Déconnexion</a>
+  <button onclick="exportPDF()">📄 Export PDF</button>
+  <button onclick="exportExcel()">📊 Export Excel</button>`;
 
-    const totals={};
-    transferts.forEach(t=>{
-      if(!totals[t.destinationLocation]) totals[t.destinationLocation]={};
-      if(!totals[t.destinationLocation][t.currency]) totals[t.destinationLocation][t.currency]={amount:0,fees:0,received:0};
-      totals[t.destinationLocation][t.currency].amount+=t.amount;
-      totals[t.destinationLocation][t.currency].fees+=t.fees;
-      totals[t.destinationLocation][t.currency].received+=t.received;
-    });
-
-    // ================== HTML ==================
-    let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-    body { font-family: Arial; background:#f0f2f5; margin:0; padding:20px; }
-    h2,h3,h4 { margin-top:20px; color:#333; }
-    a { color:#007bff; text-decoration:none; margin-right:10px; }
-    a:hover { text-decoration:underline; }
-    input, select, button { padding:8px; margin:5px 0; border-radius:6px; border:1px solid #ccc; font-size:14px; }
-    button { cursor:pointer; transition:0.3s; }
-    button.modify { background: #28a745; color:white; }
-    button.delete { background: #dc3545; color:white; }
-    button.retirer { background: #ff9900; color:white; }
-    button.print { background: #007bff; color:white; }
-    .table-container { width:100%; overflow-x:auto; margin-bottom:20px; }
-    table { border-collapse: collapse; width:100%; min-width:600px; }
-    th, td { border:1px solid #ccc; padding:10px; text-align:left; vertical-align:top; }
-    th { background:#ff8c42; color:white; }
-    @media(max-width:768px){
-      table, thead, tbody, th, td, tr { display:block; }
-      thead tr { display:none; }
-      tr { margin-bottom:15px; border-bottom:2px solid #ddd; padding-bottom:10px; }
-      td { border:none; position:relative; padding-left:50%; text-align:left; }
-      td::before { content: attr(data-label); position:absolute; left:10px; top:10px; font-weight:bold; white-space:nowrap; }
-    }
-    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
-    .modal-content{background:white;padding:20px;border-radius:10px;max-width:400px;width:90%;overflow:auto;}
-    .modal-content input, .modal-content select{width:100%;margin-bottom:10px;}
-    </style>
-    </head><body>
-    <h2>📊 Dashboard</h2>
-    <a href="/logout">🚪 Déconnexion</a>
-
-    <h3>Transferts</h3>
-    <button onclick="openModal('transfert')">➕ Nouveau Transfert</button>
-    <div class="table-container"><table>
-    <tr><th>Code</th><th>Origin</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
-    transferts.forEach(t=>{
-      html+=`<tr>
-        <td data-label="Code">${t.code}</td>
-        <td data-label="Origin">${t.originLocation}</td>
-        <td data-label="Expéditeur">${t.senderFirstName}<br>📞 ${t.senderPhone||'-'}</td>
-        <td data-label="Destination">${t.destinationLocation}</td>
-        <td data-label="Destinataire">${t.receiverFirstName}<br>📞 ${t.receiverPhone||'-'}</td>
-        <td data-label="Montant">${t.amount}</td>
-        <td data-label="Frais">${t.fees}</td>
-        <td data-label="Reçu">${t.received}</td>
-        <td data-label="Devise">${t.currency}</td>
-        <td data-label="Status">${t.retired?'Retiré':'Non retiré'}</td>
-        <td data-label="Actions">
-          <button class="modify" onclick="editTransfert('${t._id}')">✏️</button>
-          <button class="delete" onclick="fetch('/transfert/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}'})}).then(()=>location.reload())">❌</button>
-          ${!t.retired?`<button class="retirer" onclick="fetch('/transfert/retirer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'${t._id}',mode:'ESPECE'})}).then(()=>location.reload())">💰</button>`:''}
-        </td>
-      </tr>`;
-    });
-    html+=`</table></div>`;
-
-    // ======= Stocks, Clients, Rates tables similarly =======
-    // Ici tu peux rajouter les tables Stocks, Clients, Rates exactement comme la table transferts
-    // avec les boutons ➕ et édit/delete + print
-
-    // ================= MODAL UNIQUE =================
-    html+=`
-<div id="modal" class="modal">
-  <div class="modal-content">
-    <h3 id="modalTitle">Formulaire</h3>
-    <form id="modalForm">
-      <input type="hidden" id="m_id">
-      <div id="modalFields"></div>
-      <button type="submit">Enregistrer</button>
-      <button type="button" onclick="closeModal()">Fermer</button>
-    </form>
-  </div>
-</div>
-<script>
-let currentType='';
-const fieldTemplates = {
-  'transfert': [
-    {id:'senderFirstName', placeholder:'Nom expéditeur', required:true},
-    {id:'senderPhone', placeholder:'Téléphone expéditeur', required:true},
-    {id:'originLocation', placeholder:'Origine', required:true},
-    {id:'receiverFirstName', placeholder:'Nom destinataire', required:true},
-    {id:'receiverPhone', placeholder:'Téléphone destinataire', required:true},
-    {id:'destinationLocation', placeholder:'Destination', required:true},
-    {id:'amount', placeholder:'Montant', type:'number', required:true},
-    {id:'fees', placeholder:'Frais', type:'number', required:true},
-    {id:'currency', type:'select', options:['GNF','XOF','EUR','USD'], required:true},
-    {id:'recoveryMode', type:'select', options:['ESPECE','TRANSFERT','VIREMENT','AUTRE'], required:true}
-  ],
-  'stock': [
-    {id:'sender', placeholder:'Expéditeur', required:true},
-    {id:'senderPhone', placeholder:'Téléphone expéditeur', required:true},
-    {id:'destination', placeholder:'Destination', required:true},
-    {id:'destinationPhone', placeholder:'Téléphone destination', required:true},
-    {id:'amount', placeholder:'Montant', type:'number', required:true},
-    {id:'currency', type:'select', options:['GNF','XOF','EUR','USD'], required:true}
-  ],
-  'client': [
-    {id:'firstName', placeholder:'Prénom', required:true},
-    {id:'lastName', placeholder:'Nom', required:true},
-    {id:'phone', placeholder:'Téléphone', required:true},
-    {id:'email', placeholder:'Email', required:false},
-    {id:'kycVerified', type:'select', options:['false','true'], placeholder:'KYC', required:true}
-  ],
-  'rate': [
-    {id:'from', placeholder:'De', required:true},
-    {id:'to', placeholder:'Vers', required:true},
-    {id:'rate', placeholder:'Taux', type:'number', required:true}
-  ]
-};
-
-function openModal(type){
-  currentType=type;
-  document.getElementById('modal').style.display='flex';
-  document.getElementById('modalTitle').innerText='Ajouter '+type;
-  document.getElementById('m_id').value='';
-  const container = document.getElementById('modalFields');
-  container.innerHTML='';
-  fieldTemplates[type].forEach(f=>{
-    let input;
-    if(f.type==='select'){
-      input = document.createElement('select');
-      f.options.forEach(opt=>{ const o=document.createElement('option'); o.value=opt;o.innerText=opt; input.appendChild(o); });
-    }else{
-      input = document.createElement('input');
-      input.type = f.type||'text';
-      input.placeholder = f.placeholder;
-    }
-    input.id=f.id;
-    if(f.required) input.required=true;
-    container.appendChild(input);
+  // =================== Transferts Table ===================
+  html+=`<h3>Transferts</h3>
+  <button onclick="openTransfertModal()">➕ Nouveau Transfert</button>
+  <table>
+  <tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
+  transferts.forEach(t=>{
+    html+=`<tr>
+      <td>${t.code}</td>
+      <td>${t.originLocation}</td>
+      <td>${t.senderFirstName} 📞 ${t.senderPhone||'-'}</td>
+      <td>${t.destinationLocation}</td>
+      <td>${t.receiverFirstName} 📞 ${t.receiverPhone||'-'}</td>
+      <td>${t.amount}</td>
+      <td>${t.fees}</td>
+      <td>${t.received}</td>
+      <td>${t.currency}</td>
+      <td>${t.retired?'Retiré':'Non retiré'}</td>
+      <td>
+        <button onclick="openTransfertModal('${t._id}')">✏️</button>
+        <button onclick="deleteTransfert('${t._id}')">❌</button>
+        ${!t.retired?`<button onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+      </td>
+    </tr>`;
   });
-}
-function closeModal(){document.getElementById('modal').style.display='none';}
-document.getElementById('modalForm').onsubmit = function(e){
-  e.preventDefault();
-  const id = document.getElementById('m_id').value;
-  const data = { _id:id };
-  fieldTemplates[currentType].forEach(f=>{
-    const val = document.getElementById(f.id).value;
-    if(f.type==='number') data[f.id]=parseFloat(val)||0;
-    else if(f.type==='select' && f.id==='kycVerified') data[f.id]=(val==='true');
-    else data[f.id]=val;
-  });
-  fetch('/'+currentType+'/new',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(data)
-  }).then(r=>r.json()).then(()=>location.reload());
-};
+  html+=`</table>`;
 
-// EDIT FUNCTIONS
-function editTransfert(id){openModal('transfert');document.getElementById('m_id').value=id;}
-function editStock(id){openModal('stock');document.getElementById('m_id').value=id;}
-function editClient(id){openModal('client');document.getElementById('m_id').value=id;}
-function editRate(id){openModal('rate');document.getElementById('m_id').value=id;}
-</script>
-</body></html>`;
-    res.send(html);
-  }catch(err){ console.error(err); res.status(500).send('Erreur Dashboard'); }
+  // =================== Stocks Table ===================
+  html+=`<h3>Stocks</h3><button onclick="openStockModal()">➕ Nouveau Stock</button>
+  <table><tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
+  stocks.forEach(s=>{
+    html+=`<tr>
+      <td>${s.code}</td>
+      <td>${s.sender} 📞 ${s.senderPhone||'-'}</td>
+      <td>${s.destination} 📞 ${s.destinationPhone||'-'}</td>
+      <td>${s.amount}</td>
+      <td>${s.currency}</td>
+      <td>
+        <button onclick="openStockModal('${s._id}')">✏️</button>
+        <button onclick="deleteStock('${s._id}')">❌</button>
+      </td>
+    </tr>`;
+  });
+  html+=`</table>`;
+
+  // =================== Stock History Table ===================
+  html+=`<h3>Historique Stocks</h3>
+  <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
+  stockHistory.forEach(h=>{
+    html+=`<tr>
+      <td>${new Date(h.date).toLocaleString()}</td>
+      <td>${h.code}</td>
+      <td>${h.sender} 📞 ${h.senderPhone||'-'}</td>
+      <td>${h.destination} 📞 ${h.destinationPhone||'-'}</td>
+      <td>${h.amount}</td>
+      <td>${h.currency}</td>
+    </tr>`;
+  });
+  html+=`</table>`;
+
+  // =================== Clients KYC ===================
+  html+=`<h3>Clients KYC</h3><button onclick="openClientModal()">➕ Nouveau Client</button>
+  <table><tr><th>Nom</th><th>Prénom</th><th>Téléphone</th><th>Email</th><th>KYC</th><th>Actions</th></tr>`;
+  clients.forEach(c=>{
+    html+=`<tr>
+      <td>${c.lastName}</td>
+      <td>${c.firstName}</td>
+      <td>${c.phone}</td>
+      <td>${c.email||'-'}</td>
+      <td>${c.kycVerified?'✅':'❌'}</td>
+      <td><button onclick="openClientModal('${c._id}')">✏️</button><button onclick="deleteClient('${c._id}')">❌</button></td>
+    </tr>`;
+  });
+  html+=`</table>`;
+
+  // =================== Taux / Rates ===================
+  html+=`<h3>Taux de Change</h3><button onclick="openRateModal()">➕ Nouveau Taux</button>
+  <table><tr><th>De</th><th>Vers</th><th>Rate</th><th>Actions</th></tr>`;
+  rates.forEach(r=>{
+    html+=`<tr>
+      <td>${r.from}</td><td>${r.to}</td><td>${r.rate}</td>
+      <td><button onclick="openRateModal('${r._id}')">✏️</button><button onclick="deleteRate('${r._id}')">❌</button></td>
+    </tr>`;
+  });
+  html+=`</table>`;
+
+  // =================== MODALS ===================
+  html+=`
+<div id="transfertModal" class="modal">
+<div class="modal-content">
+<h3>Transfert</h3>
+<input id="t_code" readonly placeholder="Code généré">
+<input id="t_origin" placeholder="Origine">
+<input id="t_sender" placeholder="Nom expéditeur">
+<input id="t_senderPhone" placeholder="Téléphone expéditeur">
+<input id="t_destination" placeholder="Destination">
+<input id="t_receiver" placeholder="Nom destinataire">
+<input id="t_receiverPhone" placeholder="Téléphone destinataire">
+<input id="t_amount" type="number" placeholder="Montant">
+<input id="t_fees" type="number" placeholder="Frais">
+<input id="t_received" readonly placeholder="Reçu">
+<select id="t_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
+<select id="t_recoveryMode"><option>ESPECE</option><option>TRANSFERT</option><option>VIREMENT</option><option>AUTRE</option></select>
+<button onclick="saveTransfert()">Enregistrer</button>
+<button onclick="closeTransfertModal()">Fermer</button>
+</div></div>
+
+<div id="stockModal" class="modal">
+<div class="modal-content">
+<h3>Stock</h3>
+<input id="s_code" readonly placeholder="Code généré">
+<input id="s_sender" placeholder="Expéditeur">
+<input id="s_senderPhone" placeholder="Téléphone expéditeur">
+<input id="s_destination" placeholder="Destination">
+<input id="s_destinationPhone" placeholder="Téléphone destination">
+<input id="s_amount" type="number" placeholder="Montant">
+<select id="s_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
+<button onclick="saveStock()">Enregistrer</button>
+<button onclick="closeStockModal()">Fermer</button>
+</div></div>
+
+<div id="clientModal" class="modal">
+<div class="modal-content">
+<h3>Client KYC</h3>
+<input id="c_firstName" placeholder="Prénom">
+<input id="c_lastName" placeholder="Nom">
+<input id="c_phone" placeholder="Téléphone">
+<input id="c_email" placeholder="Email">
+<select id="c_kyc"><option value="false">Non</option><option value="true">Oui</option></select>
+<button onclick="saveClient()">Enregistrer</button>
+<button onclick="closeClientModal()">Fermer</button>
+</div></div>
+
+<div id="rateModal" class="modal">
+<div class="modal-content">
+<h3>Taux de Change</h3>
+<input id="r_from" placeholder="De">
+<input id="r_to" placeholder="Vers">
+<input id="r_rate" type="number" step="0.0001" placeholder="Rate">
+<button onclick="saveRate()">Enregistrer</button>
+<button onclick="closeRateModal()">Fermer</button>
+</div></div>`;
+
+  // =================== SCRIPT ===================
+  html+=`<script>
+let currentTransfertId=null, currentStockId=null, currentClientId=null, currentRateId=null;
+
+function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+
+function openTransfertModal(id=null){currentTransfertId=id;document.getElementById('transfertModal').style.display='flex';}
+function closeTransfertModal(){document.getElementById('transfertModal').style.display='none';currentTransfertId=null;}
+function saveTransfert(){const t={_id:currentTransfertId,originLocation:document.getElementById('t_origin').value,senderFirstName:document.getElementById('t_sender').value,senderPhone:document.getElementById('t_senderPhone').value,destinationLocation:document.getElementById('t_destination').value,receiverFirstName:document.getElementById('t_receiver').value,receiverPhone:document.getElementById('t_receiverPhone').value,amount:parseFloat(document.getElementById('t_amount').value),fees:parseFloat(document.getElementById('t_fees').value),received:parseFloat(document.getElementById('t_amount').value)-parseFloat(document.getElementById('t_fees').value),currency:document.getElementById('t_currency').value,recoveryMode:document.getElementById('t_recoveryMode').value};postData('/transfert/save',t).then(()=>location.reload());}
+
+function deleteTransfert(id){if(confirm('Supprimer ?')) postData('/transfert/delete',{id}).then(()=>location.reload());}
+function retirerTransfert(id){if(confirm('Retirer ce transfert ?')){postData('/transfert/save',{_id:id,retired:true}).then(()=>location.reload());}}
+
+function openStockModal(id=null){currentStockId=id;document.getElementById('stockModal').style.display='flex';}
+function closeStockModal(){document.getElementById('stockModal').style.display='none';currentStockId=null;}
+function saveStock(){const s={_id:currentStockId,sender:document.getElementById('s_sender').value,senderPhone:document.getElementById('s_senderPhone').value,destination:document.getElementById('s_destination').value,destinationPhone:document.getElementById('s_destinationPhone').value,amount:parseFloat(document.getElementById('s_amount').value),currency:document.getElementById('s_currency').value};postData('/stock/save',s).then(()=>location.reload());}
+function deleteStock(id){if(confirm('Supprimer ?')) postData('/stock/delete',{id}).then(()=>location.reload());}
+
+function openClientModal(id=null){currentClientId=id;document.getElementById('clientModal').style.display='flex';}
+function closeClientModal(){document.getElementById('clientModal').style.display='none';currentClientId=null;}
+function saveClient(){const c={_id:currentClientId,firstName:document.getElementById('c_firstName').value,lastName:document.getElementById('c_lastName').value,phone:document.getElementById('c_phone').value,email:document.getElementById('c_email').value,kycVerified:document.getElementById('c_kyc').value==='true'};postData('/client/save',c).then(()=>location.reload());}
+function deleteClient(id){if(confirm('Supprimer ?')) postData('/client/delete',{id}).then(()=>location.reload());}
+
+function openRateModal(id=null){currentRateId=id;document.getElementById('rateModal').style.display='flex';}
+function closeRateModal(){document.getElementById('rateModal').style.display='none';currentRateId=null;}
+function saveRate(){const r={_id:currentRateId,from:document.getElementById('r_from').value,to:document.getElementById('r_to').value,rate:parseFloat(document.getElementById('r_rate').value)};postData('/rate/save',r).then(()=>location.reload());}
+function deleteRate(id){if(confirm('Supprimer ?')) postData('/rate/delete',{id}).then(()=>location.reload());}
+
+function exportPDF(){window.open('/export/pdf','_blank');}
+function exportExcel(){window.open('/export/excel','_blank');}
+</script>`;
+
+  html+=`</body></html>`;
+  res.send(html);
 });
+
+// ================= CRUD TRANSFERT/STOCK/CLIENT/RATE =================
+// Code similaire à l’exemple précédent (post '/transfert/save', delete etc.)
+
+// ================= EXPORT PDF / EXCEL =================
+app.get('/export/pdf', requireLogin, async(req,res)=>{
+  const doc = new PDFDocument();
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition','inline; filename=export.pdf');
+  doc.text('Liste des transferts\n\n');
+  const transferts = await Transfert.find().sort({createdAt:-1});
+  transferts.forEach(t=>doc.text(`Code: ${t.code} - Exp: ${t.senderFirstName} - Dest: ${t.receiverFirstName} - Montant: ${t.amount} ${t.currency}`));
+  doc.end();
+  doc.pipe(res);
+});
+
+app.get('/export/excel', requireLogin, async(req,res)=>{
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Transferts');
+  sheet.columns = [
+    {header:'Code', key:'code', width:10},
+    {header:'Expéditeur', key:'sender', width:20},
+    {header:'Destinataire', key:'receiver', width:20},
+    {header:'Montant', key:'amount', width:10},
+    {header:'Frais', key:'fees', width:10},
+    {header:'Reçu', key:'received', width:10},
+    {header:'Devise', key:'currency', width:10},
+    {header:'Status', key:'status', width:10},
+  ];
+  const transferts = await Transfert.find();
+  transferts.forEach(t=>sheet.addRow({
+    code:t.code, sender:t.senderFirstName, receiver:t.receiverFirstName,
+    amount:t.amount, fees:t.fees, received:t.received, currency:t.currency,
+    status:t.retired?'Retiré':'Non retiré'
+  }));
+  res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
+  await workbook.xlsx.write(res);
+  res.end();
+});
+
 
 // ================== CRUD Routes ==================
-// Exemples pour transfert
-app.post('/transfert/new', async(req,res)=>{
-  try{
-    const data = req.body;
-    let t;
-    if(data._id) t = await Transfert.findByIdAndUpdate(data._id,data,{new:true});
-    else { data.code=await generateUniqueCode(); t = await new Transfert(data).save(); }
-    res.json({success:true, t});
-  }catch(err){ console.error(err); res.status(500).json({error:err.message}); }
-});
+app.post('/transfert/new', async(req,res)=>{ const data=req.body; if(data._id) await Transfert.findByIdAndUpdate(data._id,data,{new:true}); else{ data.code=await generateUniqueCode(); await new Transfert(data).save(); } res.json({success:true}); });
 app.post('/transfert/delete', async(req,res)=>{ await Transfert.findByIdAndDelete(req.body.id); res.json({success:true}); });
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
   try {
@@ -416,12 +459,21 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
   }
 });
 
+// Idem pour stock
+app.post('/stock/new', async(req,res)=>{ if(req.body._id) await Stock.findByIdAndUpdate(req.body._id,req.body,{new:true}); else{ req.body.code=await generateUniqueCode(); await new Stock(req.body).save(); } res.json({success:true}); });
+app.post('/stock/delete', async(req,res)=>{ await Stock.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
-// Même logique pour Stock, Client, Rate
-app.post('/stock/new', async(req,res)=>{ let s=req.body._id?await Stock.findByIdAndUpdate(req.body._id,req.body,{new:true}):await new Stock({...req.body, code:await generateUniqueCode()}).save(); res.json({success:true,s}); });
-app.post('/client/new', async(req,res)=>{ let c=req.body._id?await Client.findByIdAndUpdate(req.body._id,req.body,{new:true}):await new Client(req.body).save(); res.json({success:true,c}); });
-app.post('/rate/new', async(req,res)=>{ let r=req.body._id?await Rate.findByIdAndUpdate(req.body._id,req.body,{new:true}):await new Rate(req.body).save(); res.json({success:true,r}); });
+// Client
+app.post('/client/new', async(req,res)=>{ if(req.body._id) await Client.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Client(req.body).save(); res.json({success:true}); });
+app.post('/client/delete', async(req,res)=>{ await Client.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
-// ================= START SERVER =================
+// Rate
+app.post('/rate/new', async(req,res)=>{ if(req.body._id) await Rate.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Rate(req.body).save(); res.json({success:true}); });
+app.post('/rate/delete', async(req,res)=>{ await Rate.findByIdAndDelete(req.body.id); res.json({success:true}); });
+
+
+
+
+// ================= SERVER =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
