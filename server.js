@@ -228,8 +228,37 @@ function addR(){
 /******************** ROUTES API *************************/
 app.post('/transferts',auth,async(req,res)=>{await new Transfert({...req.body,code:genCode()}).save();res.json(true)});
 app.delete('/transferts/:id',auth,async(req,res)=>{await Transfert.findByIdAndDelete(req.params.id);res.json(true)});
-app.post('/transferts/retirer', requireLogin, async (req, res) => {
-  try {
+
+app.post('/stocks',auth,async(req,res)=>{await new Stock({...req.body,code:genCode()}).save();res.json(true)});
+app.delete('/stocks/:id',auth,async(req,res)=>{await Stock.findByIdAndDelete(req.params.id);res.json(true)});
+
+app.post('/clients',auth,async(req,res)=>{await new Client(req.body).save();res.json(true)});
+app.delete('/clients/:id',auth,async(req,res)=>{await Client.findByIdAndDelete(req.params.id);res.json(true)});
+
+app.post('/rates',auth,async(req,res)=>{await new Rate(req.body).save();res.json(true)});
+app.delete('/rates/:id',auth,async(req,res)=>{await Rate.findByIdAndDelete(req.params.id);res.json(true)});
+
+/******************** EXPORTS *************************/
+app.get('/export/transferts/excel',auth,async(req,res)=>{
+ const wb=new ExcelJS.Workbook();const sh=wb.addWorksheet('Transferts');
+ sh.addRow(['Code','Sender','Receiver','Montant','Frais','Reçu','Devise','Status']);
+ (await Transfert.find()).forEach(x=>sh.addRow([x.code,x.sender,x.receiver,x.amount,x.fees,x.received,x.currency,x.retired]));
+ res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+ res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
+ await wb.xlsx.write(res);res.end();
+});
+
+app.get('/export/transferts/pdf',auth,async(req,res)=>{
+ const doc=new PDFDocument();res.setHeader('Content-Type','application/pdf');
+ res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
+ doc.pipe(res);doc.fontSize(16).text('TRANSFERTS');doc.moveDown();
+ (await Transfert.find()).forEach(x=>doc.text(`${x.code} ${x.sender}->${x.receiver} ${x.amount} ${x.currency}`));
+ doc.end();
+});
+
+
+app.post('/transferts/retirer/:id', requireLogin, async(req,res)=>{
+ try {
     const { id, mode } = req.body;
 
     // 1️⃣ Récupérer le transfert
@@ -270,6 +299,11 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     });
     await transfert.save();
 
+
+  await Transfert.findByIdAndUpdate(req.params.id,{retired:true});
+  res.json(true);
+
+
     // 5️⃣ Historique
     // await new StockHistory({
      //  code: transfert.code,
@@ -289,33 +323,11 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Erreur lors du retrait' });
   }
-});
 
-app.post('/stocks',auth,async(req,res)=>{await new Stock({...req.body,code:genCode()}).save();res.json(true)});
-app.delete('/stocks/:id',auth,async(req,res)=>{await Stock.findByIdAndDelete(req.params.id);res.json(true)});
 
-app.post('/clients',auth,async(req,res)=>{await new Client(req.body).save();res.json(true)});
-app.delete('/clients/:id',auth,async(req,res)=>{await Client.findByIdAndDelete(req.params.id);res.json(true)});
 
-app.post('/rates',auth,async(req,res)=>{await new Rate(req.body).save();res.json(true)});
-app.delete('/rates/:id',auth,async(req,res)=>{await Rate.findByIdAndDelete(req.params.id);res.json(true)});
 
-/******************** EXPORTS *************************/
-app.get('/export/transferts/excel',auth,async(req,res)=>{
- const wb=new ExcelJS.Workbook();const sh=wb.addWorksheet('Transferts');
- sh.addRow(['Code','Sender','Receiver','Montant','Frais','Reçu','Devise','Status']);
- (await Transfert.find()).forEach(x=>sh.addRow([x.code,x.sender,x.receiver,x.amount,x.fees,x.received,x.currency,x.retired]));
- res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
- res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
- await wb.xlsx.write(res);res.end();
-});
 
-app.get('/export/transferts/pdf',auth,async(req,res)=>{
- const doc=new PDFDocument();res.setHeader('Content-Type','application/pdf');
- res.setHeader('Content-Disposition','attachment; filename=transferts.pdf');
- doc.pipe(res);doc.fontSize(16).text('TRANSFERTS');doc.moveDown();
- (await Transfert.find()).forEach(x=>doc.text(`${x.code} ${x.sender}->${x.receiver} ${x.amount} ${x.currency}`));
- doc.end();
 });
 
 /******************** SERVER *************************/
