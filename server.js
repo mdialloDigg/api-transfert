@@ -9,19 +9,30 @@ const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 
-const app = express();
+
+/******************** MIDDLEWARE *************************/
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'secret-transfert-final',
+  secret: process.env.SESSION_SECRET || 'secret-transfert',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: false
 }));
+
+// ===== AUTH MIDDLEWARE (FIX RENDER ERROR) =====
+function requireLogin(req, res, next) {
+  if (req.session && req.session.user) return next();
+  return res.redirect('/login');
+}
+
 
 /******************** DATABASE *************************/
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert')
 .then(()=>console.log("✅ MongoDB connecté"))
 .catch(err=>{console.error(err);process.exit(1);});
+
+
+
 
 /******************** SCHEMAS *************************/
 const Transfert = mongoose.model('Transfert', new mongoose.Schema({
