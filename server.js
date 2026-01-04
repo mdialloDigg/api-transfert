@@ -320,33 +320,125 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   html+=`<script>
 let currentTransfertId=null, currentStockId=null, currentClientId=null, currentRateId=null;
 
-function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+function postData(url,data){
+  return fetch(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data)
+  }).then(r=>r.json());
+}
 
-function openTransfertModal(id=null){currentTransfertId=id;document.getElementById('transfertModal').style.display='flex';}
-function closeTransfertModal(){document.getElementById('transfertModal').style.display='none';currentTransfertId=null;}
-function saveTransfert(){const t={_id:currentTransfertId,originLocation:document.getElementById('t_origin').value,senderFirstName:document.getElementById('t_sender').value,senderPhone:document.getElementById('t_senderPhone').value,destinationLocation:document.getElementById('t_destination').value,receiverFirstName:document.getElementById('t_receiver').value,receiverPhone:document.getElementById('t_receiverPhone').value,amount:parseFloat(document.getElementById('t_amount').value),fees:parseFloat(document.getElementById('t_fees').value),received:parseFloat(document.getElementById('t_amount').value)-parseFloat(document.getElementById('t_fees').value),currency:document.getElementById('t_currency').value,recoveryMode:document.getElementById('t_recoveryMode').value};postData('/transfert/save',t).then(()=>location.reload());}
+/* ================= TRANSFERT ================= */
+function openTransfertModal(id=null){
+  currentTransfertId=id;
+  document.getElementById('transfertModal').style.display='flex';
+}
+function closeTransfertModal(){
+  document.getElementById('transfertModal').style.display='none';
+  currentTransfertId=null;
+}
+function saveTransfert(){
+  const amount=parseFloat(t_amount.value)||0;
+  const fees=parseFloat(t_fees.value)||0;
+  postData('/transfert/new',{
+    _id:currentTransfertId,
+    originLocation:t_origin.value,
+    senderFirstName:t_sender.value,
+    senderPhone:t_senderPhone.value,
+    destinationLocation:t_destination.value,
+    receiverFirstName:t_receiver.value,
+    receiverPhone:t_receiverPhone.value,
+    amount,
+    fees,
+    received:amount-fees,
+    currency:t_currency.value,
+    recoveryMode:t_recoveryMode.value
+  }).then(()=>location.reload());
+}
+function deleteTransfert(id){
+  if(confirm('Supprimer ?'))
+    postData('/transfert/delete',{id}).then(()=>location.reload());
+}
+function retirerTransfert(id){
+  if(confirm('Marquer comme retiré ?'))
+    postData('/transfert/retirer',{id,mode:'ESPECE'}).then(()=>location.reload());
+}
 
-function deleteTransfert(id){if(confirm('Supprimer ?')) postData('/transfert/delete',{id}).then(()=>location.reload());}
-function retirerTransfert(id){if(confirm('Retirer ce transfert ?')){postData('/transfert/save',{_id:id,retired:true}).then(()=>location.reload());}}
+/* ================= STOCK ================= */
+function openStockModal(id=null){
+  currentStockId=id;
+  stockModal.style.display='flex';
+}
+function closeStockModal(){
+  stockModal.style.display='none';
+  currentStockId=null;
+}
+function saveStock(){
+  postData('/stock/new',{
+    _id:currentStockId,
+    sender:s_sender.value,
+    senderPhone:s_senderPhone.value,
+    destination:s_destination.value,
+    destinationPhone:s_destinationPhone.value,
+    amount:parseFloat(s_amount.value),
+    currency:s_currency.value
+  }).then(()=>location.reload());
+}
+function deleteStock(id){
+  if(confirm('Supprimer ?'))
+    postData('/stock/delete',{id}).then(()=>location.reload());
+}
 
-function openStockModal(id=null){currentStockId=id;document.getElementById('stockModal').style.display='flex';}
-function closeStockModal(){document.getElementById('stockModal').style.display='none';currentStockId=null;}
-function saveStock(){const s={_id:currentStockId,sender:document.getElementById('s_sender').value,senderPhone:document.getElementById('s_senderPhone').value,destination:document.getElementById('s_destination').value,destinationPhone:document.getElementById('s_destinationPhone').value,amount:parseFloat(document.getElementById('s_amount').value),currency:document.getElementById('s_currency').value};postData('/stock/save',s).then(()=>location.reload());}
-function deleteStock(id){if(confirm('Supprimer ?')) postData('/stock/delete',{id}).then(()=>location.reload());}
+/* ================= CLIENT ================= */
+function openClientModal(id=null){
+  currentClientId=id;
+  clientModal.style.display='flex';
+}
+function closeClientModal(){
+  clientModal.style.display='none';
+  currentClientId=null;
+}
+function saveClient(){
+  postData('/client/new',{
+    _id:currentClientId,
+    firstName:c_firstName.value,
+    lastName:c_lastName.value,
+    phone:c_phone.value,
+    email:c_email.value,
+    kycVerified:c_kyc.value==='true'
+  }).then(()=>location.reload());
+}
+function deleteClient(id){
+  if(confirm('Supprimer ?'))
+    postData('/client/delete',{id}).then(()=>location.reload());
+}
 
-function openClientModal(id=null){currentClientId=id;document.getElementById('clientModal').style.display='flex';}
-function closeClientModal(){document.getElementById('clientModal').style.display='none';currentClientId=null;}
-function saveClient(){const c={_id:currentClientId,firstName:document.getElementById('c_firstName').value,lastName:document.getElementById('c_lastName').value,phone:document.getElementById('c_phone').value,email:document.getElementById('c_email').value,kycVerified:document.getElementById('c_kyc').value==='true'};postData('/client/save',c).then(()=>location.reload());}
-function deleteClient(id){if(confirm('Supprimer ?')) postData('/client/delete',{id}).then(()=>location.reload());}
-
-function openRateModal(id=null){currentRateId=id;document.getElementById('rateModal').style.display='flex';}
-function closeRateModal(){document.getElementById('rateModal').style.display='none';currentRateId=null;}
-function saveRate(){const r={_id:currentRateId,from:document.getElementById('r_from').value,to:document.getElementById('r_to').value,rate:parseFloat(document.getElementById('r_rate').value)};postData('/rate/save',r).then(()=>location.reload());}
-function deleteRate(id){if(confirm('Supprimer ?')) postData('/rate/delete',{id}).then(()=>location.reload());}
+/* ================= RATE ================= */
+function openRateModal(id=null){
+  currentRateId=id;
+  rateModal.style.display='flex';
+}
+function closeRateModal(){
+  rateModal.style.display='none';
+  currentRateId=null;
+}
+function saveRate(){
+  postData('/rate/new',{
+    _id:currentRateId,
+    from:r_from.value,
+    to:r_to.value,
+    rate:parseFloat(r_rate.value)
+  }).then(()=>location.reload());
+}
+function deleteRate(id){
+  if(confirm('Supprimer ?'))
+    postData('/rate/delete',{id}).then(()=>location.reload());
+}
 
 function exportPDF(){window.open('/export/pdf','_blank');}
 function exportExcel(){window.open('/export/excel','_blank');}
-</script>`;
+</script>
+`;
 
   html+=`</body></html>`;
   res.send(html);
@@ -363,8 +455,9 @@ app.get('/export/pdf', requireLogin, async(req,res)=>{
   doc.text('Liste des transferts\n\n');
   const transferts = await Transfert.find().sort({createdAt:-1});
   transferts.forEach(t=>doc.text(`Code: ${t.code} - Exp: ${t.senderFirstName} - Dest: ${t.receiverFirstName} - Montant: ${t.amount} ${t.currency}`));
-  doc.end();
-  doc.pipe(res);
+doc.pipe(res);
+doc.end();
+
 });
 
 app.get('/export/excel', requireLogin, async(req,res)=>{
