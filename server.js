@@ -203,24 +203,9 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   html+=`</table>`;
 
   // =================== Stocks Table ===================
-  html+=`<h3>Stocks</h3><button onclick="openStockModal()">➕ Nouveau Stock</button>
-  <table><tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
-  stocks.forEach(s=>{
-    html+=`<tr>
-      <td>${s.code}</td>
-      <td>${s.sender} 📞 ${s.senderPhone||'-'}</td>
-      <td>${s.destination} 📞 ${s.destinationPhone||'-'}</td>
-      <td>${s.amount}</td>
-      <td>${s.currency}</td>
-      <td>
-        <button onclick="openStockModal('${s._id}')">✏️</button>
-        <button onclick="deleteStock('${s._id}')">❌</button>
-      </td>
-    </tr>`;
-  });
-  html+=`</table>`;
+  html+=`<h3>Stocks</h3><button onclick="openStockModal()">➕ Nouveau Stock</button>`;
 
-  // =================== Stock History Table ===================
+  // =================== Stock Table ===================
   html+=`<h3>Historique Stocks</h3>
   <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
   stockHistory.forEach(h=>{
@@ -231,6 +216,10 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       <td>${h.destination} 📞 ${h.destinationPhone||'-'}</td>
       <td>${h.amount}</td>
       <td>${h.currency}</td>
+      <td>
+        <button onclick="openStockModal('${h._id}')">✏️</button>
+        <button onclick="deleteStock('${h._id}')">❌</button>
+      </td>
     </tr>`;
   });
   html+=`</table>`;
@@ -432,7 +421,7 @@ function closeStockModal(){
   currentStockId=null;
 }
 function saveStock(){
-  postData('/stock/new',{
+  postData('/StockHistory/new',{
     _id:currentStockId,
     sender:s_sender.value,
     senderPhone:s_senderPhone.value,
@@ -444,7 +433,7 @@ function saveStock(){
 }
 function deleteStock(id){
   if(confirm('Supprimer ?'))
-    postData('/stock/delete',{id}).then(()=>location.reload());
+    postData('/StockHistory/delete',{id}).then(()=>location.reload());
 }
 
 /* ================= CLIENT ================= */
