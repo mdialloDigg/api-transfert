@@ -13,7 +13,18 @@ const ExcelJS = require('exceljs');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({ secret: process.env.SESSION_SECRET || 'transfert-secret-final', resave: false, saveUninitialized: true }));
+
+/* ================= SESSION (FIX DECONNEXION) ================= */
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'transfert-secret-final',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 1000 * 60 * 60 * 8 // 8h
+  }
+}));
+
+
 
 // ================= DATABASE =================
 const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert';
@@ -613,21 +624,21 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 // ================== CRUD STOCK ==================
 
 /* GET */
-app.get('/stock/:id', requireLogin, async (req, res) => {
-  res.json(await Stock.findById(req.params.id));
+app.get('/StockHistory/:id', requireLogin, async (req, res) => {
+  res.json(await StockHistory.findById(req.params.id));
 });
 
 /* CREATE / UPDATE */
-app.post('/stock/new', requireLogin, async (req, res) => {
+app.post('/StockHistory/new', requireLogin, async (req, res) => {
   try {
     let stock;
 
     if (req.body._id) {
-      stock = await Stock.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
       await StockHistory.create({ action: 'MODIFICATION', stockId: stock._id, ...stock.toObject() });
     } else {
       req.body.code = await generateUniqueCode();
-      stock = await new Stock(req.body).save();
+      stock = await new StockHistory(req.body).save();
       await StockHistory.create({ action: 'CREATION', stockId: stock._id, ...stock.toObject() });
     }
 
@@ -639,11 +650,11 @@ app.post('/stock/new', requireLogin, async (req, res) => {
 });
 
 /* DELETE */
-app.post('/stock/delete', requireLogin, async (req, res) => {
-  const stock = await Stock.findById(req.body.id);
+app.post('/StockHistory/delete', requireLogin, async (req, res) => {
+  const stock = await StockHistory.findById(req.body.id);
   if (stock) {
     await StockHistory.create({ action: 'SUPPRESSION', stockId: stock._id, ...stock.toObject() });
-    await Stock.findByIdAndDelete(req.body.id);
+    await StockHistory.findByIdAndDelete(req.body.id);
   }
   res.json({ success: true });
 });
