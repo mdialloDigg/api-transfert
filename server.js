@@ -492,7 +492,8 @@ app.post('/transferts/delete', async(req,res)=>{ await transferts.findByIdAndDel
 app.post('/transferts/retirer', async(req,res)=>{ const t=await transferts.findById(req.body.id); if(t){ t.retired=true; t.retraitHistory.push({date:new Date(),mode:req.body.mode}); await t.save(); } res.json({success:true}); });
 
 // Idem pour stock
-app.post('/stock/new', async(req,res)=>{ if(req.body._id) await stock.findByIdAndUpdate(req.body._id,req.body,{new:true}); else{ req.body.code=await generateUniqueCode(); await new Stock(req.body).save(); } res.json({success:true}); });
+app.post('/stock/new', async(req,res)=>{ if(req.body._id) await stock.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Stock(req.body).save(); 
+res.json({success:true}); });
 app.post('/stock/delete', async(req,res)=>{ await stock.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
 // Client
@@ -500,7 +501,8 @@ app.post('/client/new', async(req,res)=>{ if(req.body._id) await Client.findById
 app.post('/client/delete', async(req,res)=>{ await Client.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
 // Rate
-app.post('/rate/new', async(req,res)=>{ if(req.body._id) await Rate.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Rate(req.body).save(); res.json({success:true}); });
+app.post('/rate/new', async(req,res)=>{ if(req.body._id) await Rate.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Rate(req.body).save(); 
+res.json({success:true}); });
 app.post('/rate/delete', async(req,res)=>{ await Rate.findByIdAndDelete(req.body.id); res.json({success:true}); });
 
 
