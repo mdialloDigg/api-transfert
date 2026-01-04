@@ -622,7 +622,7 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 
 /* GET */
 app.get('/stock/:id', requireLogin, async (req, res) => {
-  const stock = await Stock.findById(req.params.id);
+  const stock = await StockHistory.findById(req.params.id);
   res.json(stock);
 });
 
@@ -634,7 +634,7 @@ app.post('/stock/new', requireLogin, async (req, res) => {
 
     if (req.body._id) {
       // Modification du stock existant
-      stock = await Stock.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
       await StockHistory.create({
         action: 'MODIFICATION',
         stockId: stock._id,
@@ -643,7 +643,7 @@ app.post('/stock/new', requireLogin, async (req, res) => {
     } else {
       // Création d'un nouveau stock
       req.body.code = await generateUniqueCode();
-      stock = await new Stock(req.body).save();
+      stock = await new StockHistory(req.body).save();
       await StockHistory.create({
         action: 'CREATION',
         stockId: stock._id,
