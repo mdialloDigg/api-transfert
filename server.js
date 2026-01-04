@@ -598,7 +598,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     const { id, mode } = req.body;
 
     // 1️⃣ Récupérer le transfert
-    const t = await Transfert.findById(id);
+    const t = await Transfert.findById(req.body.id);
     if (!t) {
       return res.status(404).json({ error: 'Transfert introuvable' });
     }
