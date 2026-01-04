@@ -9,8 +9,10 @@ const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 
+const app = express(); 
 
 /******************** MIDDLEWARE *************************/
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
