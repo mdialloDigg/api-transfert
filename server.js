@@ -206,7 +206,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   html+=`<h3>Stocks</h3><button onclick="openStockModal()">➕ Nouveau Stock</button>`;
 
   // =================== Stock Table ===================
-  html+=`<h3>Stocks</h3>
+  html+=`<h3>  </h3>
   <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
   stockHistory.forEach(h=>{
     html+=`<tr>
@@ -389,24 +389,26 @@ function retirerTransfert(id){
 }
 
 /* ================= STOCK ================= */
+
+
+let currentStockId = null;
+
 function openStockModal(id = null) {
   currentStockId = id;
-  stockModal.style.display = 'flex';
 
   if (!id) {
-    s_code.value = '';
     s_sender.value = '';
     s_senderPhone.value = '';
     s_destination.value = '';
     s_destinationPhone.value = '';
     s_amount.value = '';
+    s_currency.value = '';
     return;
   }
 
-  fetch('/stock/' + id)
+  fetch('/StockHistory/' + id)
     .then(r => r.json())
     .then(s => {
-      s_code.value = s.code;
       s_sender.value = s.sender;
       s_senderPhone.value = s.senderPhone;
       s_destination.value = s.destination;
@@ -416,25 +418,34 @@ function openStockModal(id = null) {
     });
 }
 
-function closeStockModal(){
-  stockModal.style.display='none';
-  currentStockId=null;
+function saveStock() {
+  fetch('/StockHistory/new', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      _id: currentStockId,
+      sender: s_sender.value,
+      senderPhone: s_senderPhone.value,
+      destination: s_destination.value,
+      destinationPhone: s_destinationPhone.value,
+      amount: Number(s_amount.value),
+      currency: s_currency.value
+    })
+  }).then(() => location.reload());
 }
-function saveStock(){
-  postData('/StockHistory/new',{
-    _id:currentStockId,
-    sender:s_sender.value,
-    senderPhone:s_senderPhone.value,
-    destination:s_destination.value,
-    destinationPhone:s_destinationPhone.value,
-    amount:parseFloat(s_amount.value),
-    currency:s_currency.value
-  }).then(()=>location.reload());
+
+function deleteStock(id) {
+  if (!confirm('Supprimer cet élément ?')) return;
+
+  fetch('/StockHistory/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id })
+  }).then(() => location.reload());
 }
-function deleteStock(id){
-  if(confirm('Supprimer ?'))
-    postData('/StockHistory/delete',{id}).then(()=>location.reload());
-}
+
+
+
 
 /* ================= CLIENT ================= */
 function openClientModal(id=null){
@@ -628,25 +639,51 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 
 
 // ================== CRUD STOCK ==================
+/* =======================
+   ROUTES
+======================= */
+
+/* ===== LIST ===== */
+app.get('/StockHistory', async (req, res) => {
+  const stockHistory = await StockHistory.find().sort({ createdAt: -1 });
+  res.json(stockHistory);
+});
+
+/* ===== GET ONE (EDIT) ===== */
+app.get('/StockHistory/:id', async (req, res) => {
+  const stock = await StockHistory.findById(req.params.id);
+  res.json(stock);
+});
+
+/* ===== CREATE / UPDATE ===== */
 app.post('/StockHistory/new', async (req, res) => {
   try {
-    let stock;
-
     if (req.body._id) {
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
-      await StockHistory.create({
-        action: 'MODIFICATION',
-        stockId: stock._id,
-        ...stock.toObject()
-      });
+      /* UPDATE */
+      await StockHistory.findByIdAndUpdate(
+        req.body._id,
+        {
+          sender: req.body.sender,
+          senderPhone: req.body.senderPhone,
+          destination: req.body.destination,
+          destinationPhone: req.body.destinationPhone,
+          amount: Number(req.body.amount),
+          currency: req.body.currency,
+          action: 'MODIFICATION'
+        }
+      );
     } else {
-      req.body.code = await generateUniqueCode();
-      stock = await new StockHistory(req.body).save();
-      await StockHistory.create({
-        action: 'CREATION',
-        stockId: stock._id,
-        ...stock.toObject()
-      });
+      /* CREATE */
+      await new StockHistory({
+        code: await generateUniqueCode(),
+        sender: req.body.sender,
+        senderPhone: req.body.senderPhone,
+        destination: req.body.destination,
+        destinationPhone: req.body.destinationPhone,
+        amount: Number(req.body.amount),
+        currency: req.body.currency,
+        action: 'CREATION'
+      }).save();
     }
 
     res.json({ success: true });
@@ -656,19 +693,19 @@ app.post('/StockHistory/new', async (req, res) => {
   }
 });
 
+/* ===== DELETE ===== */
 app.post('/StockHistory/delete', async (req, res) => {
-  const stock = await StockHistory.findById(req.body.id);
-  if (stock) {
-    await StockHistory.create({
-      action: 'SUPPRESSION',
-      stockId: stock._id,
-      ...stock.toObject()
-    });
-    await StockHistory.findByIdAndDelete(req.body.id);
+  try {
+    await StockHistory.findByIdAndUpdate(
+      req.body.id,
+      { action: 'SUPPRESSION' }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
   }
-  res.json({ success: true });
 });
-
 
 // ================== CLIENT ==================
 app.post('/client/new', async (req, res) => {
