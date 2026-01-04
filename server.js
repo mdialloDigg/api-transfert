@@ -592,25 +592,29 @@ app.post('/transfert/delete', async (req, res) => {
 //});
 
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
-  try {
+
+const t = await Transfert.findById(req.body.id);
+
+
     const { id, mode } = req.body;
 
     // 1️⃣ Récupérer le transfert
-    const transfert = await Transfert.findById(id);
-    if (!transfert) {
+
+
+    if (!t) {
       return res.status(404).json({ error: 'Transfert introuvable' });
     }
 
-    if (transfert.retired) {
+    if (t.retired) {
       return res.status(400).json({ error: 'Déjà retiré' });
     }
 
-    const montantRetire = transfert.amount - transfert.fees;
+    const montantRetire = t.amount - t.fees;
 
     // 2️⃣ Trouver le stock correspondant
     const stock = await StockHistory.findOne({
-      destination: transfert.destinationLocation,
-      currency: transfert.currency
+      destination: t.destinationLocation,
+      currency: t.currency
     });
 
     if (!stock) {
@@ -626,23 +630,15 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     await stock.save();
 
     // 4️⃣ Marquer le transfert comme retiré
-    transfert.retired = true;
+    t.retired = true;
 
-    transfert.retraitHistory.push({ date: new Date(), mode: req.body.mode });
-    await transfert.save();
+    t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
+    await t.save();
 
-    // 5️⃣ Historique
-    // await new StockHistory({
-     //  code: transfert.code,
-       //action: 'RETRAIT',
-       //stockId: stock._id,
-       //sender: `${transfert.senderFirstName} ${transfert.senderLastName}`,
-       //senderPhone: transfert.senderPhone,
-       //destination: transfert.destinationLocation,
-       //destinationPhone: transfert.receiverPhone,
-       //amount: -montantRetire,
-       //currency: transfert.currency
-    // }).save();
+ }
+ res.json({ success: true });
+});
+
 
     res.json({ ok: true });
 
@@ -650,6 +646,8 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Erreur lors du retrait' });
   }
+
+
 });
 
 
