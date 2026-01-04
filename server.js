@@ -581,18 +581,19 @@ app.post('/transfert/delete', async (req, res) => {
   res.json({ success: true });
 });
 
-//app.post('/transfert/retirer', async (req, res) => {
-//  const t = await Transfert.findById(req.body.id);
-//  if (t && !t.retired) {
-//    t.retired = true;
-//    t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
-//    await t.save();
-//  }
-//  res.json({ success: true });
-//});
+app.post('/transfert/retirer', async (req, res) => {
+  const t = await Transfert.findById(req.body.id);
+  if (t && !t.retired) {
+    t.retired = true;
+    t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
+    await t.save();
+  }
+  res.json({ success: true });
+});
 
 
 
+/*
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
   try {
     const { id, mode } = req.body;
@@ -639,7 +640,7 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     res.status(500).json({ error: 'Erreur lors du retrait' });
   }
 });
-
+*/
 
 // ================== CRUD STOCK ==================
 app.post('/stock/new', async (req, res) => {
