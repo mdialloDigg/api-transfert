@@ -206,7 +206,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   html+=`<h3>Stocks</h3><button onclick="openStockModal()">➕ Nouveau Stock</button>`;
 
   // =================== Stock Table ===================
-  html+=`<h3>Historique Stocks</h3>
+  html+=`<h3>Stocks</h3>
   <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
   stockHistory.forEach(h=>{
     html+=`<tr>
@@ -628,12 +628,12 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 
 
 // ================== CRUD STOCK ==================
-app.post('/stock/new', async (req, res) => {
+app.post('/StockHistory/new', async (req, res) => {
   try {
     let stock;
 
     if (req.body._id) {
-      stock = await Stock.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
       await StockHistory.create({
         action: 'MODIFICATION',
         stockId: stock._id,
@@ -641,7 +641,7 @@ app.post('/stock/new', async (req, res) => {
       });
     } else {
       req.body.code = await generateUniqueCode();
-      stock = await new Stock(req.body).save();
+      stock = await new StockHistory(req.body).save();
       await StockHistory.create({
         action: 'CREATION',
         stockId: stock._id,
@@ -656,15 +656,15 @@ app.post('/stock/new', async (req, res) => {
   }
 });
 
-app.post('/stock/delete', async (req, res) => {
-  const stock = await Stock.findById(req.body.id);
+app.post('/StockHistory/delete', async (req, res) => {
+  const stock = await StockHistory.findById(req.body.id);
   if (stock) {
     await StockHistory.create({
       action: 'SUPPRESSION',
       stockId: stock._id,
       ...stock.toObject()
     });
-    await Stock.findByIdAndDelete(req.body.id);
+    await StockHistory.findByIdAndDelete(req.body.id);
   }
   res.json({ success: true });
 });
