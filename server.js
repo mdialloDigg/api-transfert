@@ -581,14 +581,68 @@ app.post('/transfert/delete', async (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/transfert/retirer', async (req, res) => {
-  const t = await Transfert.findById(req.body.id);
-  if (t && !t.retired) {
+app.post('/transferts/retirer', requireLogin, async (req, res) => {
+  try {
+    const { id, mode } = req.body;
+
+    // 1️⃣ Transfert
+    const t = await Transfert.findById(id);
+    if (!t) {
+      return res.status(404).json({ error: 'Transfert introuvable' });
+    }
+
+    if (t.retired) {
+      return res.status(400).json({ error: 'Déjà retiré' });
+    }
+
+    const montantRetire = t.amount - t.fees;
+
+    // 2️⃣ Stock réel
+    const stock = await Stock.findOne({
+      destination: t.destinationLocation,
+      currency: t.currency
+    });
+
+    if (!stock) {
+      return res.status(400).json({ error: 'Stock introuvable' });
+    }
+
+    if (stock.amount < montantRetire) {
+      return res.status(400).json({ error: 'Stock insuffisant' });
+    }
+
+    // 3️⃣ Débit du stock
+    stock.amount -= montantRetire;
+    await stock.save();
+
+    // 4️⃣ Historique stock (débit)
+    await StockHistory.create({
+      code: t.code,
+      action: 'RETRAIT',
+      stockId: stock._id,
+      sender: t.senderFirstName,
+      senderPhone: t.senderPhone,
+      destination: t.destinationLocation,
+      destinationPhone: t.receiverPhone,
+      amount: montantRetire,
+      balance: stock.amount, // 🔥 solde après retrait
+      currency: t.currency
+    });
+
+    // 5️⃣ Marquer le transfert comme retiré
     t.retired = true;
-    t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
+    t.retraitHistory.push({
+      date: new Date(),
+      mode
+    });
     await t.save();
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur lors du retrait' });
   }
-  res.json({ success: true });
 });
 
 
