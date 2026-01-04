@@ -591,16 +591,14 @@ app.post('/transfert/delete', async (req, res) => {
 //  res.json({ success: true });
 //});
 
+
+
 app.post('/transferts/retirer', requireLogin, async (req, res) => {
-
-const t = await Transfert.findById(req.body.id);
-
-
+  try {
     const { id, mode } = req.body;
 
     // 1️⃣ Récupérer le transfert
-
-
+    const t = await Transfert.findById(id);
     if (!t) {
       return res.status(404).json({ error: 'Transfert introuvable' });
     }
@@ -626,28 +624,21 @@ const t = await Transfert.findById(req.body.id);
     }
 
     // 3️⃣ Débiter le stock
-    stock.amount = stock.amount - montantRetire;
+    stock.amount -= montantRetire;
     await stock.save();
 
-    // 4️⃣ Marquer le transfert comme retiré
-    t.retired = true;
 
-    t.retraitHistory.push({ date: new Date(), mode: req.body.mode });
+    // 5️⃣ Marquer le transfert comme retiré
+    t.retired = true;
+    t.retraitHistory.push({ date: new Date(), mode });
     await t.save();
 
- }
- res.json({ success: true });
-});
-
-
-    res.json({ ok: true });
+    res.json({ success: true });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur lors du retrait' });
   }
-
-
 });
 
 
