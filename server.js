@@ -543,8 +543,8 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 });
 
 // ===== GET STOCK BY ID =====
-app.get('/stock/:id', requireLogin, async (req, res) => {
-  const s = await Stock.findById(req.params.id);
+app.get('/StockHistory/:id', requireLogin, async (req, res) => {
+  const s = await StockHistory.findById(req.params.id);
   res.json(s);
 });
 
@@ -601,19 +601,6 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
     stock.amount -= montantRetire;
     await stock.save();
 
-   /* await StockHistory.create({
-      code: t.code,
-      action: 'RETRAIT',
-      stockId: stock._id,
-      sender: t.senderFirstName,
-      senderPhone: t.senderPhone,
-      destination: t.destinationLocation,
-      destinationPhone: t.receiverPhone,
-      amount: montantRetire,
-      balance: stock.amount,
-      currency: t.currency
-    });
-  */
     t.retired = true;
     t.retraitHistory.push({ date: new Date(), mode });
     await t.save();
@@ -632,14 +619,6 @@ app.post('/StockHistory/new', async (req, res) => {
   try {
     let stock;
 
-    if (req.body._id) {
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
-      await StockHistory.create({
-        action: 'MODIFICATION',
-        stockId: stock._id,
-        ...stock.toObject()
-      });
-    } else {
       req.body.code = await generateUniqueCode();
       stock = await new StockHistory(req.body).save();
       await StockHistory.create({
@@ -647,7 +626,7 @@ app.post('/StockHistory/new', async (req, res) => {
         stockId: stock._id,
         ...stock.toObject()
       });
-    }
+    
 
     res.json({ success: true });
   } catch (err) {
