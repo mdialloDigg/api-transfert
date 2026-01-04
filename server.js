@@ -56,7 +56,7 @@ const stockSchema = new mongoose.Schema({
 });
 const Stock = mongoose.model('Stock', stockSchema);
 
-const StockSchema = new mongoose.Schema({
+const stockHistorySchema = new mongoose.Schema({
   code: String,
   action: String,
   stockId: mongoose.Schema.Types.ObjectId,
@@ -70,7 +70,7 @@ const StockSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now }
 });
 
-const Stock = mongoose.model('Stock', StockSchema);
+const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
 const clientSchema = new mongoose.Schema({
   firstName: String,
@@ -154,7 +154,7 @@ app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); 
 app.get('/dashboard', requireLogin, async(req,res)=>{
   const transferts = await Transfert.find().sort({createdAt:-1});
   const stocks = await Stock.find().sort({createdAt:-1});
-  const Stock = await Stock.find().sort({date:-1});
+  const stockHistory = await StockHistory.find().sort({date:-1});
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
 
@@ -208,7 +208,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   // =================== Stock Table ===================
   html+=`<h3>  </h3>
   <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
-  Stock.forEach(h=>{
+  stockHistory.forEach(h=>{
     html+=`<tr>
       <td>${new Date(h.date).toLocaleString()}</td>
       <td>${h.code}</td>
@@ -406,7 +406,7 @@ function openStockModal(id = null) {
     return;
   }
 
-  fetch('/Stock/' + id)
+  fetch('/StockHistory/' + id)
     .then(r => r.json())
     .then(s => {
       s_sender.value = s.sender;
@@ -419,7 +419,7 @@ function openStockModal(id = null) {
 }
 
 function saveStock() {
-  fetch('/Stock/new', {
+  fetch('/StockHistory/new', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -437,7 +437,7 @@ function saveStock() {
 function deleteStock(id) {
   if (!confirm('Supprimer cet élément ?')) return;
 
-  fetch('/Stock/delete', {
+  fetch('/StockHistory/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id })
@@ -612,7 +612,7 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
     stock.amount -= montantRetire;
     await stock.save();
 
-   /* await Stock.create({
+   /* await StockHistory.create({
       code: t.code,
       action: 'RETRAIT',
       stockId: stock._id,
@@ -639,51 +639,25 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 
 
 // ================== CRUD STOCK ==================
-/* =======================
-   ROUTES
-======================= */
-
-/* ===== LIST ===== */
-app.get('/Stock', async (req, res) => {
-  const Stock = await Stock.find().sort({ createdAt: -1 });
-  res.json(Stock);
-});
-
-/* ===== GET ONE (EDIT) ===== */
-app.get('/Stock/:id', async (req, res) => {
-  const stock = await Stock.findById(req.params.id);
-  res.json(stock);
-});
-
-/* ===== CREATE / UPDATE ===== */
-app.post('/Stock/new', async (req, res) => {
+app.post('/StockHistory/new', async (req, res) => {
   try {
+    let stock;
+
     if (req.body._id) {
-      /* UPDATE */
-      await Stock.findByIdAndUpdate(
-        req.body._id,
-        {
-          sender: req.body.sender,
-          senderPhone: req.body.senderPhone,
-          destination: req.body.destination,
-          destinationPhone: req.body.destinationPhone,
-          amount: Number(req.body.amount),
-          currency: req.body.currency,
-          action: 'MODIFICATION'
-        }
-      );
+      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      await StockHistory.create({
+        action: 'MODIFICATION',
+        stockId: stock._id,
+        ...stock.toObject()
+      });
     } else {
-      /* CREATE */
-      await new Stock({
-        code: await generateUniqueCode(),
-        sender: req.body.sender,
-        senderPhone: req.body.senderPhone,
-        destination: req.body.destination,
-        destinationPhone: req.body.destinationPhone,
-        amount: Number(req.body.amount),
-        currency: req.body.currency,
-        action: 'CREATION'
-      }).save();
+      req.body.code = await generateUniqueCode();
+      stock = await new StockHistory(req.body).save();
+      await StockHistory.create({
+        action: 'CREATION',
+        stockId: stock._id,
+        ...stock.toObject()
+      });
     }
 
     res.json({ success: true });
@@ -693,19 +667,19 @@ app.post('/Stock/new', async (req, res) => {
   }
 });
 
-/* ===== DELETE ===== */
-app.post('/Stock/delete', async (req, res) => {
-  try {
-    await Stock.findByIdAndUpdate(
-      req.body.id,
-      { action: 'SUPPRESSION' }
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
+app.post('/StockHistory/delete', async (req, res) => {
+  const stock = await StockHistory.findById(req.body.id);
+  if (stock) {
+    await StockHistory.create({
+      action: 'SUPPRESSION',
+      stockId: stock._id,
+      ...stock.toObject()
+    });
+    await StockHistory.findByIdAndDelete(req.body.id);
   }
+  res.json({ success: true });
 });
+
 
 // ================== CLIENT ==================
 app.post('/client/new', async (req, res) => {
