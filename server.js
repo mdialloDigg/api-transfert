@@ -612,7 +612,7 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
     stock.amount -= montantRetire;
     await stock.save();
 
-    await StockHistory.create({
+   /* await StockHistory.create({
       code: t.code,
       action: 'RETRAIT',
       stockId: stock._id,
@@ -624,7 +624,7 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
       balance: stock.amount,
       currency: t.currency
     });
-
+  */
     t.retired = true;
     t.retraitHistory.push({ date: new Date(), mode });
     await t.save();
