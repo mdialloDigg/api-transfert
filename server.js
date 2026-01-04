@@ -333,5 +333,7 @@ app.post('/transferts/retirer/:id', requireLogin, async(req,res)=>{
 });
 
 /******************** SERVER *************************/
-const PORT=process.env.PORT||3000;
-app.listen(PORT,()=>console.log("🚀 Serveur prêt sur http://localhost:"+PORT));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log('🚀 Serveur lancé sur le port ' + PORT);
+});
