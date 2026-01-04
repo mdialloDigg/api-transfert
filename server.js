@@ -557,7 +557,7 @@ app.delete('/rates/delete/:id', requireLogin, async(req,res)=>{ await Rate.findB
 
 // ================= SERVER =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`));
+app.listen(PORT,()=>console.log(`🚀 Serveur lancé sur `));
 
 
 
