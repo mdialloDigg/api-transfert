@@ -627,10 +627,8 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
 
     // 4️⃣ Marquer le transfert comme retiré
     transfert.retired = true;
-    transfert.retraitHistory.push({
-      date: new Date(),
-      mode
-    });
+
+    transfert.retraitHistory.push({ date: new Date(), mode: req.body.mode });
     await transfert.save();
 
     // 5️⃣ Historique
