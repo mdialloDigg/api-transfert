@@ -329,10 +329,43 @@ function postData(url,data){
 }
 
 /* ================= TRANSFERT ================= */
-function openTransfertModal(id=null){
-  currentTransfertId=id;
-  document.getElementById('transfertModal').style.display='flex';
+function openTransfertModal(id = null) {
+  currentTransfertId = id;
+  document.getElementById('transfertModal').style.display = 'flex';
+
+  // Nouveau
+  if (!id) {
+    t_code.value = '';
+    t_origin.value = '';
+    t_sender.value = '';
+    t_senderPhone.value = '';
+    t_destination.value = '';
+    t_receiver.value = '';
+    t_receiverPhone.value = '';
+    t_amount.value = '';
+    t_fees.value = '';
+    t_received.value = '';
+    return;
+  }
+
+  fetch('/transfert/' + id)
+    .then(r => r.json())
+    .then(t => {
+      t_code.value = t.code;
+      t_origin.value = t.originLocation;
+      t_sender.value = t.senderFirstName;
+      t_senderPhone.value = t.senderPhone;
+      t_destination.value = t.destinationLocation;
+      t_receiver.value = t.receiverFirstName;
+      t_receiverPhone.value = t.receiverPhone;
+      t_amount.value = t.amount;
+      t_fees.value = t.fees;
+      t_received.value = t.received;
+      t_currency.value = t.currency;
+      t_recoveryMode.value = t.recoveryMode;
+    });
 }
+
 function closeTransfertModal(){
   document.getElementById('transfertModal').style.display='none';
   currentTransfertId=null;
@@ -365,10 +398,33 @@ function retirerTransfert(id){
 }
 
 /* ================= STOCK ================= */
-function openStockModal(id=null){
-  currentStockId=id;
-  stockModal.style.display='flex';
+function openStockModal(id = null) {
+  currentStockId = id;
+  stockModal.style.display = 'flex';
+
+  if (!id) {
+    s_code.value = '';
+    s_sender.value = '';
+    s_senderPhone.value = '';
+    s_destination.value = '';
+    s_destinationPhone.value = '';
+    s_amount.value = '';
+    return;
+  }
+
+  fetch('/stock/' + id)
+    .then(r => r.json())
+    .then(s => {
+      s_code.value = s.code;
+      s_sender.value = s.sender;
+      s_senderPhone.value = s.senderPhone;
+      s_destination.value = s.destination;
+      s_destinationPhone.value = s.destinationPhone;
+      s_amount.value = s.amount;
+      s_currency.value = s.currency;
+    });
 }
+
 function closeStockModal(){
   stockModal.style.display='none';
   currentStockId=null;
@@ -488,6 +544,19 @@ app.get('/export/excel', requireLogin, async(req,res)=>{
 
 // ================== CRUD Routes ==================
 // ================== CRUD TRANSFERT ==================
+
+// ===== GET TRANSFERT BY ID =====
+app.get('/transfert/:id', requireLogin, async (req, res) => {
+  const t = await Transfert.findById(req.params.id);
+  res.json(t);
+});
+
+// ===== GET STOCK BY ID =====
+app.get('/stock/:id', requireLogin, async (req, res) => {
+  const s = await Stock.findById(req.params.id);
+  res.json(s);
+});
+
 app.post('/transfert/new', async (req, res) => {
   try {
     const data = req.body;
@@ -597,7 +666,11 @@ app.post('/rate/delete', async (req, res) => {
   res.json({ success: true });
 });
 
-
+t_amount.oninput = t_fees.oninput = () => {
+  const a = parseFloat(t_amount.value) || 0;
+  const f = parseFloat(t_fees.value) || 0;
+  t_received.value = a - f;
+};
 
 
 /******************** SERVER *************************/
