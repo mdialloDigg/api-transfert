@@ -583,12 +583,14 @@ app.post('/transfert/delete', async (req, res) => {
   res.json({ success: true });
 });
 
-
-app.post('/transferts/retirer', requireLogin, async (req, res) => {
+app.post('/transfert/retirer', requireLogin, async (req, res) => {
   try {
-    const { id, mode } = req.body;
+    console.log('BODY:', req.body);
 
-    const t = await Transfert.findById(id);
+    const { id, mode } = req.body;
+    if (!id) return res.status(400).json({ error: 'ID manquant' });
+
+    const t = await Transfert.findById(req.body.id);
     if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
     if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
 
@@ -599,15 +601,17 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       currency: t.currency
     });
 
-    if (!stock) return res.status(400).json({ error: 'Stock introuvable' });
+    if (!stock) {
+      console.log('AUCUN STOCK POUR', t.destinationLocation, t.currency);
+      return res.status(400).json({ error: 'Stock introuvable' });
+    }
+
     if (stock.amount < montantRetire)
       return res.status(400).json({ error: 'Stock insuffisant' });
 
-    // 🔥 Débit stock réel
     stock.amount -= montantRetire;
     await stock.save();
 
-    // 🔥 Historique stock (ligne de débit)
     await StockHistory.create({
       code: t.code,
       action: 'RETRAIT',
@@ -621,7 +625,6 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
       currency: t.currency
     });
 
-    // 🔥 Marquer le transfert
     t.retired = true;
     t.retraitHistory.push({ date: new Date(), mode });
     await t.save();
@@ -629,11 +632,10 @@ app.post('/transferts/retirer', requireLogin, async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur lors du retrait' });
+    console.error('ERREUR RETRAIT:', err);
+    res.status(500).json({ error: err.message });
   }
 });
-
 
 
 // ================== CRUD STOCK ==================
