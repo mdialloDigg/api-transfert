@@ -414,7 +414,7 @@ function openStockModal(id = null) {
     return;
   }
 
-  fetch('/stock/' + id)
+  fetch('/StockHistory/' + id)
     .then(r => r.json())
     .then(s => {
       s_code.value = s.code;
@@ -444,7 +444,7 @@ function saveStock(){
 }
 function deleteStock(id){
   if(confirm('Supprimer ?'))
-    postData('/Stock/delete',{id}).then(()=>location.reload());
+    postData('/StockHistory/delete',{id}).then(()=>location.reload());
 }
 
 /* ================= CLIENT ================= */
