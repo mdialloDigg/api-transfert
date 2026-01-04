@@ -666,11 +666,6 @@ app.post('/rate/delete', async (req, res) => {
   res.json({ success: true });
 });
 
-t_amount.oninput = t_fees.oninput = () => {
-  const a = parseFloat(t_amount.value) || 0;
-  const f = parseFloat(t_fees.value) || 0;
-  t_received.value = a - f;
-};
 
 
 /******************** SERVER *************************/
