@@ -702,49 +702,30 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 
 });
 
-// ================== IMPRIMER TRANSFERT ==================
-// ================== IMPRIMER TRANSFERT ==================
-app.get('/transfert/print/:id', requireLogin, async (req, res) => {
-  try {
-    const t = await Transfert.findById(req.params.id);
-    if (!t) return res.status(404).send('Transfert introuvable');
-
-    // Envoi du HTML avec variables interpolées
-    res.send(`
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Transfert ${t.code}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h2 { color: #ff8c42; }
-          p { margin: 5px 0; }
-        </style>
-      </head>
-      <body>
-        <h2>Transfert ${t.code}</h2>
-        <p><strong>Expéditeur :</strong> ${t.senderFirstName} ${t.senderLastName} 📞 ${t.senderPhone || '-'}</p>
-        <p><strong>Origine :</strong> ${t.originLocation}</p>
-        <p><strong>Destinataire :</strong> ${t.receiverFirstName} ${t.receiverLastName} 📞 ${t.receiverPhone || '-'}</p>
-        <p><strong>Destination :</strong> ${t.destinationLocation}</p>
-        <p><strong>Montant :</strong> ${t.amount} ${t.currency}</p>
-        <p><strong>Frais :</strong> ${t.fees}</p>
-        <p><strong>Reçu :</strong> ${t.received}</p>
-        <p><strong>Status :</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
-
-        <script>
-          window.onload = function() {
-            window.print(); // Lancer l'impression automatiquement
-          }
-        </script>
-      </body>
-      </html>
-    `);
-  } catch (err) {
-    console.error('Erreur impression transfert:', err);
-    res.status(500).send('Erreur serveur');
-  }
+// ================= PRINT TICKET =================
+app.get('/transfert/print/:id', requireLogin, async(req,res)=>{
+  const t = await Transfert.findById(req.params.id);
+  if(!t) return res.send('Transfert introuvable');
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+  body{font-family:Arial;text-align:center;padding:10px;}
+  .ticket{border:1px dashed #333;padding:10px;width:280px;margin:auto;}
+  h3{margin:5px 0;}p{margin:3px 0;font-size:14px;}
+  button{margin-top:5px;padding:5px 10px;}
+  </style></head><body>
+  <div class="ticket">
+  <h3>💰 Transfert</h3>
+  <p>Code: ${t.code}</p>
+  <p>Exp: ${t.senderFirstName} ${t.senderLastName} (${t.senderPhone})</p>
+  <p>Dest: ${t.receiverFirstName} ${t.receiverLastName} (${t.receiverPhone})</p>
+  <p>Montant: ${t.amount} ${t.currency}</p>
+  <p>Frais: ${t.fees}</p>
+  <p>Reçu: ${t.recoveryAmount}</p>
+  <p>Statut: ${t.retired?'Retiré':'Non retiré'}</p>
+  </div>
+  <button onclick="window.print()">🖨 Imprimer</button>
+  </body></html>`);
 });
+
 
 // ================== CRUD STOCK ==================
 
