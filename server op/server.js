@@ -13,7 +13,18 @@ const ExcelJS = require('exceljs');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(session({ secret: process.env.SESSION_SECRET || 'transfert-secret-final', resave: false, saveUninitialized: true }));
+
+/* ================= SESSION (FIX DECONNEXION) ================= */
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'transfert-secret-final',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 1000 * 60 * 60 * 8 // 8h
+  }
+}));
+
+
 
 // ================= DATABASE =================
 const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert';
@@ -207,7 +218,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
   // =================== Stock Table ===================
   html+=`<h3>  </h3>
-  <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>`;
+  <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
   stockHistory.forEach(h=>{
     html+=`<tr>
       <td>${new Date(h.date).toLocaleString()}</td>
@@ -403,7 +414,7 @@ function openStockModal(id = null) {
     return;
   }
 
-  fetch('/stock/' + id)
+  fetch('/stock/' + id)  // <-- ici
     .then(r => r.json())
     .then(s => {
       s_code.value = s.code;
@@ -416,24 +427,21 @@ function openStockModal(id = null) {
     });
 }
 
-function closeStockModal(){
-  stockModal.style.display='none';
-  currentStockId=null;
+function saveStock() {
+  postData('/stock/new', {   // <-- ici
+    _id: currentStockId,
+    sender: s_sender.value,
+    senderPhone: s_senderPhone.value,
+    destination: s_destination.value,
+    destinationPhone: s_destinationPhone.value,
+    amount: parseFloat(s_amount.value),
+    currency: s_currency.value,
+  }).then(() => location.reload());
 }
-function saveStock(){
-  postData('/StockHistory/new',{
-    _id:currentStockId,
-    sender:s_sender.value,
-    senderPhone:s_senderPhone.value,
-    destination:s_destination.value,
-    destinationPhone:s_destinationPhone.value,
-    amount:parseFloat(s_amount.value),
-    currency:s_currency.value
-  }).then(()=>location.reload());
-}
-function deleteStock(id){
-  if(confirm('Supprimer ?'))
-    postData('/StockHistory/delete',{id}).then(()=>location.reload());
+
+function deleteStock(id) {
+  if (confirm('Supprimer ?'))
+    postData('/stock/delete', { id }).then(() => location.reload()); // <-- ici
 }
 
 /* ================= CLIENT ================= */
@@ -543,10 +551,6 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 });
 
 // ===== GET STOCK BY ID =====
-app.get('/StockHistory/:id', requireLogin, async (req, res) => {
-  const s = await StockHistory.findById(req.params.id);
-  res.json(s);
-});
 
 app.post('/transfert/new', async (req, res) => {
   try {
@@ -615,18 +619,37 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 
 
 // ================== CRUD STOCK ==================
-app.post('/StockHistory/new', async (req, res) => {
+
+/* GET */
+app.get('/stock/:id', requireLogin, async (req, res) => {
+  const stock = await StockHistory.findById(req.params.id);
+  res.json(stock);
+});
+
+
+/* CREATE / UPDATE */
+app.post('/stock/new', requireLogin, async (req, res) => {
   try {
     let stock;
 
+    if (req.body._id) {
+      // Modification du stock existant
+      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      await StockHistory.create({
+        action: 'MODIFICATION',
+        stockId: stock._id,
+        ...stock.toObject(),
+      });
+    } else {
+      // Création d'un nouveau stock
       req.body.code = await generateUniqueCode();
       stock = await new StockHistory(req.body).save();
-      await StockHistory.create({
-        action: 'CREATION',
-        stockId: stock._id,
-        ...stock.toObject()
-      });
-    
+      //await StockHistory.create({
+      //  action: 'CREATION',
+      //  stockId: stock._id,
+     //   ...stock.toObject(),
+     // });
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -635,16 +658,8 @@ app.post('/StockHistory/new', async (req, res) => {
   }
 });
 
-app.post('/StockHistory/delete', async (req, res) => {
-  const stock = await StockHistory.findById(req.body.id);
-  if (stock) {
-    await StockHistory.create({
-      action: 'SUPPRESSION',
-      stockId: stock._id,
-      ...stock.toObject()
-    });
-    await StockHistory.findByIdAndDelete(req.body.id);
-  }
+app.post('/stock/delete', async (req, res) => {
+  await StockHistory.findByIdAndDelete(req.body.id);
   res.json({ success: true });
 });
 

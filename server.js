@@ -122,10 +122,41 @@ async function generateUniqueCode() {
 
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
 function setPermissions(username){
-  if(username==='a') return { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true };
-  if(username==='admin2') return { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true };
-  return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
+  // a : AUCUN droit sauf lecture + impression
+  if(username === 'a'){
+    return {
+      lecture: true,
+      ecriture: false,
+      retrait: false,
+      modification: false,
+      suppression: false,
+      imprimer: true
+    };
+  }
+
+  // admin2 : tout sauf retrait
+  if(username === 'admin2'){
+    return {
+      lecture: true,
+      ecriture: true,
+      retrait: false,
+      modification: true,
+      suppression: true,
+      imprimer: true
+    };
+  }
+
+  // admin normal
+  return {
+    lecture: true,
+    ecriture: true,
+    retrait: true,
+    modification: true,
+    suppression: true,
+    imprimer: true
+  };
 }
+
 function isValidPhone(phone){return /^00224\d{9}$/.test(phone)||/^0033\d{9}$/.test(phone);}
 function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
 
@@ -169,6 +200,8 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
 
+  const p = req.session.user.permissions;
+
   let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
   body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
@@ -187,9 +220,14 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   <button onclick="exportPDF()">📄 Export PDF</button>
   <button onclick="exportExcel()">📊 Export Excel</button>`;
 
+
+
+
   // =================== Transferts Table ===================
   html+=`<h3>Transferts</h3>
-  <button onclick="openTransfertModal()">➕ Nouveau Transfert</button>
+
+  ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
+
   <table>
   <tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
   transferts.forEach(t=>{
@@ -206,8 +244,10 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       <td>${t.retired?'Retiré':'Non retiré'}</td>
       <td>
         <button onclick="openTransfertModal('${t._id}')">✏️</button>
-        <button onclick="deleteTransfert('${t._id}')">❌</button>
-        ${!t.retired?`<button onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+	${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
+	${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
+	${p.imprimer ? `<button onclick="printTransfert('${t._id}')">🖨</button>` : ''}
+
       </td>
     </tr>`;
   });
@@ -553,7 +593,9 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 // ===== GET STOCK BY ID =====
 
 app.post('/transfert/new', async (req, res) => {
-  try {
+  if (!req.session.user.permissions.ecriture) {
+    return res.status(403).json({ error: 'Écriture interdite' }); 
+ try {
     const data = req.body;
 
     if (data._id) {
@@ -577,6 +619,13 @@ app.post('/transfert/delete', async (req, res) => {
 });
 
 app.post('/transfert/retirer', requireLogin, async (req, res) => {
+
+  if (!req.session.user.permissions.retrait) {
+    return res.status(403).json({ error: 'Droit retrait interdit' });
+  }
+
+  // --- le reste de ton code EXISTANT ---
+
   try {
     console.log('BODY:', req.body);
 
