@@ -218,17 +218,35 @@ app.post('/api/transferts/:id/retire',auth,can('retire'),async(req,res)=>{
  res.json({ok:true});
 });
 
-/* ================= PRINT ================= */
 app.get('/print/:id',auth,async(req,res)=>{
  const t=await Transfert.findById(req.params.id);
- const qr=await QRCode.toDataURL(t.code);
- res.send(`<html><body onload="print()">
-<h3>Transfert ${t.code}</h3>
-<p>Exp: ${t.sender}</p>
-<p>Dest: ${t.receiver}</p>
-<p>Montant: ${t.amount} ${t.currency}</p>
-<img src="${qr}">
-</body></html>`);
+ if(!t) return res.send('Introuvable');
+
+ res.send(`
+ <html>
+ <head>
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <style>
+ body{font-family:Arial;margin:20px}
+ h2{color:#ff8c42}
+ p{margin:5px 0}
+ </style>
+ </head>
+ <body onload="window.print()">
+   <h2>🧾 Reçu Transfert</h2>
+   <p><b>Code :</b> ${t.code}</p>
+   <p><b>Expéditeur :</b> ${t.sender} (${t.senderPhone})</p>
+   <p><b>Destinataire :</b> ${t.receiver} (${t.receiverPhone})</p>
+   <p><b>Origine :</b> ${t.origin}</p>
+   <p><b>Destination :</b> ${t.destination}</p>
+   <p><b>Montant :</b> ${t.amount} ${t.currency}</p>
+   <p><b>Frais :</b> ${t.fees}</p>
+   <p><b>Statut :</b> ${t.retired?'RETIRÉ':'NON RETIRÉ'}</p>
+   <hr>
+   <p style="font-size:12px">Imprimé le ${new Date().toLocaleString()}</p>
+ </body>
+ </html>
+ `);
 });
 
 /* ================= START ================= */
