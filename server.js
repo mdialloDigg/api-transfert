@@ -281,14 +281,28 @@ const transferts = await Transfert
 
   // =================== Transferts Table ===================
   html+=`<h3>Transferts</h3>
-<div class="search-bar">
-<form method="get" action="/transferts/list">
-<input type="text" name="searchPhone" placeholder="Téléphone" value="${req.query.searchPhone||''}">
-<input type="text" name="searchCode" placeholder="Code" value="${req.query.searchCode||''}">
-<input type="text" name="searchName" placeholder="Nom destinataire" value="${req.query.searchName||''}">
-<button type="submit">🔍 Rechercher</button>
-</form>
-</div>
+
+<input id="f_code" class="search-input" maxlength="0.6" placeholder="Code">
+<input id="f_sender" placeholder="Expéditeur">
+<input id="f_receiver" placeholder="Destinataire">
+
+<select id="f_currency">
+  <option value="">Toutes devises</option>
+  <option>GNF</option>
+  <option>XOF</option>
+  <option>EUR</option>
+  <option>USD</option>
+</select>
+
+<select id="f_status">
+  <option value="">Tous statuts</option>
+  <option value="true">Retiré</option>
+  <option value="false">Non retiré</option>
+</select>
+
+<button onclick="searchTransferts()">Rechercher</button>
+<button onclick="location.reload()">Réinitialiser</button>
+
 
 
   ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
