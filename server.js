@@ -122,10 +122,41 @@ async function generateUniqueCode() {
 
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
 function setPermissions(username){
-  if(username==='a') return { lecture:true, ecriture:false, retrait:true, modification:false, suppression:false, imprimer:true };
-  if(username==='admin2') return { lecture:true, ecriture:true, retrait:false, modification:true, suppression:true, imprimer:true };
-  return { lecture:true, ecriture:true, retrait:true, modification:true, suppression:true, imprimer:true };
+  // a : AUCUN droit sauf lecture + impression
+  if(username === 'a'){
+    return {
+      lecture: true,
+      ecriture: false,
+      retrait: true,
+      modification: false,
+      suppression: false,
+      imprimer: true
+    };
+  }
+
+  // admin2 : tout sauf retrait
+  if(username === 'admin2'){
+    return {
+      lecture: true,
+      ecriture: true,
+      retrait: false,
+      modification: true,
+      suppression: true,
+      imprimer: true
+    };
+  }
+
+  // admin normal
+  return {
+    lecture: true,
+    ecriture: true,
+    retrait: true,
+    modification: true,
+    suppression: true,
+    imprimer: true
+  };
 }
+
 function isValidPhone(phone){return /^00224\d{9}$/.test(phone)||/^0033\d{9}$/.test(phone);}
 function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
 
@@ -136,7 +167,15 @@ app.get('/login',(req,res)=>{
   body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
   .login-container{background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:360px;text-align:center;}
   .login-container h2{margin-bottom:30px;font-size:26px;color:#ff8c42;}
-  .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
+  .login-container input{width:100%; /* ===== CHAMPS DE RECHERCHE (2 cm) ===== */
+.search-input{
+  width:2cm;
+  min-width:2cm;
+  max-width:2cm;
+  padding:4px;
+  font-size:12px;
+}
+; padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
   .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
   .login-container button:hover{background:#e67300;}
   </style></head><body>
@@ -163,11 +202,46 @@ app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); 
 
 // ================= DASHBOARD =================
 app.get('/dashboard', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find().sort({createdAt:-1});
+  const filters = {};
+const q = req.query;
+
+/* ==== Filtres simples ==== */
+if (q.code) filters.code = q.code.toUpperCase();
+
+if (q.currency) filters.currency = q.currency;
+
+if (q.status !== undefined && q.status !== '') {
+  filters.retired = q.status === 'true';
+}
+
+/* ==== Recherche texte (nom expéditeur / destinataire) ==== */
+if (q.sender) {
+  filters.senderFirstName = { $regex: q.sender, $options: 'i' };
+}
+
+if (q.receiver) {
+  filters.receiverFirstName = { $regex: q.receiver, $options: 'i' };
+}
+
+/* ==== Date ==== */
+if (q.dateFrom || q.dateTo) {
+  filters.createdAt = {};
+  if (q.dateFrom) filters.createdAt.$gte = new Date(q.dateFrom);
+  if (q.dateTo) {
+    filters.createdAt.$lte = new Date(q.dateTo + 'T23:59:59');
+  }
+}
+
+const transferts = await Transfert
+  .find(filters)
+  .sort({ createdAt: -1 });
+
   const stocks = await Stock.find().sort({createdAt:-1});
   const stockHistory = await StockHistory.find().sort({date:-1});
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
+
+  const p = req.session.user.permissions;
 
   let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
@@ -180,16 +254,59 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   button{margin:2px;padding:5px 10px;cursor:pointer;}
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
   .modal-content{background:white;padding:20px;border-radius:10px;max-width:500px;width:90%;overflow:auto;}
-  input,select{width:100%;padding:6px;margin-bottom:10px;}
+  input,select{width:100%;/* ===== CHAMPS DE RECHERCHE (2 cm) ===== */
+.search-input{
+  width:2cm;
+  min-width:2cm;
+  max-width:2cm;
+  padding:4px;
+  font-size:12px;
+}
+;padding:6px;margin-bottom:10px;}
   </style></head><body>
   <h2>📊 Dashboard</h2>
+
+
   <a href="/logout">🚪 Déconnexion</a>
+
+
+  
+
   <button onclick="exportPDF()">📄 Export PDF</button>
   <button onclick="exportExcel()">📊 Export Excel</button>`;
 
+
+
+
+
   // =================== Transferts Table ===================
   html+=`<h3>Transferts</h3>
-  <button onclick="openTransfertModal()">➕ Nouveau Transfert</button>
+<h4>🔍 Recherche Transferts</h4>
+<input id="f_code" class="search-input" maxlength="6" placeholder="Code">
+<input id="f_sender" placeholder="Expéditeur">
+<input id="f_receiver" placeholder="Destinataire">
+
+<select id="f_currency">
+  <option value="">Toutes devises</option>
+  <option>GNF</option>
+  <option>XOF</option>
+  <option>EUR</option>
+  <option>USD</option>
+</select>
+
+<select id="f_status">
+  <option value="">Tous statuts</option>
+  <option value="true">Retiré</option>
+  <option value="false">Non retiré</option>
+</select>
+
+<input id="f_date_from" type="date">
+<input id="f_date_to" type="date">
+
+<button onclick="searchTransferts()">Rechercher</button>
+<button onclick="location.reload()">Réinitialiser</button>
+  ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
+
   <table>
   <tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
   transferts.forEach(t=>{
@@ -205,9 +322,15 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       <td>${t.currency}</td>
       <td>${t.retired?'Retiré':'Non retiré'}</td>
       <td>
-        <button onclick="openTransfertModal('${t._id}')">✏️</button>
-        <button onclick="deleteTransfert('${t._id}')">❌</button>
-        ${!t.retired?`<button onclick="retirerTransfert('${t._id}')">💰</button>`:''}
+        ${p.modification ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
+	${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
+	${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
+	${p.imprimer ? `<button onclick="window.open('/transfert/print/${t._id}','_blank')">🖨</button>` : ''}
+
+
+
+
+
       </td>
     </tr>`;
   });
@@ -329,6 +452,21 @@ function postData(url,data){
     body:JSON.stringify(data)
   }).then(r=>r.json());
 }
+
+function searchTransferts() {
+  const params = new URLSearchParams({
+    code: f_code.value,
+    sender: f_sender.value,
+    receiver: f_receiver.value,
+    currency: f_currency.value,
+    status: f_status.value,
+    dateFrom: f_date_from.value,
+    dateTo: f_date_to.value
+  });
+
+  window.location.href = '/dashboard?' + params.toString();
+}
+
 
 /* ================= TRANSFERT ================= */
 function openTransfertModal(id = null) {
@@ -468,6 +606,9 @@ function deleteClient(id){
     postData('/client/delete',{id}).then(()=>location.reload());
 }
 
+
+
+
 /* ================= RATE ================= */
 function openRateModal(id=null){
   currentRateId=id;
@@ -499,6 +640,8 @@ function exportExcel(){window.open('/export/excel','_blank');}
   res.send(html);
 });
 
+
+
 // ================= CRUD TRANSFERT/STOCK/CLIENT/RATE =================
 // Code similaire à l’exemple précédent (post '/transfert/save', delete etc.)
 
@@ -524,7 +667,7 @@ app.get('/export/excel', requireLogin, async(req,res)=>{
     {header:'Destinataire', key:'receiver', width:20},
     {header:'Montant', key:'amount', width:10},
     {header:'Frais', key:'fees', width:10},
-    {header:'Reçu', key:'received', width:10},
+    {header:'Reçu', key:'received', width:10}, 
     {header:'Devise', key:'currency', width:10},
     {header:'Status', key:'status', width:10},
   ];
@@ -552,7 +695,11 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 
 // ===== GET STOCK BY ID =====
 
-app.post('/transfert/new', async (req, res) => {
+app.post('/transfert/new', requireLogin, async (req, res) => {
+  if (!req.session.user.permissions.ecriture) {
+    return res.status(403).json({ error: 'Écriture interdite' });
+  }
+
   try {
     const data = req.body;
 
@@ -577,13 +724,18 @@ app.post('/transfert/delete', async (req, res) => {
 });
 
 app.post('/transfert/retirer', requireLogin, async (req, res) => {
+
+  if (!req.session.user.permissions.retrait) {
+    return res.status(403).json({ error: 'Droit retrait interdit' });
+  }
+
   try {
     console.log('BODY:', req.body);
 
     const { id, mode } = req.body;
     if (!id) return res.status(400).json({ error: 'ID manquant' });
 
-    const t = await Transfert.findById(req.body.id);
+    const t = await Transfert.findById(id);
     if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
     if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
 
@@ -599,14 +751,18 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
       return res.status(400).json({ error: 'Stock introuvable' });
     }
 
-    if (stock.amount < montantRetire)
+    if (stock.amount < montantRetire) {
       return res.status(400).json({ error: 'Stock insuffisant' });
+    }
 
     stock.amount -= montantRetire;
     await stock.save();
 
     t.retired = true;
-    t.retraitHistory.push({ date: new Date(), mode });
+    t.retraitHistory.push({
+      date: new Date(),
+      mode: mode || 'ESPECE'
+    });
     await t.save();
 
     res.json({ success: true });
@@ -614,6 +770,51 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
   } catch (err) {
     console.error('ERREUR RETRAIT:', err);
     res.status(500).json({ error: err.message });
+  }
+
+});
+
+// ================= PRINT TICKET =================
+// ================== IMPRIMER TRANSFERT ==================
+app.get('/transfert/print/:id', requireLogin, async (req, res) => {
+  try {
+    const t = await Transfert.findById(req.params.id);
+    if (!t) return res.status(404).send('Transfert introuvable');
+
+    // Envoi du HTML avec variables interpolées
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Transfert ${t.code}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h2 { color: #ff8c42; }
+          p { margin: 5px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>Transfert ${t.code}</h2>
+        <p><strong>Expéditeur :</strong> ${t.senderFirstName} ${t.senderLastName} 📞 ${t.senderPhone || '-'}</p>
+        <p><strong>Origine :</strong> ${t.originLocation}</p>
+        <p><strong>Destinataire :</strong> ${t.receiverFirstName} ${t.receiverLastName} 📞 ${t.receiverPhone || '-'}</p>
+        <p><strong>Destination :</strong> ${t.destinationLocation}</p>
+        <p><strong>Montant :</strong> ${t.amount} ${t.currency}</p>
+        <p><strong>Frais :</strong> ${t.fees}</p>
+        <p><strong>Reçu :</strong> ${t.received}</p>
+        <p><strong>Status :</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
+
+        <script>
+          window.onload = function() {
+            window.print(); // Lancer l'impression automatiquement
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('Erreur impression transfert:', err);
+    res.status(500).send('Erreur serveur');
   }
 });
 
