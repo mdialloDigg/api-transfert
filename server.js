@@ -167,7 +167,15 @@ app.get('/login',(req,res)=>{
   body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
   .login-container{background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:360px;text-align:center;}
   .login-container h2{margin-bottom:30px;font-size:26px;color:#ff8c42;}
-  .login-container input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
+  .login-container input{width:100%; /* ===== CHAMPS DE RECHERCHE (2 cm) ===== */
+.search-input{
+  width:2cm;
+  min-width:2cm;
+  max-width:2cm;
+  padding:4px;
+  font-size:12px;
+}
+; padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
   .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
   .login-container button:hover{background:#e67300;}
   </style></head><body>
