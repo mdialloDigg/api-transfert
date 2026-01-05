@@ -508,12 +508,10 @@ function deleteClient(id){
     postData('/client/delete',{id}).then(()=>location.reload());
 }
 
-
 function printTransfert(id) {
   fetch('/transfert/' + id)
     .then(r => r.json())
     .then(t => {
-      // Générer le contenu HTML à imprimer
       const printContent = `
         <h2>Transfert ${t.code}</h2>
         <p><strong>Origine:</strong> ${t.originLocation}</p>
@@ -525,7 +523,6 @@ function printTransfert(id) {
         <p><strong>Reçu:</strong> ${t.received} ${t.currency}</p>
         <p><strong>Status:</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
       `;
-      // Ouvrir nouvelle fenêtre
       const w = window.open('', '', 'width=600,height=600');
       w.document.write(printContent);
       w.document.close();
