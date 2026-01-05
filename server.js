@@ -216,7 +216,28 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   input,select{width:100%;padding:6px;margin-bottom:10px;}
   </style></head><body>
   <h2>📊 Dashboard</h2>
+
+  <form id="filterForm" style="margin-bottom:10px;">
+    <input type="text" name="search" placeholder="Recherche..." value="${search}">
+    <select name="status">
+      <option value="all" ${status==='all'?'selected':''}>Tous</option>
+      <option value="retire" ${status==='retire'?'selected':''}>Retirés</option>
+      <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
+    </select>
+    <button>🔍 Filtrer</button>
+  </form>
+
   <a href="/logout">🚪 Déconnexion</a>
+
+ <h3>📊 Totaux par destination et devise</h3>
+  <table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
+  for(let dest in totals){
+    for(let curr in totals[dest]){
+      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
+    }
+  }
+  html+='</tbody></table>';
+
   <button onclick="exportPDF()">📄 Export PDF</button>
   <button onclick="exportExcel()">📊 Export Excel</button>`;
 
