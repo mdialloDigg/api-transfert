@@ -282,8 +282,7 @@ const transferts = await Transfert
   // =================== Transferts Table ===================
   html+=`<h3>Transferts</h3>
 <h4>🔍 Recherche Transferts</h4>
-<input id="f_code" class="search-input" maxlength="6" placeholder="Code">
-<input id="f_sender" placeholder="Expéditeur">
+<input id="f_code" class="search-input" maxlength="1" placeholder="Code">
 <input id="f_receiver" placeholder="Destinataire">
 
 <select id="f_currency">
@@ -300,11 +299,10 @@ const transferts = await Transfert
   <option value="false">Non retiré</option>
 </select>
 
-<input id="f_date_from" type="date">
-<input id="f_date_to" type="date">
-
 <button onclick="searchTransferts()">Rechercher</button>
 <button onclick="location.reload()">Réinitialiser</button>
+
+
   ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
 
   <table>
@@ -323,9 +321,9 @@ const transferts = await Transfert
       <td>${t.retired?'Retiré':'Non retiré'}</td>
       <td>
         ${p.modification ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
-	${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
-	${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
-	${p.imprimer ? `<button onclick="window.open('/transfert/print/${t._id}','_blank')">🖨</button>` : ''}
+		${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
+		${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
+		${p.imprimer ? `<button onclick="window.open('/transfert/print/${t._id}','_blank')">🖨</button>` : ''}
 
 
 
@@ -510,6 +508,13 @@ function closeTransfertModal(){
   document.getElementById('transfertModal').style.display='none';
   currentTransfertId=null;
 }
+
+function closeStockModal(){
+  document.getElementById('stockModal').style.display='none';
+  currentStockId=null;
+}
+
+
 function saveTransfert(){
   const amount=parseFloat(t_amount.value)||0;
   const fees=parseFloat(t_fees.value)||0;
