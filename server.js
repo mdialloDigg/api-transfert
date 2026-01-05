@@ -714,7 +714,6 @@ app.get('/print/transfert/:id', requireLogin, async (req, res) => {
           <style>
             body { font-family: Arial, sans-serif; margin: 20px; }
             h2 { color: #ff8c42; }
-            p { margin: 5px 0; }
             table { border-collapse: collapse; width: 100%; margin-top: 20px; }
             th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
             th { background: #ff8c42; color: white; }
@@ -732,17 +731,17 @@ app.get('/print/transfert/:id', requireLogin, async (req, res) => {
             <tr><th>Reçu</th><td>${t.received}</td></tr>
             <tr><th>Status</th><td>${t.retired ? 'Retiré' : 'Non retiré'}</td></tr>
           </table>
-          <script>
-            window.onload = function() { window.print(); }
-          </script>
+          <script>window.onload = function() { window.print(); }</script>
         </body>
       </html>
-    `); // <-- backticks !
+    `);
   } catch (err) {
     console.error('Erreur impression:', err);
     res.status(500).send('<p>Erreur serveur lors de l’impression</p>');
   }
 });
+
+
 // ================== CRUD STOCK ==================
 
 /* GET */
