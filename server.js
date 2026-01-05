@@ -564,7 +564,7 @@ app.get('/export/excel', requireLogin, async(req,res)=>{
     {header:'Destinataire', key:'receiver', width:20},
     {header:'Montant', key:'amount', width:10},
     {header:'Frais', key:'fees', width:10},
-    {header:'Reçu', key:'received', width:10},
+    {header:'Reçu', key:'received', width:10}, 
     {header:'Devise', key:'currency', width:10},
     {header:'Status', key:'status', width:10},
   ];
@@ -592,10 +592,12 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 
 // ===== GET STOCK BY ID =====
 
-app.post('/transfert/new', async (req, res) => {
+app.post('/transfert/new', requireLogin, async (req, res) => {
   if (!req.session.user.permissions.ecriture) {
-    return res.status(403).json({ error: 'Écriture interdite' }); 
- try {
+    return res.status(403).json({ error: 'Écriture interdite' });
+  }
+
+  try {
     const data = req.body;
 
     if (data._id) {
