@@ -624,15 +624,13 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
     return res.status(403).json({ error: 'Droit retrait interdit' });
   }
 
-  // --- le reste de ton code EXISTANT ---
-
   try {
     console.log('BODY:', req.body);
 
     const { id, mode } = req.body;
     if (!id) return res.status(400).json({ error: 'ID manquant' });
 
-    const t = await Transfert.findById(req.body.id);
+    const t = await Transfert.findById(id);
     if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
     if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
 
@@ -648,14 +646,18 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
       return res.status(400).json({ error: 'Stock introuvable' });
     }
 
-    if (stock.amount < montantRetire)
+    if (stock.amount < montantRetire) {
       return res.status(400).json({ error: 'Stock insuffisant' });
+    }
 
     stock.amount -= montantRetire;
     await stock.save();
 
     t.retired = true;
-    t.retraitHistory.push({ date: new Date(), mode });
+    t.retraitHistory.push({
+      date: new Date(),
+      mode: mode || 'ESPECE'
+    });
     await t.save();
 
     res.json({ success: true });
@@ -664,6 +666,7 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
     console.error('ERREUR RETRAIT:', err);
     res.status(500).json({ error: err.message });
   }
+
 });
 
 
