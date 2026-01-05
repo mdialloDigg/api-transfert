@@ -229,14 +229,8 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
 
   <a href="/logout">🚪 Déconnexion</a>
 
- <h3>📊 Totaux par destination et devise</h3>
-  <table><thead><tr><th>Destination</th><th>Devise</th><th>Montant</th><th>Frais</th><th>Reçu</th></tr></thead><tbody>`;
-  for(let dest in totals){
-    for(let curr in totals[dest]){
-      html+=`<tr><td>${dest}</td><td>${curr}</td><td>${totals[dest][curr].amount}</td><td>${totals[dest][curr].fees}</td><td>${totals[dest][curr].recovery}</td></tr>`;
-    }
-  }
-  html+='</tbody></table>';
+
+  
 
   <button onclick="exportPDF()">📄 Export PDF</button>
   <button onclick="exportExcel()">📊 Export Excel</button>`;
