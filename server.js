@@ -281,26 +281,14 @@ const transferts = await Transfert
 
   // =================== Transferts Table ===================
   html+=`<h3>Transferts</h3>
-<h4>🔍 Recherche Transferts</h4>
-<input id="f_code" class="search-input" maxlength="1" placeholder="Code">
-<input id="f_receiver" placeholder="Destinataire">
-
-<select id="f_currency">
-  <option value="">Toutes devises</option>
-  <option>GNF</option>
-  <option>XOF</option>
-  <option>EUR</option>
-  <option>USD</option>
-</select>
-
-<select id="f_status">
-  <option value="">Tous statuts</option>
-  <option value="true">Retiré</option>
-  <option value="false">Non retiré</option>
-</select>
-
-<button onclick="searchTransferts()">Rechercher</button>
-<button onclick="location.reload()">Réinitialiser</button>
+<div class="search-bar">
+<form method="get" action="/transferts/list">
+<input type="text" name="searchPhone" placeholder="Téléphone" value="${req.query.searchPhone||''}">
+<input type="text" name="searchCode" placeholder="Code" value="${req.query.searchCode||''}">
+<input type="text" name="searchName" placeholder="Nom destinataire" value="${req.query.searchName||''}">
+<button type="submit">🔍 Rechercher</button>
+</form>
+</div>
 
 
   ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
@@ -900,6 +888,44 @@ app.post('/rate/delete', async (req, res) => {
   await Rate.findByIdAndDelete(req.body.id);
   res.json({ success: true });
 });
+
+app.get('/transferts/list', requireLogin, async (req, res) => {
+  const transferts = await Transfert.find().sort({ destinationLocation: 1 });
+  const selectedDest = req.query.destination || 'all';
+
+  // Filtrage recherche
+  let filtered = transferts;
+  if (req.query.searchPhone) {
+    const phone = req.query.searchPhone.toLowerCase();
+    filtered = filtered.filter(t =>
+      t.senderPhone.toLowerCase().includes(phone) || t.receiverPhone.toLowerCase().includes(phone)
+    );
+  }
+  if (req.query.searchCode) {
+    const code = req.query.searchCode.toLowerCase();
+    filtered = filtered.filter(t => t.code.toLowerCase().includes(code));
+  }
+  if (req.query.searchName) {
+    const name = req.query.searchName.toLowerCase();
+    filtered = filtered.filter(t =>
+      t.receiverFirstName.toLowerCase().includes(name) || t.receiverLastName.toLowerCase().includes(name)
+    );
+  }
+
+  if (selectedDest !== 'all') filtered = filtered.filter(t => t.destinationLocation === selectedDest);
+
+  const destinations = [...new Set(transferts.map(t => t.destinationLocation))];
+  let statsByDest = {};
+  destinations.forEach(dest => {
+    const list = transferts.filter(t => t.destinationLocation === dest);
+    statsByDest[dest] = {
+      totalAmount: list.reduce((a,b)=>a+b.amount,0),
+      totalFees: list.reduce((a,b)=>a+b.fees,0),
+      totalReceived: list.reduce((a,b)=>a+b.recoveryAmount,0),
+      totalRetired: list.filter(t=>t.retired).length,
+      totalNotRetired: list.filter(t=>!t.retired).length,
+    };
+  });
 
 
 
