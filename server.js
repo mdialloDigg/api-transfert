@@ -703,46 +703,46 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 });
 
 // ================== IMPRIMER TRANSFERT ==================
-app.get('/print/transfert/:id', requireLogin, async (req, res) => {
+// ================== IMPRIMER TRANSFERT ==================
+app.get('/transfert/print/:id', requireLogin, async (req, res) => {
   try {
     const t = await Transfert.findById(req.params.id);
-    if (!t) return res.send('<p>Transfert introuvable</p>');
+    if (!t) return res.status(404).send('Transfert introuvable');
 
-    // ✅ Utiliser des backticks pour les template strings
+    // Envoi du HTML avec variables interpolées
     res.send(`
       <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h2 { color: #ff8c42; }
-            table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-            th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-            th { background: #ff8c42; color: white; }
-          </style>
-        </head>
-        <body>
-          <h2>Transfert ${t.code}</h2>
-          <table>
-            <tr><th>Origine</th><td>${t.originLocation}</td></tr>
-            <tr><th>Expéditeur</th><td>${t.senderFirstName} 📞 ${t.senderPhone || '-'}</td></tr>
-            <tr><th>Destination</th><td>${t.destinationLocation}</td></tr>
-            <tr><th>Destinataire</th><td>${t.receiverFirstName} 📞 ${t.receiverPhone || '-'}</td></tr>
-            <tr><th>Montant</th><td>${t.amount} ${t.currency}</td></tr>
-            <tr><th>Frais</th><td>${t.fees}</td></tr>
-            <tr><th>Reçu</th><td>${t.received}</td></tr>
-            <tr><th>Status</th><td>${t.retired ? 'Retiré' : 'Non retiré'}</td></tr>
-          </table>
-          <script>
-            // Ouvre automatiquement la boîte d'impression au chargement
-            window.onload = function() { window.print(); }
-          </script>
-        </body>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Transfert ${t.code}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h2 { color: #ff8c42; }
+          p { margin: 5px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>Transfert ${t.code}</h2>
+        <p><strong>Expéditeur :</strong> ${t.senderFirstName} ${t.senderLastName} 📞 ${t.senderPhone || '-'}</p>
+        <p><strong>Origine :</strong> ${t.originLocation}</p>
+        <p><strong>Destinataire :</strong> ${t.receiverFirstName} ${t.receiverLastName} 📞 ${t.receiverPhone || '-'}</p>
+        <p><strong>Destination :</strong> ${t.destinationLocation}</p>
+        <p><strong>Montant :</strong> ${t.amount} ${t.currency}</p>
+        <p><strong>Frais :</strong> ${t.fees}</p>
+        <p><strong>Reçu :</strong> ${t.received}</p>
+        <p><strong>Status :</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
+
+        <script>
+          window.onload = function() {
+            window.print(); // Lancer l'impression automatiquement
+          }
+        </script>
+      </body>
       </html>
     `);
   } catch (err) {
-    console.error('Erreur impression:', err);
-    res.status(500).send('<p>Erreur serveur lors de l’impression</p>');
+    console.error('Erreur impression transfert:', err);
+    res.status(500).send('Erreur serveur');
   }
 });
 
