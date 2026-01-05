@@ -270,14 +270,7 @@ const transferts = await Transfert
   <a href="/logout">🚪 Déconnexion</a>
 
 
-  <div>
-<input id="searchTransPhone" class="search-input" placeholder="📞 Téléphone">
-<input id="searchTransCode" class="search-input" placeholder="🔢 Code">
-<input id="searchTransName" class="search-input" placeholder="🧑 Nom">
-<span id="transResultCount"></span>
-<div id="transLoader">⏳ Recherche...</div>
-</div>
-<div id="transTable"></div>
+ 
 
   <button onclick="exportPDF()">📄 Export PDF</button>
   <button onclick="exportExcel()">📊 Export Excel</button>`;
@@ -289,6 +282,14 @@ const transferts = await Transfert
   // =================== Transferts Table ===================
   html+=`<h3>Transferts</h3>
 
+ <div>
+<input id="searchTransPhone" class="search-input" placeholder="📞 Téléphone">
+<input id="searchTransCode" class="search-input" placeholder="🔢 Code">
+<input id="searchTransName" class="search-input" placeholder="🧑 Nom">
+<span id="transResultCount"></span>
+<div id="transLoader">⏳ Recherche...</div>
+</div>
+<div id="transTable"></div>
 
 
   ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
