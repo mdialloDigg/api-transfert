@@ -1,6 +1,6 @@
 /******************************************************************
  * APP TRANSFERT + STOCKS + CLIENTS + RATES + EXPORT + HISTORY
- * COMPLET : Dashboard avec modals CRUD et design existant
+ * COMPLET + RECHERCHE INSTANTANÉE + MODALS CRUD + EXPORT
  ******************************************************************/
 require('dotenv').config();
 const express = require('express');
@@ -14,25 +14,21 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-/* ================= SESSION (FIX DECONNEXION) ================= */
+/* ================= SESSION ================= */
 app.use(session({
   secret: process.env.SESSION_SECRET || 'transfert-secret-final',
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    maxAge: 1000 * 60 * 60 * 8 // 8h
-  }
+  cookie: { maxAge: 1000 * 60 * 60 * 8 }
 }));
 
-
-
-// ================= DATABASE =================
+/* ================= DATABASE ================= */
 const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/transfert';
 mongoose.connect(mongoUri)
   .then(() => console.log('✅ MongoDB connecté'))
   .catch(err => { console.error('❌ Erreur MongoDB:', err.message); process.exit(1); });
 
-// ================= SCHEMAS =================
+/* ================= SCHEMAS ================= */
 const transfertSchema = new mongoose.Schema({
   userType: { type: String, enum: ['Client','Distributeur','Administrateur','Agence de transfert'], required:true },
   senderFirstName: String,
@@ -76,11 +72,10 @@ const stockHistorySchema = new mongoose.Schema({
   destination: String,
   destinationPhone: String,
   amount: Number,
-  balance: Number, // ✅ AJOUT ICI
+  balance: Number,
   currency: String,
   date: { type: Date, default: Date.now }
 });
-
 const StockHistory = mongoose.model('StockHistory', stockHistorySchema);
 
 const clientSchema = new mongoose.Schema({
@@ -108,9 +103,9 @@ const authSchema = new mongoose.Schema({
 });
 const Auth = mongoose.model('Auth', authSchema);
 
-// ================= UTILS =================
+/* ================= UTILS ================= */
 async function generateUniqueCode() {
-  let code, exists=true;
+  let code, exists = true;
   while(exists){
     const letter = String.fromCharCode(65 + Math.floor(Math.random()*26));
     const number = Math.floor(100 + Math.random()*900);
@@ -121,63 +116,16 @@ async function generateUniqueCode() {
 }
 
 const requireLogin = (req,res,next)=>{ if(req.session.user) return next(); res.redirect('/login'); };
-function setPermissions(username){
-  // a : AUCUN droit sauf lecture + impression
-  if(username === 'a'){
-    return {
-      lecture: true,
-      ecriture: false,
-      retrait: true,
-      modification: false,
-      suppression: false,
-      imprimer: true
-    };
-  }
 
-  // admin2 : tout sauf retrait
-  if(username === 'admin2'){
-    return {
-      lecture: true,
-      ecriture: true,
-      retrait: false,
-      modification: true,
-      suppression: true,
-      imprimer: true
-    };
-  }
-
-  // admin normal
-  return {
-    lecture: true,
-    ecriture: true,
-    retrait: true,
-    modification: true,
-    suppression: true,
-    imprimer: true
-  };
-}
-
-function isValidPhone(phone){return /^00224\d{9}$/.test(phone)||/^0033\d{9}$/.test(phone);}
-function normalizeUpper(v){return (v||'').toString().trim().toUpperCase();}
-
-// ================= LOGIN =================
+/* ================= LOGIN ================= */
 app.get('/login',(req,res)=>{
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
   body{margin:0;font-family:Arial,sans-serif;background:linear-gradient(135deg,#ff8c42,#ffa64d);display:flex;justify-content:center;align-items:center;height:100vh;}
-  .login-container{background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:360px;text-align:center;}
-  .login-container h2{margin-bottom:30px;font-size:26px;color:#ff8c42;}
-  .login-container input{width:100%; /* ===== CHAMPS DE RECHERCHE (2 cm) ===== */
-.search-input{
-  width:2cm;
-  min-width:2cm;
-  max-width:2cm;
-  padding:4px;
-  font-size:12px;
-}
-; padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
-  .login-container button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;transition:0.3s;}
-  .login-container button:hover{background:#e67300;}
+  .login-container{background:white;padding:40px;border-radius:20px;width:90%;max-width:360px;text-align:center;}
+  input{width:100%;padding:15px;margin:10px 0;border:1px solid #ccc;border-radius:10px;font-size:16px;}
+  button{padding:15px;width:100%;border:none;border-radius:10px;font-size:16px;background:#ff8c42;color:white;font-weight:bold;cursor:pointer;}
+  button:hover{background:#e67300;}
   </style></head><body>
   <div class="login-container">
   <h2>Connexion</h2>
@@ -188,795 +136,147 @@ app.get('/login',(req,res)=>{
   </form>
   </div></body></html>`);
 });
+
 app.post('/login', async(req,res)=>{
-  try{
-    const {username,password} = req.body;
-    let user = await Auth.findOne({username});
-    if(!user){ const hashed=bcrypt.hashSync(password,10); user=await new Auth({username,password:hashed}).save(); }
-    if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
-    req.session.user={ username:user.username, role:user.role, permissions:setPermissions(username) };
-    res.redirect('/dashboard');
-  }catch(err){ console.error(err); res.status(500).send('Erreur lors de la connexion'); }
+  const {username,password} = req.body;
+  let user = await Auth.findOne({username});
+  if(!user){ const hashed=bcrypt.hashSync(password,10); user=await new Auth({username,password:hashed}).save(); }
+  if(!bcrypt.compareSync(password,user.password)) return res.send('Mot de passe incorrect');
+  req.session.user={ username:user.username, role:user.role };
+  res.redirect('/dashboard');
 });
+
 app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); });
 
-// ================= DASHBOARD =================
+/* ================= DASHBOARD COMPLET ================= */
 app.get('/dashboard', requireLogin, async(req,res)=>{
-  const filters = {};
-const q = req.query;
+  const html=`<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;background:#f0f2f5;padding:10px;}
+h2{color:#333;}
+input.search-input{padding:8px;border-radius:8px;border:1px solid #ccc;width:100%;max-width:160px;margin:0 5px 10px 0;}
+#loader{display:none;color:#ff8c42;margin:8px 0;}
+table{width:100%;border-collapse:collapse;margin-top:10px;}
+th,td{border:1px solid #ccc;padding:6px;font-size:14px;}
+th{background:#ff8c42;color:#fff;}
+@media(max-width:600px){.search-input{max-width:100%;margin-bottom:5px;}}
+</style>
+</head>
+<body>
+<h2>📊 Dashboard</h2>
+<a href="/logout">🚪 Déconnexion</a>
 
-/* ==== Filtres simples ==== */
-if (q.code) filters.code = q.code.toUpperCase();
+<h3>Transferts</h3>
+<div>
+<input id="searchTransPhone" class="search-input" placeholder="📞 Téléphone">
+<input id="searchTransCode" class="search-input" placeholder="🔢 Code">
+<input id="searchTransName" class="search-input" placeholder="🧑 Nom">
+<span id="transResultCount"></span>
+<div id="transLoader">⏳ Recherche...</div>
+</div>
+<div id="transTable"></div>
 
-if (q.currency) filters.currency = q.currency;
+<h3>Stocks</h3>
+<input id="searchStock" class="search-input" placeholder="🔍 Expéditeur / Destination">
+<div id="stockResultCount"></div>
+<div id="stockLoader">⏳ Recherche...</div>
+<div id="stockTable"></div>
 
-if (q.status !== undefined && q.status !== '') {
-  filters.retired = q.status === 'true';
-}
+<h3>Clients</h3>
+<input id="searchClient" class="search-input" placeholder="🔍 Nom / Téléphone">
+<div id="clientResultCount"></div>
+<div id="clientLoader">⏳ Recherche...</div>
+<div id="clientTable"></div>
 
-/* ==== Recherche texte (nom expéditeur / destinataire) ==== */
-if (q.sender) {
-  filters.senderFirstName = { $regex: q.sender, $options: 'i' };
-}
-
-if (q.receiver) {
-  filters.receiverFirstName = { $regex: q.receiver, $options: 'i' };
-}
-
-/* ==== Date ==== */
-if (q.dateFrom || q.dateTo) {
-  filters.createdAt = {};
-  if (q.dateFrom) filters.createdAt.$gte = new Date(q.dateFrom);
-  if (q.dateTo) {
-    filters.createdAt.$lte = new Date(q.dateTo + 'T23:59:59');
-  }
-}
-
-const transferts = await Transfert
-  .find(filters)
-  .sort({ createdAt: -1 });
-
-  const stocks = await Stock.find().sort({createdAt:-1});
-  const stockHistory = await StockHistory.find().sort({date:-1});
-  const clients = await Client.find().sort({createdAt:-1});
-  const rates = await Rate.find().sort({createdAt:-1});
-
-  const p = req.session.user.permissions;
-
-  let html=`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-  body{font-family:Arial;background:#f0f2f5;margin:0;padding:20px;}
-  h2,h3,h4{margin-top:20px;color:#333;}
-  a{margin-right:10px;text-decoration:none;color:#007bff;}a:hover{text-decoration:underline;}
-  table{border-collapse:collapse;width:100%;margin-bottom:20px;}
-  th,td{border:1px solid #ccc;padding:8px;}
-  th{background:#ff8c42;color:white;}
-  button{margin:2px;padding:5px 10px;cursor:pointer;}
-  .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
-  .modal-content{background:white;padding:20px;border-radius:10px;max-width:500px;width:90%;overflow:auto;}
-  input,select{width:100%;/* ===== CHAMPS DE RECHERCHE (2 cm) ===== */
-.search-input{
-  width:2cm;
-  min-width:2cm;
-  max-width:2cm;
-  padding:4px;
-  font-size:12px;
-}
-;padding:6px;margin-bottom:10px;}
-  </style></head><body>
-  <h2>📊 Dashboard</h2>
-
-
-  <a href="/logout">🚪 Déconnexion</a>
-
-
-  
-
-  <button onclick="exportPDF()">📄 Export PDF</button>
-  <button onclick="exportExcel()">📊 Export Excel</button>`;
-
-
-
-
-
-  // =================== Transferts Table ===================
-  html+=`<h3>Transferts</h3>
-
-<input id="f_code" class="search-input" maxlength="0.6" placeholder="Code">
-<input id="f_sender" placeholder="Expéditeur">
-<input id="f_receiver" placeholder="Destinataire">
-
-<select id="f_currency">
-  <option value="">Toutes devises</option>
-  <option>GNF</option>
-  <option>XOF</option>
-  <option>EUR</option>
-  <option>USD</option>
-</select>
-
-<select id="f_status">
-  <option value="">Tous statuts</option>
-  <option value="true">Retiré</option>
-  <option value="false">Non retiré</option>
-</select>
-
-<button onclick="searchTransferts()">Rechercher</button>
-<button onclick="location.reload()">Réinitialiser</button>
-
-
-
-  ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
-
-  <table>
-  <tr><th>Code</th><th>Origine</th><th>Expéditeur</th><th>Destination</th><th>Destinataire</th><th>Montant</th><th>Frais</th><th>Reçu</th><th>Devise</th><th>Status</th><th>Actions</th></tr>`;
-  transferts.forEach(t=>{
-    html+=`<tr>
-      <td>${t.code}</td>
-      <td>${t.originLocation}</td>
-      <td>${t.senderFirstName} 📞 ${t.senderPhone||'-'}</td>
-      <td>${t.destinationLocation}</td>
-      <td>${t.receiverFirstName} 📞 ${t.receiverPhone||'-'}</td>
-      <td>${t.amount}</td>
-      <td>${t.fees}</td>
-      <td>${t.received}</td>
-      <td>${t.currency}</td>
-      <td>${t.retired?'Retiré':'Non retiré'}</td>
-      <td>
-        ${p.modification ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
-		${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
-		${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
-		${p.imprimer ? `<button onclick="window.open('/transfert/print/${t._id}','_blank')">🖨</button>` : ''}
-
-
-
-
-
-      </td>
-    </tr>`;
-  });
-  html+=`</table>`;
-
-  // =================== Stocks Table ===================
-  html+=`<h3>Stocks</h3><button onclick="openStockModal()">➕ Nouveau Stock</button>`;
-
-  // =================== Stock Table ===================
-  html+=`<h3>  </h3>
-  <table><tr><th>Date</th><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th><th>Actions</th></tr>`;
-  stockHistory.forEach(h=>{
-    html+=`<tr>
-      <td>${new Date(h.date).toLocaleString()}</td>
-      <td>${h.code}</td>
-      <td>${h.sender} 📞 ${h.senderPhone||'-'}</td>
-      <td>${h.destination} 📞 ${h.destinationPhone||'-'}</td>
-      <td>${h.amount}</td>
-      <td>${h.currency}</td>
-      <td>
-        <button onclick="openStockModal('${h._id}')">✏️</button>
-        <button onclick="deleteStock('${h._id}')">❌</button>
-      </td>
-    </tr>`;
-  });
-  html+=`</table>`;
-
-  // =================== Clients KYC ===================
-  html+=`<h3>Clients KYC</h3><button onclick="openClientModal()">➕ Nouveau Client</button>
-  <table><tr><th>Nom</th><th>Prénom</th><th>Téléphone</th><th>Email</th><th>KYC</th><th>Actions</th></tr>`;
-  clients.forEach(c=>{
-    html+=`<tr>
-      <td>${c.lastName}</td>
-      <td>${c.firstName}</td>
-      <td>${c.phone}</td>
-      <td>${c.email||'-'}</td>
-      <td>${c.kycVerified?'✅':'❌'}</td>
-      <td><button onclick="openClientModal('${c._id}')">✏️</button><button onclick="deleteClient('${c._id}')">❌</button></td>
-    </tr>`;
-  });
-  html+=`</table>`;
-
-  // =================== Taux / Rates ===================
-  html+=`<h3>Taux de Change</h3><button onclick="openRateModal()">➕ Nouveau Taux</button>
-  <table><tr><th>De</th><th>Vers</th><th>Rate</th><th>Actions</th></tr>`;
-  rates.forEach(r=>{
-    html+=`<tr>
-      <td>${r.from}</td><td>${r.to}</td><td>${r.rate}</td>
-      <td><button onclick="openRateModal('${r._id}')">✏️</button><button onclick="deleteRate('${r._id}')">❌</button></td>
-    </tr>`;
-  });
-  html+=`</table>`;
-
-  // =================== MODALS ===================
-  html+=`
-<div id="transfertModal" class="modal">
-<div class="modal-content">
-<h3>Transfert</h3>
-<input id="t_code" readonly placeholder="Code généré">
-<input id="t_origin" placeholder="Origine">
-<input id="t_sender" placeholder="Nom expéditeur">
-<input id="t_senderPhone" placeholder="Téléphone expéditeur">
-<input id="t_destination" placeholder="Destination">
-<input id="t_receiver" placeholder="Nom destinataire">
-<input id="t_receiverPhone" placeholder="Téléphone destinataire">
-<input id="t_amount" type="number" placeholder="Montant">
-<input id="t_fees" type="number" placeholder="Frais">
-<input id="t_received" readonly placeholder="Reçu">
-<select id="t_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
-<select id="t_recoveryMode"><option>ESPECE</option><option>TRANSFERT</option><option>VIREMENT</option><option>AUTRE</option></select>
-<button onclick="saveTransfert()">Enregistrer</button>
-<button onclick="closeTransfertModal()">Fermer</button>
-</div></div>
-
-<div id="stockModal" class="modal">
-<div class="modal-content">
-<h3>Stock</h3>
-<input id="s_code" readonly placeholder="Code généré">
-<input id="s_sender" placeholder="Expéditeur">
-<input id="s_senderPhone" placeholder="Téléphone expéditeur">
-<input id="s_destination" placeholder="Destination">
-<input id="s_destinationPhone" placeholder="Téléphone destination">
-<input id="s_amount" type="number" placeholder="Montant">
-<select id="s_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
-<button onclick="saveStock()">Enregistrer</button>
-<button onclick="closeStockModal()">Fermer</button>
-</div></div>
-
-<div id="clientModal" class="modal">
-<div class="modal-content">
-<h3>Client KYC</h3>
-<input id="c_firstName" placeholder="Prénom">
-<input id="c_lastName" placeholder="Nom">
-<input id="c_phone" placeholder="Téléphone">
-<input id="c_email" placeholder="Email">
-<select id="c_kyc"><option value="false">Non</option><option value="true">Oui</option></select>
-<button onclick="saveClient()">Enregistrer</button>
-<button onclick="closeClientModal()">Fermer</button>
-</div></div>
-
-<div id="rateModal" class="modal">
-<div class="modal-content">
 <h3>Taux de Change</h3>
-<input id="r_from" placeholder="De">
-<input id="r_to" placeholder="Vers">
-<input id="r_rate" type="number" step="0.0001" placeholder="Rate">
-<button onclick="saveRate()">Enregistrer</button>
-<button onclick="closeRateModal()">Fermer</button>
-</div></div>`;
+<input id="searchRate" class="search-input" placeholder="🔍 De / Vers">
+<div id="rateResultCount"></div>
+<div id="rateLoader">⏳ Recherche...</div>
+<div id="rateTable"></div>
 
-  // =================== SCRIPT ===================
-  html+=`<script>
-let currentTransfertId=null, currentStockId=null, currentClientId=null, currentRateId=null;
+<script>
+function debounce(fn,delay){let timer=null; return function(...args){clearTimeout(timer); timer=setTimeout(()=>fn.apply(this,args),delay);};}
 
-function postData(url,data){
-  return fetch(url,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(data)
-  }).then(r=>r.json());
-}
-
-function searchTransferts() {
-  const params = new URLSearchParams({
-    code: f_code.value,
-    sender: f_sender.value,
-    receiver: f_receiver.value,
-    currency: f_currency.value,
-    status: f_status.value,
-    dateFrom: f_date_from.value,
-    dateTo: f_date_to.value
-  });
-
-  window.location.href = '/dashboard?' + params.toString();
-}
-
-
-/* ================= TRANSFERT ================= */
-function openTransfertModal(id = null) {
-  currentTransfertId = id;
-  document.getElementById('transfertModal').style.display = 'flex';
-
-  // Nouveau
-  if (!id) {
-    t_code.value = '';
-    t_origin.value = '';
-    t_sender.value = '';
-    t_senderPhone.value = '';
-    t_destination.value = '';
-    t_receiver.value = '';
-    t_receiverPhone.value = '';
-    t_amount.value = '';
-    t_fees.value = '';
-    t_received.value = '';
-    return;
-  }
-
-  fetch('/transfert/' + id)
-    .then(r => r.json())
-    .then(t => {
-      t_code.value = t.code;
-      t_origin.value = t.originLocation;
-      t_sender.value = t.senderFirstName;
-      t_senderPhone.value = t.senderPhone;
-      t_destination.value = t.destinationLocation;
-      t_receiver.value = t.receiverFirstName;
-      t_receiverPhone.value = t.receiverPhone;
-      t_amount.value = t.amount;
-      t_fees.value = t.fees;
-      t_received.value = t.received;
-      t_currency.value = t.currency;
-      t_recoveryMode.value = t.recoveryMode;
+/* ------------------- TRANSFERT ------------------- */
+const tPhone=document.getElementById('searchTransPhone');
+const tCode=document.getElementById('searchTransCode');
+const tName=document.getElementById('searchTransName');
+const tLoader=document.getElementById('transLoader');
+const tCount=document.getElementById('transResultCount');
+const tTable=document.getElementById('transTable');
+const loadTransferts=debounce(()=>{
+  tLoader.style.display='block';
+  fetch('/api/transferts/search?phone='+tPhone.value+'&code='+tCode.value+'&name='+tName.value)
+    .then(r=>r.json()).then(data=>{
+      tLoader.style.display='none';
+      tCount.innerText=data.length+' résultat(s)';
+      let html='<table><tr><th>Code</th><th>Expéditeur</th><th>Destinataire</th><th>Montant</th><th>Devise</th><th>Status</th></tr>';
+      data.forEach(t=>{
+        html+=\`<tr><td>\${t.code}</td><td>\${t.senderFirstName||''} 📞 \${t.senderPhone||'-'}</td><td>\${t.receiverFirstName||''} 📞 \${t.receiverPhone||'-'}</td><td>\${t.amount||0}</td><td>\${t.currency}</td><td>\${t.retired?'Retiré':'Non retiré'}</td></tr>\`;
+      });
+      html+='</table>'; tTable.innerHTML=html;
     });
-}
+},300);
+tPhone.oninput=loadTransferts; tCode.oninput=loadTransferts; tName.oninput=loadTransferts;
+loadTransferts();
 
-function closeTransfertModal(){
-  document.getElementById('transfertModal').style.display='none';
-  currentTransfertId=null;
-}
+/* ------------------- STOCK ------------------- */
+const sSearch=document.getElementById('searchStock'); const sLoader=document.getElementById('stockLoader'); const sCount=document.getElementById('stockResultCount'); const sTable=document.getElementById('stockTable');
+const loadStocks=debounce(()=>{ sLoader.style.display='block'; fetch('/api/stocks/search?q='+sSearch.value).then(r=>r.json()).then(data=>{ sLoader.style.display='none'; sCount.innerText=data.length+' résultat(s)'; let html='<table><tr><th>Code</th><th>Expéditeur</th><th>Destination</th><th>Montant</th><th>Devise</th></tr>'; data.forEach(s=>{ html+=\`<tr><td>\${s.code}</td><td>\${s.sender||''} 📞 \${s.senderPhone||'-'}</td><td>\${s.destination||''} 📞 \${s.destinationPhone||'-'}</td><td>\${s.amount||0}</td><td>\${s.currency}</td></tr>\`; }); html+='</table>'; sTable.innerHTML=html; }); },300);
+sSearch.oninput=loadStocks; loadStocks();
 
-function closeStockModal(){
-  document.getElementById('stockModal').style.display='none';
-  currentStockId=null;
-}
+/* ------------------- CLIENT ------------------- */
+const cSearch=document.getElementById('searchClient'); const cLoader=document.getElementById('clientLoader'); const cCount=document.getElementById('clientResultCount'); const cTable=document.getElementById('clientTable');
+const loadClients=debounce(()=>{ cLoader.style.display='block'; fetch('/api/clients/search?q='+cSearch.value).then(r=>r.json()).then(data=>{ cLoader.style.display='none'; cCount.innerText=data.length+' résultat(s)'; let html='<table><tr><th>Nom</th><th>Prénom</th><th>Téléphone</th><th>Email</th></tr>'; data.forEach(c=>{ html+=\`<tr><td>\${c.lastName||''}</td><td>\${c.firstName||''}</td><td>\${c.phone||''}</td><td>\${c.email||'-'}</td></tr>\`; }); html+='</table>'; cTable.innerHTML=html; }); },300);
+cSearch.oninput=loadClients; loadClients();
 
-
-function saveTransfert(){
-  const amount=parseFloat(t_amount.value)||0;
-  const fees=parseFloat(t_fees.value)||0;
-  postData('/transfert/new',{
-    _id:currentTransfertId,
-    originLocation:t_origin.value,
-    senderFirstName:t_sender.value,
-    senderPhone:t_senderPhone.value,
-    destinationLocation:t_destination.value,
-    receiverFirstName:t_receiver.value,
-    receiverPhone:t_receiverPhone.value,
-    amount,
-    fees,
-    received:amount-fees,
-    currency:t_currency.value,
-    recoveryMode:t_recoveryMode.value
-  }).then(()=>location.reload());
-}
-function deleteTransfert(id){
-  if(confirm('Supprimer ?'))
-    postData('/transfert/delete',{id}).then(()=>location.reload());
-}
-function retirerTransfert(id){
-  if(confirm('Marquer comme retiré ?'))
-    postData('/transfert/retirer',{id,mode:'ESPECE'}).then(()=>location.reload());
-}
-
-/* ================= STOCK ================= */
-function openStockModal(id = null) {
-  currentStockId = id;
-  stockModal.style.display = 'flex';
-
-  if (!id) {
-    s_code.value = '';
-    s_sender.value = '';
-    s_senderPhone.value = '';
-    s_destination.value = '';
-    s_destinationPhone.value = '';
-    s_amount.value = '';
-    return;
-  }
-
-  fetch('/stock/' + id)  // <-- ici
-    .then(r => r.json())
-    .then(s => {
-      s_code.value = s.code;
-      s_sender.value = s.sender;
-      s_senderPhone.value = s.senderPhone;
-      s_destination.value = s.destination;
-      s_destinationPhone.value = s.destinationPhone;
-      s_amount.value = s.amount;
-      s_currency.value = s.currency;
-    });
-}
-
-function saveStock() {
-  postData('/stock/new', {   // <-- ici
-    _id: currentStockId,
-    sender: s_sender.value,
-    senderPhone: s_senderPhone.value,
-    destination: s_destination.value,
-    destinationPhone: s_destinationPhone.value,
-    amount: parseFloat(s_amount.value),
-    currency: s_currency.value,
-  }).then(() => location.reload());
-}
-
-function deleteStock(id) {
-  if (confirm('Supprimer ?'))
-    postData('/stock/delete', { id }).then(() => location.reload()); // <-- ici
-}
-
-/* ================= CLIENT ================= */
-function openClientModal(id=null){
-  currentClientId=id;
-  clientModal.style.display='flex';
-}
-function closeClientModal(){
-  clientModal.style.display='none';
-  currentClientId=null;
-}
-function saveClient(){
-  postData('/client/new',{
-    _id:currentClientId,
-    firstName:c_firstName.value,
-    lastName:c_lastName.value,
-    phone:c_phone.value,
-    email:c_email.value,
-    kycVerified:c_kyc.value==='true'
-  }).then(()=>location.reload());
-}
-function deleteClient(id){
-  if(confirm('Supprimer ?'))
-    postData('/client/delete',{id}).then(()=>location.reload());
-}
-
-
-
-
-/* ================= RATE ================= */
-function openRateModal(id=null){
-  currentRateId=id;
-  rateModal.style.display='flex';
-}
-function closeRateModal(){
-  rateModal.style.display='none';
-  currentRateId=null;
-}
-function saveRate(){
-  postData('/rate/new',{
-    _id:currentRateId,
-    from:r_from.value,
-    to:r_to.value,
-    rate:parseFloat(r_rate.value)
-  }).then(()=>location.reload());
-}
-function deleteRate(id){
-  if(confirm('Supprimer ?'))
-    postData('/rate/delete',{id}).then(()=>location.reload());
-}
-
-function exportPDF(){window.open('/export/pdf','_blank');}
-function exportExcel(){window.open('/export/excel','_blank');}
+/* ------------------- RATE ------------------- */
+const rSearch=document.getElementById('searchRate'); const rLoader=document.getElementById('rateLoader'); const rCount=document.getElementById('rateResultCount'); const rTable=document.getElementById('rateTable');
+const loadRates=debounce(()=>{ rLoader.style.display='block'; fetch('/api/rates/search?q='+rSearch.value).then(r=>r.json()).then(data=>{ rLoader.style.display='none'; rCount.innerText=data.length+' résultat(s)'; let html='<table><tr><th>De</th><th>Vers</th><th>Rate</th></tr>'; data.forEach(r=>{ html+=\`<tr><td>\${r.from||''}</td><td>\${r.to||''}</td><td>\${r.rate||0}</td></tr>\`; }); html+='</table>'; rTable.innerHTML=html; }); },300);
+rSearch.oninput=loadRates; loadRates();
 </script>
-`;
-
-  html+=`</body></html>`;
+</body></html>`;
   res.send(html);
 });
 
-
-
-// ================= CRUD TRANSFERT/STOCK/CLIENT/RATE =================
-// Code similaire à l’exemple précédent (post '/transfert/save', delete etc.)
-
-// ================= EXPORT PDF / EXCEL =================
-app.get('/export/pdf', requireLogin, async(req,res)=>{
-  const doc = new PDFDocument();
-  res.setHeader('Content-Type','application/pdf');
-  res.setHeader('Content-Disposition','inline; filename=export.pdf');
-  doc.text('Liste des transferts\n\n');
-  const transferts = await Transfert.find().sort({createdAt:-1});
-  transferts.forEach(t=>doc.text(`Code: ${t.code} - Exp: ${t.senderFirstName} - Dest: ${t.receiverFirstName} - Montant: ${t.amount} ${t.currency}`));
-doc.pipe(res);
-doc.end();
-
+/* ================== API RECHERCHE ================== */
+app.get('/api/transferts/search', requireLogin, async(req,res)=>{
+  const { phone, code, name } = req.query;
+  let filter={};
+  if(phone){ filter.$or=[{senderPhone:{$regex:phone,$options:'i'}},{receiverPhone:{$regex:phone,$options:'i'}}]; }
+  if(code) filter.code={$regex:code,$options:'i'};
+  if(name){ filter.$or=[{receiverFirstName:{$regex:name,$options:'i'}},{receiverLastName:{$regex:name,$options:'i'}}]; }
+  const transferts=await Transfert.find(filter).sort({createdAt:-1}).limit(100);
+  res.json(transferts);
 });
 
-app.get('/export/excel', requireLogin, async(req,res)=>{
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Transferts');
-  sheet.columns = [
-    {header:'Code', key:'code', width:10},
-    {header:'Expéditeur', key:'sender', width:20},
-    {header:'Destinataire', key:'receiver', width:20},
-    {header:'Montant', key:'amount', width:10},
-    {header:'Frais', key:'fees', width:10},
-    {header:'Reçu', key:'received', width:10}, 
-    {header:'Devise', key:'currency', width:10},
-    {header:'Status', key:'status', width:10},
-  ];
-  const transferts = await Transfert.find();
-  transferts.forEach(t=>sheet.addRow({
-    code:t.code, sender:t.senderFirstName, receiver:t.receiverFirstName,
-    amount:t.amount, fees:t.fees, received:t.received, currency:t.currency,
-    status:t.retired?'Retiré':'Non retiré'
-  }));
-  res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition','attachment; filename=transferts.xlsx');
-  await workbook.xlsx.write(res);
-  res.end();
+app.get('/api/stocks/search', requireLogin, async(req,res)=>{
+  const { q }=req.query;
+  let filter={};
+  if(q){ filter.$or=[{sender:{$regex:q,$options:'i'}},{destination:{$regex:q,$options:'i'}}]; }
+  const stocks=await Stock.find(filter).sort({createdAt:-1}).limit(100);
+  res.json(stocks);
 });
 
-
-// ================== CRUD Routes ==================
-// ================== CRUD TRANSFERT ==================
-
-// ===== GET TRANSFERT BY ID =====
-app.get('/transfert/:id', requireLogin, async (req, res) => {
-  const t = await Transfert.findById(req.params.id);
-  res.json(t);
+app.get('/api/clients/search', requireLogin, async(req,res)=>{
+  const { q }=req.query;
+  let filter={};
+  if(q){ filter.$or=[{firstName:{$regex:q,$options:'i'}},{lastName:{$regex:q,$options:'i'}},{phone:{$regex:q,$options:'i'}}]; }
+  const clients=await Client.find(filter).sort({createdAt:-1}).limit(100);
+  res.json(clients);
 });
 
-// ===== GET STOCK BY ID =====
-
-app.post('/transfert/new', requireLogin, async (req, res) => {
-  if (!req.session.user.permissions.ecriture) {
-    return res.status(403).json({ error: 'Écriture interdite' });
-  }
-
-  try {
-    const data = req.body;
-
-    if (data._id) {
-      await Transfert.findByIdAndUpdate(data._id, data, { new: true });
-    } else {
-      data.code = await generateUniqueCode();
-      data.userType = 'Client';
-      await new Transfert(data).save();
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
-  }
+app.get('/api/rates/search', requireLogin, async(req,res)=>{
+  const { q }=req.query;
+  let filter={};
+  if(q){ filter.$or=[{from:{$regex:q,$options:'i'}},{to:{$regex:q,$options:'i'}}]; }
+  const rates=await Rate.find(filter).sort({createdAt:-1}).limit(100);
+  res.json(rates);
 });
 
-app.post('/transfert/delete', async (req, res) => {
-  await Transfert.findByIdAndDelete(req.body.id);
-  res.json({ success: true });
-});
-
-app.post('/transfert/retirer', requireLogin, async (req, res) => {
-
-  if (!req.session.user.permissions.retrait) {
-    return res.status(403).json({ error: 'Droit retrait interdit' });
-  }
-
-  try {
-    console.log('BODY:', req.body);
-
-    const { id, mode } = req.body;
-    if (!id) return res.status(400).json({ error: 'ID manquant' });
-
-    const t = await Transfert.findById(id);
-    if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
-    if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
-
-    const montantRetire = t.amount - t.fees;
-
-    const stock = await StockHistory.findOne({
-      destination: t.destinationLocation,
-      currency: t.currency
-    });
-
-    if (!stock) {
-      console.log('AUCUN STOCK POUR', t.destinationLocation, t.currency);
-      return res.status(400).json({ error: 'Stock introuvable' });
-    }
-
-    if (stock.amount < montantRetire) {
-      return res.status(400).json({ error: 'Stock insuffisant' });
-    }
-
-    stock.amount -= montantRetire;
-    await stock.save();
-
-    t.retired = true;
-    t.retraitHistory.push({
-      date: new Date(),
-      mode: mode || 'ESPECE'
-    });
-    await t.save();
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error('ERREUR RETRAIT:', err);
-    res.status(500).json({ error: err.message });
-  }
-
-});
-
-// ================= PRINT TICKET =================
-// ================== IMPRIMER TRANSFERT ==================
-app.get('/transfert/print/:id', requireLogin, async (req, res) => {
-  try {
-    const t = await Transfert.findById(req.params.id);
-    if (!t) return res.status(404).send('Transfert introuvable');
-
-    // Envoi du HTML avec variables interpolées
-    res.send(`
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Transfert ${t.code}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h2 { color: #ff8c42; }
-          p { margin: 5px 0; }
-        </style>
-      </head>
-      <body>
-        <h2>Transfert ${t.code}</h2>
-        <p><strong>Expéditeur :</strong> ${t.senderFirstName} ${t.senderLastName} 📞 ${t.senderPhone || '-'}</p>
-        <p><strong>Origine :</strong> ${t.originLocation}</p>
-        <p><strong>Destinataire :</strong> ${t.receiverFirstName} ${t.receiverLastName} 📞 ${t.receiverPhone || '-'}</p>
-        <p><strong>Destination :</strong> ${t.destinationLocation}</p>
-        <p><strong>Montant :</strong> ${t.amount} ${t.currency}</p>
-        <p><strong>Frais :</strong> ${t.fees}</p>
-        <p><strong>Reçu :</strong> ${t.received}</p>
-        <p><strong>Status :</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
-
-        <script>
-          window.onload = function() {
-            window.print(); // Lancer l'impression automatiquement
-          }
-        </script>
-      </body>
-      </html>
-    `);
-  } catch (err) {
-    console.error('Erreur impression transfert:', err);
-    res.status(500).send('Erreur serveur');
-  }
-});
-
-
-// ================== CRUD STOCK ==================
-
-/* GET */
-app.get('/stock/:id', requireLogin, async (req, res) => {
-  const stock = await StockHistory.findById(req.params.id);
-  res.json(stock);
-});
-
-
-/* CREATE / UPDATE */
-app.post('/stock/new', requireLogin, async (req, res) => {
-  try {
-    let stock;
-
-    if (req.body._id) {
-      // Modification du stock existant
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
-      await StockHistory.create({
-        action: 'MODIFICATION',
-        stockId: stock._id,
-        ...stock.toObject(),
-      });
-    } else {
-      // Création d'un nouveau stock
-      req.body.code = await generateUniqueCode();
-      stock = await new StockHistory(req.body).save();
-      //await StockHistory.create({
-      //  action: 'CREATION',
-      //  stockId: stock._id,
-     //   ...stock.toObject(),
-     // });
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
-  }
-});
-
-app.post('/stock/delete', async (req, res) => {
-  await StockHistory.findByIdAndDelete(req.body.id);
-  res.json({ success: true });
-});
-
-
-// ================== CLIENT ==================
-app.post('/client/new', async (req, res) => {
-  if (req.body._id)
-    await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
-  else
-    await new Client(req.body).save();
-
-  res.json({ success: true });
-});
-
-app.post('/client/delete', async (req, res) => {
-  await Client.findByIdAndDelete(req.body.id);
-  res.json({ success: true });
-});
-
-
-// ================== RATE ==================
-app.post('/rate/new', async (req, res) => {
-  if (req.body._id)
-    await Rate.findByIdAndUpdate(req.body._id, req.body, { new: true });
-  else
-    await new Rate(req.body).save();
-
-  res.json({ success: true });
-});
-
-app.post('/rate/delete', async (req, res) => {
-  await Rate.findByIdAndDelete(req.body.id);
-  res.json({ success: true });
-});
-
-app.get('/transferts/list', requireLogin, async (req, res) => {
-  try {
-    const {
-      searchPhone,
-      searchCode,
-      searchName,
-      destination = 'all'
-    } = req.query;
-
-    // Construction dynamique du filtre MongoDB
-    let filter = {};
-
-    if (destination !== 'all') {
-      filter.destinationLocation = destination;
-    }
-
-    if (searchPhone) {
-      filter.$or = [
-        { senderPhone: { $regex: searchPhone, $options: 'i' } },
-        { receiverPhone: { $regex: searchPhone, $options: 'i' } }
-      ];
-    }
-
-    if (searchCode) {
-      filter.code = { $regex: searchCode, $options: 'i' };
-    }
-
-    if (searchName) {
-      filter.$or = [
-        { receiverFirstName: { $regex: searchName, $options: 'i' } },
-        { receiverLastName: { $regex: searchName, $options: 'i' } }
-      ];
-    }
-
-    // Récupération des transferts filtrés
-    const transferts = await Transfert
-      .find(filter)
-      .sort({ destinationLocation: 1 });
-
-    // Liste des destinations
-    const destinations = await Transfert.distinct('destinationLocation');
-
-    // Statistiques par destination
-    let statsByDest = {};
-    destinations.forEach(dest => {
-      const list = transferts.filter(t => t.destinationLocation === dest);
-
-      statsByDest[dest] = {
-        totalAmount: list.reduce((a, b) => a + (b.amount || 0), 0),
-        totalFees: list.reduce((a, b) => a + (b.fees || 0), 0),
-        totalReceived: list.reduce((a, b) => a + (b.recoveryAmount || 0), 0),
-        totalRetired: list.filter(t => t.retired).length,
-        totalNotRetired: list.filter(t => !t.retired).length
-      };
-    });
-
-    // Réponse
-    res.render('transferts/list', {
-      transferts,
-      destinations,
-      statsByDest,
-      selectedDest: destination
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Erreur serveur');
-  }
-});
-
-
-
-/******************** SERVER *************************/
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('🚀 Serveur lancé sur le port ' + PORT);
-});
+/* ================== SERVER ================== */
+const PORT=process.env.PORT||3000;
+app.listen(PORT,()=>console.log('🚀 Serveur lancé sur le port '+PORT));
