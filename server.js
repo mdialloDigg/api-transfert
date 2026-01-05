@@ -127,7 +127,7 @@ function setPermissions(username){
     return {
       lecture: true,
       ecriture: false,
-      retrait: false,
+      retrait: true,
       modification: false,
       suppression: false,
       imprimer: true
@@ -243,7 +243,7 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
       <td>${t.currency}</td>
       <td>${t.retired?'Retiré':'Non retiré'}</td>
       <td>
-        ${p.modifier ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
+        ${p.modification ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
 	${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
 	${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
 	${p.imprimer ? `<button onclick="printTransfert('${t._id}')">🖨</button>` : ''}
