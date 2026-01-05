@@ -260,6 +260,11 @@ const transferts = await Transfert
   <button onclick="exportExcel()">📊 Export Excel</button>`;
 
 
+
+
+
+  // =================== Transferts Table ===================
+  html+=`<h3>Transferts</h3>
 <h4>🔍 Recherche Transferts</h4>
 <input id="f_code" placeholder="Code">
 <input id="f_sender" placeholder="Expéditeur">
@@ -284,11 +289,6 @@ const transferts = await Transfert
 
 <button onclick="searchTransferts()">Rechercher</button>
 <button onclick="location.reload()">Réinitialiser</button>
-
-
-  // =================== Transferts Table ===================
-  html+=`<h3>Transferts</h3>
-
   ${p.ecriture ? `<button onclick="openTransfertModal()">➕ Nouveau Transfert</button>` : ''}
 
   <table>
