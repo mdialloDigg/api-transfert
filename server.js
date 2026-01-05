@@ -890,42 +890,74 @@ app.post('/rate/delete', async (req, res) => {
 });
 
 app.get('/transferts/list', requireLogin, async (req, res) => {
-  const transferts = await Transfert.find().sort({ destinationLocation: 1 });
-  const selectedDest = req.query.destination || 'all';
+  try {
+    const {
+      searchPhone,
+      searchCode,
+      searchName,
+      destination = 'all'
+    } = req.query;
 
-  // Filtrage recherche
-  let filtered = transferts;
-  if (req.query.searchPhone) {
-    const phone = req.query.searchPhone.toLowerCase();
-    filtered = filtered.filter(t =>
-      t.senderPhone.toLowerCase().includes(phone) || t.receiverPhone.toLowerCase().includes(phone)
-    );
-  }
-  if (req.query.searchCode) {
-    const code = req.query.searchCode.toLowerCase();
-    filtered = filtered.filter(t => t.code.toLowerCase().includes(code));
-  }
-  if (req.query.searchName) {
-    const name = req.query.searchName.toLowerCase();
-    filtered = filtered.filter(t =>
-      t.receiverFirstName.toLowerCase().includes(name) || t.receiverLastName.toLowerCase().includes(name)
-    );
-  }
+    // Construction dynamique du filtre MongoDB
+    let filter = {};
 
-  if (selectedDest !== 'all') filtered = filtered.filter(t => t.destinationLocation === selectedDest);
+    if (destination !== 'all') {
+      filter.destinationLocation = destination;
+    }
 
-  const destinations = [...new Set(transferts.map(t => t.destinationLocation))];
-  let statsByDest = {};
-  destinations.forEach(dest => {
-    const list = transferts.filter(t => t.destinationLocation === dest);
-    statsByDest[dest] = {
-      totalAmount: list.reduce((a,b)=>a+b.amount,0),
-      totalFees: list.reduce((a,b)=>a+b.fees,0),
-      totalReceived: list.reduce((a,b)=>a+b.recoveryAmount,0),
-      totalRetired: list.filter(t=>t.retired).length,
-      totalNotRetired: list.filter(t=>!t.retired).length,
-    };
-  });
+    if (searchPhone) {
+      filter.$or = [
+        { senderPhone: { $regex: searchPhone, $options: 'i' } },
+        { receiverPhone: { $regex: searchPhone, $options: 'i' } }
+      ];
+    }
+
+    if (searchCode) {
+      filter.code = { $regex: searchCode, $options: 'i' };
+    }
+
+    if (searchName) {
+      filter.$or = [
+        { receiverFirstName: { $regex: searchName, $options: 'i' } },
+        { receiverLastName: { $regex: searchName, $options: 'i' } }
+      ];
+    }
+
+    // Récupération des transferts filtrés
+    const transferts = await Transfert
+      .find(filter)
+      .sort({ destinationLocation: 1 });
+
+    // Liste des destinations
+    const destinations = await Transfert.distinct('destinationLocation');
+
+    // Statistiques par destination
+    let statsByDest = {};
+    destinations.forEach(dest => {
+      const list = transferts.filter(t => t.destinationLocation === dest);
+
+      statsByDest[dest] = {
+        totalAmount: list.reduce((a, b) => a + (b.amount || 0), 0),
+        totalFees: list.reduce((a, b) => a + (b.fees || 0), 0),
+        totalReceived: list.reduce((a, b) => a + (b.recoveryAmount || 0), 0),
+        totalRetired: list.filter(t => t.retired).length,
+        totalNotRetired: list.filter(t => !t.retired).length
+      };
+    });
+
+    // Réponse
+    res.render('transferts/list', {
+      transferts,
+      destinations,
+      statsByDest,
+      selectedDest: destination
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
 
 
 
