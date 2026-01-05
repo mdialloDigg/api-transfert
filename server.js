@@ -508,6 +508,36 @@ function deleteClient(id){
     postData('/client/delete',{id}).then(()=>location.reload());
 }
 
+
+function printTransfert(id) {
+  fetch('/transfert/' + id)
+    .then(r => r.json())
+    .then(t => {
+      // Générer le contenu HTML à imprimer
+      const printContent = `
+        <h2>Transfert ${t.code}</h2>
+        <p><strong>Origine:</strong> ${t.originLocation}</p>
+        <p><strong>Expéditeur:</strong> ${t.senderFirstName} 📞 ${t.senderPhone || '-'}</p>
+        <p><strong>Destination:</strong> ${t.destinationLocation}</p>
+        <p><strong>Destinataire:</strong> ${t.receiverFirstName} 📞 ${t.receiverPhone || '-'}</p>
+        <p><strong>Montant:</strong> ${t.amount} ${t.currency}</p>
+        <p><strong>Frais:</strong> ${t.fees} ${t.currency}</p>
+        <p><strong>Reçu:</strong> ${t.received} ${t.currency}</p>
+        <p><strong>Status:</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
+      `;
+      // Ouvrir nouvelle fenêtre
+      const w = window.open('', '', 'width=600,height=600');
+      w.document.write(printContent);
+      w.document.close();
+      w.focus();
+      w.print();
+      w.close();
+    })
+    .catch(err => alert('Erreur impression: ' + err));
+}
+
+
+
 /* ================= RATE ================= */
 function openRateModal(id=null){
   currentRateId=id;
@@ -538,6 +568,8 @@ function exportExcel(){window.open('/export/excel','_blank');}
   html+=`</body></html>`;
   res.send(html);
 });
+
+
 
 // ================= CRUD TRANSFERT/STOCK/CLIENT/RATE =================
 // Code similaire à l’exemple précédent (post '/transfert/save', delete etc.)
