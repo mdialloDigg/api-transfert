@@ -194,7 +194,40 @@ app.get('/logout',(req,res)=>{ req.session.destroy(()=>res.redirect('/login')); 
 
 // ================= DASHBOARD =================
 app.get('/dashboard', requireLogin, async(req,res)=>{
-  const transferts = await Transfert.find().sort({createdAt:-1});
+  const filters = {};
+const q = req.query;
+
+/* ==== Filtres simples ==== */
+if (q.code) filters.code = q.code.toUpperCase();
+
+if (q.currency) filters.currency = q.currency;
+
+if (q.status !== undefined && q.status !== '') {
+  filters.retired = q.status === 'true';
+}
+
+/* ==== Recherche texte (nom expéditeur / destinataire) ==== */
+if (q.sender) {
+  filters.senderFirstName = { $regex: q.sender, $options: 'i' };
+}
+
+if (q.receiver) {
+  filters.receiverFirstName = { $regex: q.receiver, $options: 'i' };
+}
+
+/* ==== Date ==== */
+if (q.dateFrom || q.dateTo) {
+  filters.createdAt = {};
+  if (q.dateFrom) filters.createdAt.$gte = new Date(q.dateFrom);
+  if (q.dateTo) {
+    filters.createdAt.$lte = new Date(q.dateTo + 'T23:59:59');
+  }
+}
+
+const transferts = await Transfert
+  .find(filters)
+  .sort({ createdAt: -1 });
+
   const stocks = await Stock.find().sort({createdAt:-1});
   const stockHistory = await StockHistory.find().sort({date:-1});
   const clients = await Client.find().sort({createdAt:-1});
@@ -227,6 +260,30 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   <button onclick="exportExcel()">📊 Export Excel</button>`;
 
 
+<h4>🔍 Recherche Transferts</h4>
+<input id="f_code" placeholder="Code">
+<input id="f_sender" placeholder="Expéditeur">
+<input id="f_receiver" placeholder="Destinataire">
+
+<select id="f_currency">
+  <option value="">Toutes devises</option>
+  <option>GNF</option>
+  <option>XOF</option>
+  <option>EUR</option>
+  <option>USD</option>
+</select>
+
+<select id="f_status">
+  <option value="">Tous statuts</option>
+  <option value="true">Retiré</option>
+  <option value="false">Non retiré</option>
+</select>
+
+<input id="f_date_from" type="date">
+<input id="f_date_to" type="date">
+
+<button onclick="searchTransferts()">Rechercher</button>
+<button onclick="location.reload()">Réinitialiser</button>
 
 
   // =================== Transferts Table ===================
@@ -379,6 +436,21 @@ function postData(url,data){
     body:JSON.stringify(data)
   }).then(r=>r.json());
 }
+
+function searchTransferts() {
+  const params = new URLSearchParams({
+    code: f_code.value,
+    sender: f_sender.value,
+    receiver: f_receiver.value,
+    currency: f_currency.value,
+    status: f_status.value,
+    dateFrom: f_date_from.value,
+    dateTo: f_date_to.value
+  });
+
+  window.location.href = '/dashboard?' + params.toString();
+}
+
 
 /* ================= TRANSFERT ================= */
 function openTransfertModal(id = null) {
