@@ -246,7 +246,9 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         ${p.modification ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
 	${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
 	${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
-	<button onclick="window.open('/print/transfert/${t._id}', '_blank')">🖨</button>
+	${p.imprimer ? `<button onclick="window.open('/transfert/print/${t._id}','_blank')">🖨</button>` : ''}
+
+
 
 
 
