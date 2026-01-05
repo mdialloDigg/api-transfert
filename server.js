@@ -7,7 +7,7 @@ const mongoose=require('mongoose');
 const session=require('express-session');
 const bcrypt=require('bcryptjs');
 const PDFDocument=require('pdfkit');
-const QRCode=require('qrcode');
+/*const QRCode=require('qrcode');*/
 
 const app=express();
 app.use(express.json());

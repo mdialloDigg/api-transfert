@@ -20,7 +20,8 @@
     "express-session": "^1.18.2",
     "helmet": "^8.1.0",
     "mongoose": "^8.20.4",
-    "pdfkit": "^0.13.0"
+    "pdfkit": "^0.13.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
