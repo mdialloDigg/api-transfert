@@ -217,15 +217,6 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
   </style></head><body>
   <h2>📊 Dashboard</h2>
 
-  <form id="filterForm" style="margin-bottom:10px;">
-    <input type="text" name="search" placeholder="Recherche..." value="${search}">
-    <select name="status">
-      <option value="all" ${status==='all'?'selected':''}>Tous</option>
-      <option value="retire" ${status==='retire'?'selected':''}>Retirés</option>
-      <option value="non" ${status==='non'?'selected':''}>Non retirés</option>
-    </select>
-    <button>🔍 Filtrer</button>
-  </form>
 
   <a href="/logout">🚪 Déconnexion</a>
 
