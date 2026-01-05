@@ -246,7 +246,8 @@ app.get('/dashboard', requireLogin, async(req,res)=>{
         ${p.modification ? `<button onclick="openTransfertModal('${t._id}')">✏️</button>` : ''}
 	${p.suppression ? `<button onclick="deleteTransfert('${t._id}')">❌</button>` : ''}
 	${(!t.retired && p.retrait) ? `<button onclick="retirerTransfert('${t._id}')">💰</button>` : ''}
-	${p.imprimer ? `<button onclick="window.open('/print/transfert/${t._id}','_blank')">🖨 Imprimer</button>` : ''}
+	<button onclick="window.open('/print/transfert/${t._id}', '_blank')">🖨</button>
+
 
 
       </td>
@@ -707,6 +708,7 @@ app.get('/print/transfert/:id', requireLogin, async (req, res) => {
     const t = await Transfert.findById(req.params.id);
     if (!t) return res.send('<p>Transfert introuvable</p>');
 
+    // ✅ Utiliser des backticks pour les template strings
     res.send(`
       <html>
         <head>
@@ -731,7 +733,10 @@ app.get('/print/transfert/:id', requireLogin, async (req, res) => {
             <tr><th>Reçu</th><td>${t.received}</td></tr>
             <tr><th>Status</th><td>${t.retired ? 'Retiré' : 'Non retiré'}</td></tr>
           </table>
-          <script>window.onload = function() { window.print(); }</script>
+          <script>
+            // Ouvre automatiquement la boîte d'impression au chargement
+            window.onload = function() { window.print(); }
+          </script>
         </body>
       </html>
     `);
@@ -740,7 +745,6 @@ app.get('/print/transfert/:id', requireLogin, async (req, res) => {
     res.status(500).send('<p>Erreur serveur lors de l’impression</p>');
   }
 });
-
 
 // ================== CRUD STOCK ==================
 
