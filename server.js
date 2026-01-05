@@ -254,7 +254,15 @@ const transferts = await Transfert
   button{margin:2px;padding:5px 10px;cursor:pointer;}
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;}
   .modal-content{background:white;padding:20px;border-radius:10px;max-width:500px;width:90%;overflow:auto;}
-  input,select{width:100%;padding:6px;margin-bottom:10px;}
+  input,select{width:100%;/* ===== CHAMPS DE RECHERCHE (2 cm) ===== */
+.search-input{
+  width:2cm;
+  min-width:2cm;
+  max-width:2cm;
+  padding:4px;
+  font-size:12px;
+}
+;padding:6px;margin-bottom:10px;}
   </style></head><body>
   <h2>📊 Dashboard</h2>
 
