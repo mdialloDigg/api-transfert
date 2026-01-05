@@ -733,19 +733,16 @@ app.get('/print/transfert/:id', requireLogin, async (req, res) => {
             <tr><th>Status</th><td>${t.retired ? 'Retiré' : 'Non retiré'}</td></tr>
           </table>
           <script>
-            window.onload = function() { 
-              window.print(); 
-            }
+            window.onload = function() { window.print(); }
           </script>
         </body>
       </html>
-    `);
+    `); // <-- backticks !
   } catch (err) {
     console.error('Erreur impression:', err);
     res.status(500).send('<p>Erreur serveur lors de l’impression</p>');
   }
 });
-
 // ================== CRUD STOCK ==================
 
 /* GET */
