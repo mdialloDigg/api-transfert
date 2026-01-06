@@ -535,7 +535,10 @@ function deleteStock(id) {
 /* ================= CLIENT ================= */
 function openClientModal(id = null) {
   currentClientId = id;
-  clientModal.style.display = 'flex';
+  //clientModal.style.display = 'flex';
+  document.getElementById('clientModal').style.display = 'flex';
+  
+  
 
   if (!id) {
     c_firstName.value = '';
@@ -579,12 +582,13 @@ function deleteClient(id){
 /* ================= RATE ================= */
 function openRateModal(id = null) {
   currentRateId = id;
-  rateModal.style.display = 'flex';
+  document.getElementById('rateModal').style.display = 'flex';
 
   if (!id) {
     r_from.value = '';
     r_to.value = '';
     r_rate.value = '';
+    r_createdAt.value = '';
     return;
   }
 
@@ -594,8 +598,12 @@ function openRateModal(id = null) {
       r_from.value = rate.from || '';
       r_to.value = rate.to || '';
       r_rate.value = rate.rate || '';
+      r_createdAt.value = rate.createdAt
+        ? rate.createdAt.substring(0, 10)
+        : '';
     });
 }
+
 
 function closeRateModal(){
   rateModal.style.display='none';
@@ -731,6 +739,30 @@ app.get('/stock/:id', requireLogin, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.get('/rate/:id', requireLogin, async (req, res) => {
+  try {
+    const rate = await Rate.findById(req.params.id);
+    if (!rate) return res.status(404).json({ error: 'Rate introuvable' });
+    res.json(rate);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Obtenir un client par ID
+app.get('/client/:id', requireLogin, async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Client introuvable' });
+    res.json(client);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // Créer ou mettre à jour un stock
 

@@ -349,10 +349,17 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="t_code" readonly placeholder="Code">
 <input id="t_origin" placeholder="Origine">
 <input id="t_sender" placeholder="Nom expéditeur">
-<input id="t_senderPhone" placeholder="Téléphone expéditeur">
+<input id="t_senderPhone"
+       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
+       pattern="^(00224\d{8}|0033\d{10})$"
+       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)">
 <input id="t_destination" placeholder="Destination">
 <input id="t_receiver" placeholder="Nom destinataire">
-<input id="t_receiverPhone" placeholder="Téléphone destinataire">
+<input id="t_receiverPhone"
+       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
+       pattern="^(00224\d{8}|0033\d{10})$"
+       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       required>
 <input id="t_amount" type="number" placeholder="Montant">
 <input id="t_fees" type="number" placeholder="Frais">
 <input id="t_received" readonly placeholder="Reçu">
@@ -367,9 +374,17 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <h3>Stock</h3>
 <input id="s_code" readonly placeholder="Code">
 <input id="s_sender" placeholder="Expéditeur">
-<input id="s_senderPhone" placeholder="Téléphone expéditeur">
+<input id="s_phone"
+       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
+       pattern="^(00224\d{8}|0033\d{10})$"
+       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       required>
 <input id="s_destination" placeholder="Destination">
-<input id="s_destinationPhone" placeholder="Téléphone destination">
+<input id="s_destinationPhone"
+       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
+       pattern="^(00224\d{8}|0033\d{10})$"
+       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       required>
 <input id="s_amount" type="number" placeholder="Montant">
 <select id="s_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
 <button onclick="saveStock()">Enregistrer</button>
@@ -381,7 +396,11 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <h3>Client KYC</h3>
 <input id="c_firstName" placeholder="Prénom">
 <input id="c_lastName" placeholder="Nom">
-<input id="c_phone" placeholder="Téléphone">
+<input id="c_phone"
+       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
+       pattern="^(00224\d{8}|0033\d{10})$"
+       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       required>
 <input id="c_email" placeholder="Email">
 <select id="c_kyc"><option value="false">Non</option><option value="true">Oui</option></select>
 <button onclick="saveClient()">Enregistrer</button>
@@ -457,6 +476,11 @@ function closeTransfertModal(){
 function closeStockModal(){
   document.getElementById('stockModal').style.display='none';
   currentStockId=null;
+}
+
+
+function isValidPhone(phone) {
+  return /^(00224\d{8}|0033\d{10})$/.test(phone);
 }
 
 
@@ -648,6 +672,15 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 
 // Créer ou mettre à jour un transfert
 app.post('/transfert/new', requireLogin, async (req, res) => {
+	if (
+	(data.senderPhone && !isValidPhone(data.senderPhone)) ||
+	(data.receiverPhone && !isValidPhone(data.receiverPhone))
+	) {
+		return res.status(400).json({
+		error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
+		});
+		}
+
   try {
     const data = req.body;
     if (data._id) {
@@ -768,6 +801,15 @@ app.get('/client/:id', requireLogin, async (req, res) => {
 
 /* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
+	if (
+  (req.body.senderPhone && !isValidPhone(req.body.senderPhone)) ||
+  (req.body.destinationPhone && !isValidPhone(req.body.destinationPhone))
+) {
+  return res.status(400).json({
+    error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
+  });
+}
+
   try {
     let stock;
 
@@ -812,6 +854,12 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // ================= CRUD CLIENT =================
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
+	if (req.body.phone && !isValidPhone(req.body.phone)) {
+  return res.status(400).json({
+    error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
+  });
+}
+
   try {
     if (req.body._id) {
       await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
