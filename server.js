@@ -535,7 +535,10 @@ function deleteStock(id) {
 /* ================= CLIENT ================= */
 function openClientModal(id = null) {
   currentClientId = id;
-  clientModal.style.display = 'flex';
+  //clientModal.style.display = 'flex';
+  document.getElementById('clientModal').style.display = 'flex';
+  
+  
 
   if (!id) {
     c_firstName.value = '';
@@ -579,7 +582,8 @@ function deleteClient(id){
 /* ================= RATE ================= */
 function openRateModal(id = null) {
   currentRateId = id;
-  rateModal.style.display = 'flex';
+  //rateModal.style.display = 'flex';
+  document.getElementById('rateModal').style.display = 'flex';
 
   if (!id) {
     r_from.value = '';
