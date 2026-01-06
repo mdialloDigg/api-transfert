@@ -427,6 +427,45 @@ const params=new URLSearchParams({code:f_code.value,sender:f_sender.value,receiv
 window.location.href='/dashboard?'+params.toString();
 }
 
+
+function saveTransfert() {
+  const senderPhoneClean = t_senderPhone.value.trim().replace(/\s+/g, '');
+  const receiverPhoneClean = t_receiverPhone.value.trim().replace(/\s+/g, '');
+
+  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+
+  if (!regex.test(senderPhoneClean)) {
+    alert('Numéro expéditeur invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+    return;
+  }
+
+  if (!regex.test(receiverPhoneClean)) {
+    alert('Numéro destinataire invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+    return;
+  }
+
+  const amount = parseFloat(t_amount.value) || 0;
+  const fees = parseFloat(t_fees.value) || 0;
+
+  postData('/transfert/new', {
+    _id: currentTransfertId,
+    originLocation: t_origin.value,
+    senderFirstName: t_sender.value,
+    senderPhone: senderPhoneClean,
+    destinationLocation: t_destination.value,
+    receiverFirstName: t_receiver.value,
+    receiverPhone: receiverPhoneClean,
+    amount,
+    fees,
+    received: amount - fees,
+    currency: t_currency.value,
+    recoveryMode: t_recoveryMode.value
+  }).then((res) => {
+    if (res.success) location.reload();
+    else alert(res.error || 'Erreur serveur');
+  });
+}
+
 /* Transfert */
 
 
@@ -704,27 +743,38 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validation des numéros de téléphone
+    // 🔹 Validation des numéros de téléphone
+    function isValidPhone(phone) {
+      if (!phone) return false;
+      phone = phone.toString().trim().replace(/\s+/g, '');
+      // Guinée : 00224XXXXXXXXX (9 chiffres après 00224)
+      // France : 00336XXXXXXXX ou 00337XXXXXXXX (9 chiffres après 00336/00337)
+      const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+      return regex.test(phone);
+    }
+
     if (
       (data.senderPhone && !isValidPhone(data.senderPhone)) ||
       (data.receiverPhone && !isValidPhone(data.receiverPhone))
     ) {
       return res.status(400).json({
-        error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXX'
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
       });
     }
 
+    // 🔹 Création ou mise à jour
     if (data._id) {
       await Transfert.findByIdAndUpdate(data._id, data, { new: true });
     } else {
       data.code = await generateUniqueCode();
       data.userType = 'Client';
+      data.received = (parseFloat(data.amount) || 0) - (parseFloat(data.fees) || 0);
       await new Transfert(data).save();
     }
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error('Erreur saveTransfert:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
