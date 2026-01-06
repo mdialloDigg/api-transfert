@@ -510,40 +510,17 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
-
-    // 🔹 Validation des numéros de téléphone
-    function isValidPhone(phone) {
-      if (!phone) return false;
-      phone = phone.toString().trim().replace(/\s+/g, '');
-      // Guinée : 00224XXXXXXXXX (9 chiffres après 00224)
-      // France : 00336XXXXXXXX ou 00337XXXXXXXX (9 chiffres après 00336/00337)
-      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-      return regex.test(phone);
-    }
-
-    if (
-      (data.senderPhone && !isValidPhone(data.senderPhone)) ||
-      (data.receiverPhone && !isValidPhone(data.receiverPhone))
-    ) {
-      return res.status(400).json({
-        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
-      });
-    }
-
-    // 🔹 Création ou mise à jour
     if (data._id) {
       await Transfert.findByIdAndUpdate(data._id, data, { new: true });
     } else {
       data.code = await generateUniqueCode();
       data.userType = 'Client';
-      data.received = (parseFloat(data.amount) || 0) - (parseFloat(data.fees) || 0);
       await new Transfert(data).save();
     }
-
     res.json({ success: true });
   } catch (err) {
-    console.error('Erreur saveTransfert:', err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 });
 
