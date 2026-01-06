@@ -394,7 +394,6 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="r_from" placeholder="De">
 <input id="r_to" placeholder="Vers">
 <input id="r_rate" type="number" step="0.0001" placeholder="Rate">
-<input id="r_createdAt" type="Date" step="0.0001" placeholder="createdAt">
 <button onclick="saveRate()">Enregistrer</button>
 <button onclick="closeRateModal()">Fermer</button>
 </div></div>
@@ -583,25 +582,28 @@ function deleteClient(id){
 /* ================= RATE ================= */
 function openRateModal(id = null) {
   currentRateId = id;
-  //rateModal.style.display = 'flex';
   document.getElementById('rateModal').style.display = 'flex';
 
   if (!id) {
     r_from.value = '';
     r_to.value = '';
     r_rate.value = '';
+    r_createdAt.value = '';
     return;
   }
 
   fetch('/rate/' + id)
     .then(r => r.json())
     .then(rate => {
-      r_from.value = rate.from ;
-      r_to.value = rate.to ;
-      r_rate.value = rate.rate ;
-	  r_createdAt = rate.createdAt;
+      r_from.value = rate.from || '';
+      r_to.value = rate.to || '';
+      r_rate.value = rate.rate || '';
+      r_createdAt.value = rate.createdAt
+        ? rate.createdAt.substring(0, 10)
+        : '';
     });
 }
+
 
 function closeRateModal(){
   rateModal.style.display='none';
