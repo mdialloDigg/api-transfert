@@ -403,23 +403,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 
 
 let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
-  
-const clientModal = document.getElementById('clientModal');
-const rateModal = document.getElementById('rateModal');
-const transfertModal = document.getElementById('transfertModal');
-const stockModal = document.getElementById('stockModal');
 
-
-const c_firstName = document.getElementById('c_firstName');
-const c_lastName = document.getElementById('c_lastName');
-const c_phone = document.getElementById('c_phone');
-const c_email = document.getElementById('c_email');
-const c_kyc = document.getElementById('c_kyc');
-
-
-const r_from = document.getElementById('r_from');
-const r_to = document.getElementById('r_to');
-const r_rate = document.getElementById('r_rate');
 
 function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
