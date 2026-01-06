@@ -550,7 +550,7 @@ function test(phone) {
   phone = phone.toString().trim().replace(/\s+/g, '');
 
   // 2️⃣ Validation avec regex
-  const regex = /^(00224\d{9}|0033[67]\d{9})$/;
+  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
 
   return regex.test(phone);
 }
