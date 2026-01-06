@@ -487,15 +487,11 @@ function closeStockModal(){
  */
 function isValidPhone(phone) {
   if (!phone) return false;
-
-  // 1️⃣ Nettoyage obligatoire (espaces, tabulations, caractères invisibles)
   phone = phone.toString().trim().replace(/\s+/g, '');
-
-  // 2️⃣ Regex officielle
-  const regex = /^(00224\d{9}|0033[67]\d{9})$/;
-
+  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
   return regex.test(phone);
 }
+
 
 /**
  * test(phone)
@@ -705,17 +701,19 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 
 // Créer ou mettre à jour un transfert
 app.post('/transfert/new', requireLogin, async (req, res) => {
-	if (
-	(data.senderPhone && !isValidPhone(data.senderPhone)) ||
-	(data.receiverPhone && !isValidPhone(data.receiverPhone))
-	) {
-		return res.status(400).json({
-		error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
-		});
-		}
-
   try {
     const data = req.body;
+
+    // Validation des numéros de téléphone
+    if (
+      (data.senderPhone && !isValidPhone(data.senderPhone)) ||
+      (data.receiverPhone && !isValidPhone(data.receiverPhone))
+    ) {
+      return res.status(400).json({
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXX'
+      });
+    }
+
     if (data._id) {
       await Transfert.findByIdAndUpdate(data._id, data, { new: true });
     } else {
@@ -723,12 +721,14 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       data.userType = 'Client';
       await new Transfert(data).save();
     }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // Supprimer un transfert
 app.post('/transfert/delete', requireLogin, async (req, res) => {
@@ -834,7 +834,11 @@ app.get('/client/:id', requireLogin, async (req, res) => {
 
 /* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
-	if (
+
+
+  try {
+	  
+	  	if (
   (req.body.senderPhone && !isValidPhone(req.body.senderPhone)) ||
   (req.body.destinationPhone && !isValidPhone(req.body.destinationPhone))
 ) {
@@ -842,8 +846,6 @@ app.post('/stock/new', requireLogin, async (req, res) => {
     error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
   });
 }
-
-  try {
     let stock;
 
     if (req.body._id) {
@@ -887,13 +889,14 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // ================= CRUD CLIENT =================
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
-	if (req.body.phone && !isValidPhone(req.body.phone)) {
+	
+
+  try {
+	  if (req.body.phone && !isValidPhone(req.body.phone)) {
   return res.status(400).json({
     error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
   });
 }
-
-  try {
     if (req.body._id) {
       await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
     } else {
