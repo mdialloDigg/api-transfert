@@ -529,12 +529,38 @@ function closeStockModal(){
  * Guinée : 00224 + 9 chiffres
  * France : 0033 + 9 chiffres, mobile commence par 6 ou 7
  */
-function isValidPhone(phone) {
-  if (!phone) return false;
-  phone = phone.toString().trim().replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-  return regex.test(phone);
+/**************** PHONE MODULE ****************/
+
+function cleanPhone(phone) {
+  if (!phone) return '';
+  return phone.toString().replace(/[\s\-().]/g, '');
 }
+
+function normalizePhone(phone) {
+  phone = cleanPhone(phone);
+
+  // Guinée
+  if (phone.startsWith('+224')) phone = '00224' + phone.slice(4);
+  if (phone.startsWith('224') && phone.length === 12) phone = '00224' + phone.slice(3);
+
+  // France
+  if (phone.startsWith('+33')) phone = '0033' + phone.slice(3);
+  if (phone.startsWith('33') && phone.length === 11) phone = '0033' + phone.slice(2);
+  if (phone.startsWith('0') && phone.length === 10) phone = '0033' + phone.slice(1);
+
+  return phone;
+}
+
+function isValidPhone(phone) {
+  phone = normalizePhone(phone);
+  return (
+    /^00224\d{9}$/.test(phone) ||   // Guinée
+    /^0033\d{9}$/.test(phone)       // France
+  );
+}
+
+/************************************************/
+
 
 
 /**
