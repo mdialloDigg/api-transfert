@@ -595,7 +595,7 @@ function retirerTransfert(id){
 /* ================= STOCK ================= */
 function openStockModal(id = null) {
   currentStockId = id;
-  stockModal.style.display = 'flex';
+  document.getElementById('stockModal').style.display = 'flex';
 
   if (!id) {
     s_code.value = '';
@@ -682,7 +682,7 @@ function deleteStock(id) {
 function openClientModal(id = null) {
   currentClientId = id;
   //clientModal.style.display = 'flex';
-  document.getElementById('clientModal').style.display = 'flex';
+  document.getElementById('clientModal').style.display = 'none';
   
   
 
@@ -710,16 +710,7 @@ function closeClientModal(){
   clientModal.style.display='none';
   currentClientId=null;
 }
-function saveClient(){
-  postData('/client/new',{
-    _id:currentClientId,
-    firstName:c_firstName.value,
-    lastName:c_lastName.value,
-    phone:c_phone.value,
-    email:c_email.value,
-    kycVerified:c_kyc.value==='true'
-  }).then(()=>location.reload());
-}
+
 function deleteClient(id){
   if(confirm('Supprimer ?'))
     postData('/client/delete',{id}).then(()=>location.reload());
@@ -734,7 +725,6 @@ function openRateModal(id = null) {
     r_from.value = '';
     r_to.value = '';
     r_rate.value = '';
-    r_createdAt.value = '';
     return;
   }
 
@@ -744,15 +734,12 @@ function openRateModal(id = null) {
       r_from.value = rate.from || '';
       r_to.value = rate.to || '';
       r_rate.value = rate.rate || '';
-      r_createdAt.value = rate.createdAt
-        ? rate.createdAt.substring(0, 10)
-        : '';
     });
 }
 
 
 function closeRateModal(){
-  rateModal.style.display='none';
+  document.getElementById('rateModal').style.display = 'none';
   currentRateId=null;
 }
 function saveRate(){
@@ -945,7 +932,8 @@ app.post('/stock/new', requireLogin, async (req, res) => {
     function isValidPhone(phone) {
       if (!phone) return false;
       phone = phone.toString().trim().replace(/\s+/g, '');
-	  const regex = /^(00224\d{9}|0033[67]\d{})$/;
+	  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
+
 
       return regex.test(phone);
     }
