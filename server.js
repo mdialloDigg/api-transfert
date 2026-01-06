@@ -423,8 +423,6 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 </div></div>
 
 <script>
-let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
-
 <script>
 /* =======================
    VARIABLES GLOBALES
@@ -432,6 +430,7 @@ let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRate
 let currentTransfertId = null;
 let currentClientId = null;
 let currentStockId = null;
+let currentRateId = null;
 
 /* =======================
    ELEMENTS TRANSFERT
@@ -455,8 +454,7 @@ const t_recoveryMode = document.getElementById('t_recoveryMode');
 function isValidPhone(phone) {
   if (!phone) return false;
   const clean = phone.replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-  return regex.test(clean);
+  return /^(00224\d{9}|00336\d{9}|00337\d{9})$/.test(clean);
 }
 
 /* =======================
@@ -470,42 +468,6 @@ function openTransfertModal(id = null) {
 function closeTransfertModal() {
   document.getElementById('transfertModal').style.display = 'none';
   currentTransfertId = null;
-}
-
-function saveTransfert() {
-  const senderPhoneClean = t_senderPhone.value.trim().replace(/\s+/g, '');
-  const receiverPhoneClean = t_receiverPhone.value.trim().replace(/\s+/g, '');
-
-  if (!isValidPhone(senderPhoneClean)) {
-    alert('Numéro expéditeur invalide');
-    return;
-  }
-
-  if (!isValidPhone(receiverPhoneClean)) {
-    alert('Numéro destinataire invalide');
-    return;
-  }
-
-  const amount = parseFloat(t_amount.value) || 0;
-  const fees = parseFloat(t_fees.value) || 0;
-
-  postData('/transfert/new', {
-    _id: currentTransfertId,
-    originLocation: t_origin.value,
-    senderFirstName: t_sender.value,
-    senderPhone: senderPhoneClean,
-    destinationLocation: t_destination.value,
-    receiverFirstName: t_receiver.value,
-    receiverPhone: receiverPhoneClean,
-    amount: amount,
-    fees: fees,
-    received: amount - fees,
-    currency: t_currency.value,
-    recoveryMode: t_recoveryMode.value
-  }).then(res => {
-    if (res.success) location.reload();
-    else alert(res.error || 'Erreur serveur');
-  });
 }
 
 /* =======================
@@ -535,10 +497,17 @@ function closeStockModal() {
 }
 
 /* =======================
-   DEBUG (OPTIONNEL)
+   MODAL RATE
 ======================= */
-// Décommente si tu veux tester les clics
-// document.body.addEventListener('click', e => console.log('CLICK:', e.target));
+function openRateModal(id = null) {
+  currentRateId = id;
+  document.getElementById('rateModal').style.display = 'flex';
+}
+
+function closeRateModal() {
+  document.getElementById('rateModal').style.display = 'none';
+  currentRateId = null;
+}
 </script>
 
 
