@@ -452,6 +452,14 @@ function closeTransfertModal(){
   document.getElementById('transfertModal').style.display='none';
   currentTransfertId=null;
 }
+
+
+function closeStockModal(){
+  document.getElementById('stockModal').style.display='none';
+  currentStockId=null;
+}
+
+
 function saveTransfert(){
   const amount=parseFloat(t_amount.value)||0;
   const fees=parseFloat(t_fees.value)||0;
@@ -525,10 +533,30 @@ function deleteStock(id) {
 }
 
 /* ================= CLIENT ================= */
-function openClientModal(id=null){
-  currentClientId=id;
-  clientModal.style.display='flex';
+function openClientModal(id = null) {
+  currentClientId = id;
+  clientModal.style.display = 'flex';
+
+  if (!id) {
+    c_firstName.value = '';
+    c_lastName.value = '';
+    c_phone.value = '';
+    c_email.value = '';
+    c_kyc.value = 'false';
+    return;
+  }
+
+  fetch('/client/' + id)
+    .then(r => r.json())
+    .then(c => {
+      c_firstName.value = c.firstName || '';
+      c_lastName.value = c.lastName || '';
+      c_phone.value = c.phone || '';
+      c_email.value = c.email || '';
+      c_kyc.value = c.kycVerified ? 'true' : 'false';
+    });
 }
+
 function closeClientModal(){
   clientModal.style.display='none';
   currentClientId=null;
@@ -549,10 +577,26 @@ function deleteClient(id){
 }
 
 /* ================= RATE ================= */
-function openRateModal(id=null){
-  currentRateId=id;
-  rateModal.style.display='flex';
+function openRateModal(id = null) {
+  currentRateId = id;
+  rateModal.style.display = 'flex';
+
+  if (!id) {
+    r_from.value = '';
+    r_to.value = '';
+    r_rate.value = '';
+    return;
+  }
+
+  fetch('/rate/' + id)
+    .then(r => r.json())
+    .then(rate => {
+      r_from.value = rate.from || '';
+      r_to.value = rate.to || '';
+      r_rate.value = rate.rate || '';
+    });
 }
+
 function closeRateModal(){
   rateModal.style.display='none';
   currentRateId=null;
@@ -786,6 +830,51 @@ app.post('/rate/delete', requireLogin, async (req, res) => {
     res.status(500).json({ success: false });
   }
 });
+
+// ================== IMPRIMER TRANSFERT ==================
+app.get('/transfert/print/:id', requireLogin, async (req, res) => {
+  try {
+    const t = await Transfert.findById(req.params.id);
+    if (!t) return res.status(404).send('Transfert introuvable');
+
+    // Envoi du HTML avec variables interpolées
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Transfert ${t.code}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h2 { color: #ff8c42; }
+          p { margin: 5px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>Transfert ${t.code}</h2>
+        <p><strong>Expéditeur :</strong> ${t.senderFirstName} ${t.senderLastName} 📞 ${t.senderPhone || '-'}</p>
+        <p><strong>Origine :</strong> ${t.originLocation}</p>
+        <p><strong>Destinataire :</strong> ${t.receiverFirstName} ${t.receiverLastName} 📞 ${t.receiverPhone || '-'}</p>
+        <p><strong>Destination :</strong> ${t.destinationLocation}</p>
+        <p><strong>Montant :</strong> ${t.amount} ${t.currency}</p>
+        <p><strong>Frais :</strong> ${t.fees}</p>
+        <p><strong>Reçu :</strong> ${t.received}</p>
+        <p><strong>Status :</strong> ${t.retired ? 'Retiré' : 'Non retiré'}</p>
+
+        <script>
+          window.onload = function() {
+            window.print(); // Lancer l'impression automatiquement
+          }
+        </script>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('Erreur impression transfert:', err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+
 
 // ================= EXPORT =================
 app.get('/export/pdf',requireLogin,async(req,res)=>{const doc=new PDFDocument();res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','inline; filename=export.pdf');doc.text('Liste des transferts\n\n');const transferts=await Transfert.find().sort({createdAt:-1});transferts.forEach(t=>doc.text(`Code: ${t.code} - Exp: ${t.senderFirstName} - Dest: ${t.receiverFirstName} - Montant: ${t.amount} ${t.currency}`));doc.pipe(res);doc.end();});
