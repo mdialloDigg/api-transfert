@@ -167,7 +167,6 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
 
-
   // === HTML complet avec toutes les colonnes et modals ===
   // [INSÉRER ICI LE BLOC HTML/JS DE MON MESSAGE PRÉCÉDENT]
 let html = `
@@ -400,10 +399,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 </div></div>
 
 <script>
-
-
 let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
-
 
 function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
@@ -887,4 +883,4 @@ app.get('/export/excel',requireLogin,async(req,res)=>{const workbook=new ExcelJS
 
 // ================= SERVER =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT,()=>console.log('🚀 Serveur lancé sur port', PORT));
+app.listen(PORT,()=>console.log('🚀 Serveur lancé sur le port '+PORT));
