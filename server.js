@@ -437,7 +437,7 @@ function saveTransfert() {
   const senderPhoneClean = t_senderPhone.value.trim().replace(/\s+/g, '');
   const receiverPhoneClean = t_receiverPhone.value.trim().replace(/\s+/g, '');
 
-  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
 
   if (!regex.test(senderPhoneClean)) {
     alert('Numéro expéditeur invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
@@ -532,7 +532,7 @@ function closeStockModal(){
 function isValidPhone(phone) {
   if (!phone) return false;
   phone = phone.toString().trim().replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
   return regex.test(phone);
 }
 
@@ -596,7 +596,7 @@ function openStockModal(id = null) {
 
 function saveClient() {
   const phoneClean = c_phone.value.trim().replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
 
   if (!regex.test(phoneClean)) {
     alert('Numéro téléphone invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
@@ -620,7 +620,7 @@ function saveClient() {
 function saveStock() {
   const senderPhoneClean = s_senderPhone.value.trim().replace(/\s+/g, '');
   const destinationPhoneClean = s_destinationPhone.value.trim().replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
 
   if (!regex.test(senderPhoneClean)) {
     alert('Numéro expéditeur invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
@@ -777,7 +777,7 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       phone = phone.toString().trim().replace(/\s+/g, '');
       // Guinée : 00224XXXXXXXXX (9 chiffres après 00224)
       // France : 00336XXXXXXXX ou 00337XXXXXXXX (9 chiffres après 00336/00337)
-      const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+      const regex = /^(00224\d{9}|00336\d{8}|00337\d{9})$/;
       return regex.test(phone);
     }
 
@@ -919,7 +919,7 @@ app.post('/stock/new', requireLogin, async (req, res) => {
     function isValidPhone(phone) {
       if (!phone) return false;
       phone = phone.toString().trim().replace(/\s+/g, '');
-      const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
       return regex.test(phone);
     }
 
@@ -976,7 +976,7 @@ app.post('/client/new', requireLogin, async (req, res) => {
     function isValidPhone(phone) {
       if (!phone) return false;
       phone = phone.toString().trim().replace(/\s+/g, '');
-      const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
       return regex.test(phone);
     }
 
