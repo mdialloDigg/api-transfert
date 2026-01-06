@@ -446,37 +446,69 @@ function exportExcel(){window.open('/export/excel','_blank');}
 });
 
 // ================= CRUD TRANSFERT =================
-app.get('/transfert/:id',requireLogin,async(req,res)=>{const t=await Transfert.findById(req.params.id);res.json(t);});
-app.post('/transfert/new',requireLogin,async(req,res)=>{try{const data=req.body;if(data._id){await Transfert.findByIdAndUpdate(data._id,data,{new:true});}else{data.code=await generateUniqueCode();data.userType='Client';await new Transfert(data).save();}res.json({success:true});}catch(err){console.error(err);res.status(500).json({success:false});}});
-app.post('/transfert/delete',async(req,res)=>{await Transfert.findByIdAndDelete(req.body.id);res.json({success:true});});app.post('/transfert/retirer',requireLogin,async(req,res)=>{try{const {id,mode}=req.body;const t=await Transfert.findById(id);if(!t) return res.status(404).json({error:'Transfert introuvable'});if(t.retired) return res.status(400).json({error:'Déjà retiré'});const montantRetire=t.amount-t.fees;const stock=await StockHistory.findOne({destination:t.destinationLocation,currency:t.currency});if(!stock) return res.status(400).json({error:'Stock introuvable'});if(stock.amount<montantRetire) return res.status(400).json({error:'Stock insuffisant'});stock.amount-=montantRetire;await stock.save();t.retired=true;t.retraitHistory.push({date:new Date(),mode:mode||'ESPECE'});await t.save();res.json({success:true});}catch(err){console.error(err);res.status(500).json({error:err.message});});
+// Obtenir un transfert par ID
+app.get('/transfert/:id', requireLogin, async (req, res) => {
+  try {
+    const t = await Transfert.findById(req.params.id);
+    res.json(t);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Créer ou mettre à jour un transfert
+app.post('/transfert/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+    if (data._id) {
+      await Transfert.findByIdAndUpdate(data._id, data, { new: true });
+    } else {
+      data.code = await generateUniqueCode();
+      data.userType = 'Client';
+      await new Transfert(data).save();
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// Supprimer un transfert
+app.post('/transfert/delete', requireLogin, async (req, res) => {
+  try {
+    await Transfert.findByIdAndDelete(req.body.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// Marquer un transfert comme retiré
 app.post('/transfert/retirer', requireLogin, async (req, res) => {
   try {
     const { id, mode } = req.body;
-
-    // Chercher le transfert
     const t = await Transfert.findById(id);
+
     if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
     if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
 
-    // Calcul du montant à retirer
     const montantRetire = t.amount - t.fees;
-
-    // Vérifier le stock
     const stock = await StockHistory.findOne({ destination: t.destinationLocation, currency: t.currency });
+
     if (!stock) return res.status(400).json({ error: 'Stock introuvable' });
     if (stock.amount < montantRetire) return res.status(400).json({ error: 'Stock insuffisant' });
 
-    // Retirer le montant du stock
     stock.amount -= montantRetire;
     await stock.save();
 
-    // Marquer le transfert comme retiré
     t.retired = true;
     t.retraitHistory.push({ date: new Date(), mode: mode || 'ESPECE' });
     await t.save();
 
     res.json({ success: true });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -484,17 +516,99 @@ app.post('/transfert/retirer', requireLogin, async (req, res) => {
 });
 
 // ================= CRUD STOCK =================
-app.get('/stock/:id',requireLogin,async(req,res)=>{const stock=await StockHistory.findById(req.params.id);res.json(stock);});
-app.post('/stock/new',requireLogin,async(req,res)=>{try{let stock;if(req.body._id){stock=await StockHistory.findByIdAndUpdate(req.body._id,req.body,{new:true});await StockHistory.create({action:'MODIFICATION',stockId:stock._id,...stock.toObject()});}else{req.body.code=await generateUniqueCode();stock=await new StockHistory(req.body).save();}res.json({success:true});}catch(err){console.error(err);res.status(500).json({success:false});}});
-app.post('/stock/delete',async(req,res)=>{await StockHistory.findByIdAndDelete(req.body.id);res.json({success:true});});
+// Obtenir un stock par ID
+app.get('/stock/:id', requireLogin, async (req, res) => {
+  try {
+    const stock = await StockHistory.findById(req.params.id);
+    res.json(stock);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Créer ou mettre à jour un stock
+app.post('/stock/new', requireLogin, async (req, res) => {
+  try {
+    let stock;
+    if (req.body._id) {
+      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      await StockHistory.create({ action: 'MODIFICATION', stockId: stock._id, ...stock.toObject() });
+    } else {
+      req.body.code = await generateUniqueCode();
+      stock = await new StockHistory(req.body).save();
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// Supprimer un stock
+app.post('/stock/delete', requireLogin, async (req, res) => {
+  try {
+    await StockHistory.findByIdAndDelete(req.body.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
 
 // ================= CRUD CLIENT =================
-app.post('/client/new',async(req,res)=>{if(req.body._id) await Client.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Client(req.body).save();res.json({success:true});});
-app.post('/client/delete',async(req,res)=>{await Client.findByIdAndDelete(req.body.id);res.json({success:true});});
+// Créer ou mettre à jour un client
+app.post('/client/new', requireLogin, async (req, res) => {
+  try {
+    if (req.body._id) {
+      await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
+    } else {
+      await new Client(req.body).save();
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// Supprimer un client
+app.post('/client/delete', requireLogin, async (req, res) => {
+  try {
+    await Client.findByIdAndDelete(req.body.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
 
 // ================= CRUD RATE =================
-app.post('/rate/new',async(req,res)=>{if(req.body._id) await Rate.findByIdAndUpdate(req.body._id,req.body,{new:true}); else await new Rate(req.body).save();res.json({success:true});});
-app.post('/rate/delete',async(req,res)=>{await Rate.findByIdAndDelete(req.body.id);res.json({success:true});});
+// Créer ou mettre à jour un taux
+app.post('/rate/new', requireLogin, async (req, res) => {
+  try {
+    if (req.body._id) {
+      await Rate.findByIdAndUpdate(req.body._id, req.body, { new: true });
+    } else {
+      await new Rate(req.body).save();
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// Supprimer un taux
+app.post('/rate/delete', requireLogin, async (req, res) => {
+  try {
+    await Rate.findByIdAndDelete(req.body.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
 
 // ================= EXPORT =================
 app.get('/export/pdf',requireLogin,async(req,res)=>{const doc=new PDFDocument();res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','inline; filename=export.pdf');doc.text('Liste des transferts\n\n');const transferts=await Transfert.find().sort({createdAt:-1});transferts.forEach(t=>doc.text(`Code: ${t.code} - Exp: ${t.senderFirstName} - Dest: ${t.receiverFirstName} - Montant: ${t.amount} ${t.currency}`));doc.pipe(res);doc.end();});
