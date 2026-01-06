@@ -161,8 +161,9 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   if(q.dateFrom || q.dateTo){filters.createdAt={};if(q.dateFrom) filters.createdAt.$gte=new Date(q.dateFrom);if(q.dateTo) filters.createdAt.$lte=new Date(q.dateTo+'T23:59:59');}
 
   const transferts = await Transfert.find(filters).sort({createdAt:-1});
-  const stocks = await Stock.find().sort({createdAt:-1});
-  const stockHistory = await StockHistory.find().sort({date:-1});
+  const stocks = await StockHistory.find().sort({createdAt:-1});
+  //const stockHistory = await StockHistory.find().sort({date:-1});
+  const stockHistory = await StockHistory.find().sort({createdAt:-1});
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
@@ -288,6 +289,10 @@ ${p.suppression?`<button onclick="deleteStock('${s._id}')">❌</button>`:''}
 `).join('')}
 </table>
 
+
+
+
+
 <!-- ================== CLIENTS ================== -->
 <h3>Clients KYC</h3>
 <button onclick="openClientModal()">➕ Nouveau Client</button>
@@ -374,7 +379,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <h3>Stock</h3>
 <input id="s_code" readonly placeholder="Code">
 <input id="s_sender" placeholder="Expéditeur">
-<input id="s_phone"
+<input id="s_senderPhone"
        placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
        pattern="^(00224\d{9}|0033\d{9})$"
        title="Format requis : 00224XXXXXXXXX (Guinée) ou 0033XXXXXXXXX (France)"
@@ -552,24 +557,6 @@ function test(phone) {
 
 
 
-function saveTransfert(){
-  const amount=parseFloat(t_amount.value)||0;
-  const fees=parseFloat(t_fees.value)||0;
-  postData('/transfert/new',{
-    _id:currentTransfertId,
-    originLocation:t_origin.value,
-    senderFirstName:t_sender.value,
-    senderPhone:t_senderPhone.value,
-    destinationLocation:t_destination.value,
-    receiverFirstName:t_receiver.value,
-    receiverPhone:t_receiverPhone.value,
-    amount,
-    fees,
-    received:amount-fees,
-    currency:t_currency.value,
-    recoveryMode:t_recoveryMode.value
-  }).then(()=>location.reload());
-}
 function deleteTransfert(id){
   if(confirm('Supprimer ?'))
     postData('/transfert/delete',{id}).then(()=>location.reload());
