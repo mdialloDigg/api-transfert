@@ -448,8 +448,6 @@ window.location.href='/dashboard?'+params.toString();
 }
 
 
-
-/*
 function saveTransfert() {
   const senderPhoneClean = t_senderPhone.value.trim().replace(/\s+/g, '');
   const receiverPhoneClean = t_receiverPhone.value.trim().replace(/\s+/g, '');
@@ -487,48 +485,6 @@ function saveTransfert() {
     else alert(res.error || 'Erreur serveur');
   });
 }
-
-*/
-
-
-function saveTransfert() {
-  const senderPhone = t_senderPhone.value;
-  const receiverPhone = t_receiverPhone.value;
-
-  if (!isValidPhone(senderPhone)) {
-    alert('Numéro expéditeur invalide');
-    return;
-  }
-
-  if (!isValidPhone(receiverPhone)) {
-    alert('Numéro destinataire invalide');
-    return;
-  }
-
-  // ✅ SI ON ARRIVE ICI → le bouton fonctionne
-  postData('/transfert/new', {
-    //senderPhone: senderPhone.replace(/\s+/g, ''),
-    //receiverPhone: receiverPhone.replace(/\s+/g, ''),
-    // le reste de tes champs
-  _id: currentTransfertId,
-    originLocation: t_origin.value,
-    senderFirstName: t_sender.value,
-    senderPhone: senderPhoneClean,
-    destinationLocation: t_destination.value,
-    receiverFirstName: t_receiver.value,
-    receiverPhone: receiverPhoneClean,
-    amount,
-    fees,
-    received: amount - fees,
-    currency: t_currency.value,
-    recoveryMode: t_recoveryMode.value
-
-  }).then(res => {
-    if (res.success) location.reload();
-    else alert(res.error || 'Erreur');
-  });
-}
-
 
 /* Transfert */
 
@@ -611,17 +567,6 @@ function normalizePhone(phone) {
 }
 
 function isValidPhone(phone) {
-  if (!phone) return false;
-
-  const clean = phone.replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-
-  return regex.test(clean);
-}
-
-/* 
-
-function isValidPhone(phone) {
   phone = normalizePhone(phone);
   return (
     /^00224\d{9}$/.test(phone) ||   // Guinée
@@ -629,7 +574,6 @@ function isValidPhone(phone) {
   );
 }
 
-*/
 /************************************************/
 
 
