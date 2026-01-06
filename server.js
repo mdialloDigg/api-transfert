@@ -394,6 +394,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="r_from" placeholder="De">
 <input id="r_to" placeholder="Vers">
 <input id="r_rate" type="number" step="0.0001" placeholder="Rate">
+<input id="r_createdAt" type="Date" step="0.0001" placeholder="createdAt">
 <button onclick="saveRate()">Enregistrer</button>
 <button onclick="closeRateModal()">Fermer</button>
 </div></div>
@@ -595,9 +596,10 @@ function openRateModal(id = null) {
   fetch('/rate/' + id)
     .then(r => r.json())
     .then(rate => {
-      r_from.value = rate.from || '';
-      r_to.value = rate.to || '';
-      r_rate.value = rate.rate || '';
+      r_from.value = rate.from ;
+      r_to.value = rate.to ;
+      r_rate.value = rate.rate ;
+	  r_createdAt = rate.createdAt;
     });
 }
 
