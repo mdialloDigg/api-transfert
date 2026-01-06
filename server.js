@@ -488,32 +488,56 @@ app.post('/transfert/delete', requireLogin, async (req, res) => {
 
 // Marquer un transfert comme retiré
 app.post('/transfert/retirer', requireLogin, async (req, res) => {
-  try {
-    const { id, mode } = req.body;
-    const t = await Transfert.findById(id);
 
+  if (!req.session.user.permissions.retrait) {
+    return res.status(403).json({ error: 'Droit retrait interdit' });
+  }
+
+  try {
+    console.log('BODY:', req.body);
+
+    const { id, mode } = req.body;
+    if (!id) return res.status(400).json({ error: 'ID manquant' });
+
+    const t = await Transfert.findById(id);
     if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
     if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
 
     const montantRetire = t.amount - t.fees;
-    const stock = await StockHistory.findOne({ destination: t.destinationLocation, currency: t.currency });
 
-    if (!stock) return res.status(400).json({ error: 'Stock introuvable' });
-    if (stock.amount < montantRetire) return res.status(400).json({ error: 'Stock insuffisant' });
+    const stock = await StockHistory.findOne({
+      destination: t.destinationLocation,
+      currency: t.currency
+    });
+
+    if (!stock) {
+      console.log('AUCUN STOCK POUR', t.destinationLocation, t.currency);
+      return res.status(400).json({ error: 'Stock introuvable' });
+    }
+
+    if (stock.amount < montantRetire) {
+      return res.status(400).json({ error: 'Stock insuffisant' });
+    }
 
     stock.amount -= montantRetire;
     await stock.save();
 
     t.retired = true;
-    t.retraitHistory.push({ date: new Date(), mode: mode || 'ESPECE' });
+    t.retraitHistory.push({
+      date: new Date(),
+      mode: mode || 'ESPECE'
+    });
     await t.save();
 
     res.json({ success: true });
+
   } catch (err) {
-    console.error(err);
+    console.error('ERREUR RETRAIT:', err);
     res.status(500).json({ error: err.message });
   }
+
 });
+
 
 // ================= CRUD STOCK =================
 // Obtenir un stock par ID
@@ -528,22 +552,38 @@ app.get('/stock/:id', requireLogin, async (req, res) => {
 });
 
 // Créer ou mettre à jour un stock
+
+/* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
   try {
     let stock;
+
     if (req.body._id) {
+      // Modification du stock existant
       stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
-      await StockHistory.create({ action: 'MODIFICATION', stockId: stock._id, ...stock.toObject() });
+      await StockHistory.create({
+        action: 'MODIFICATION',
+        stockId: stock._id,
+        ...stock.toObject(),
+      });
     } else {
+      // Création d'un nouveau stock
       req.body.code = await generateUniqueCode();
       stock = await new StockHistory(req.body).save();
+      //await StockHistory.create({
+      //  action: 'CREATION',
+      //  stockId: stock._id,
+     //   ...stock.toObject(),
+     // });
     }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
   }
 });
+
 
 // Supprimer un stock
 app.post('/stock/delete', requireLogin, async (req, res) => {
