@@ -409,29 +409,166 @@ window.location.href='/dashboard?'+params.toString();
 }
 
 /* Transfert */
-function openTransfertModal(id=null){currentTransfertId=id;document.getElementById('transfertModal').style.display='flex';if(!id){t_code.value='';t_origin.value='';t_sender.value='';t_senderPhone.value='';t_destination.value='';t_receiver.value='';t_receiverPhone.value='';t_amount.value='';t_fees.value='';t_received.value='';return;}fetch('/transfert/'+id).then(r=>r.json()).then(t=>{t_code.value=t.code;t_origin.value=t.originLocation;t_sender.value=t.senderFirstName;t_senderPhone.value=t.senderPhone;t_destination.value=t.destinationLocation;t_receiver.value=t.receiverFirstName;t_receiverPhone.value=t.receiverPhone;t_amount.value=t.amount;t_fees.value=t.fees;t_received.value=t.received;t_currency.value=t.currency;t_recoveryMode.value=t.recoveryMode;});}
-function closeTransfertModal(){document.getElementById('transfertModal').style.display='none';currentTransfertId=null;}
-function saveTransfert(){const amount=parseFloat(t_amount.value)||0;const fees=parseFloat(t_fees.value)||0;postData('/transfert/new',{_id:currentTransfertId,originLocation:t_origin.value,senderFirstName:t_sender.value,senderPhone:t_senderPhone.value,destinationLocation:t_destination.value,receiverFirstName:t_receiver.value,receiverPhone:t_receiverPhone.value,amount,fees,received:amount-fees,currency:t_currency.value,recoveryMode:t_recoveryMode.value}).then(()=>location.reload());}
-function deleteTransfert(id){if(confirm('Supprimer ?'))postData('/transfert/delete',{id}).then(()=>location.reload());}
-function retirerTransfert(id){if(confirm('Marquer comme retiré ?'))postData('/transfert/retirer',{id,mode:'ESPECE'}).then(()=>location.reload());}
 
-/* Stock */
-function openStockModal(id=null){currentStockId=id;stockModal.style.display='flex';if(!id){s_code.value='';s_sender.value='';s_senderPhone.value='';s_destination.value='';s_destinationPhone.value='';s_amount.value='';return;}fetch('/stock/'+id).then(r=>r.json()).then(s=>{s_code.value=s.code;s_sender.value=s.sender;s_senderPhone.value=s.senderPhone;s_destination.value=s.destination;s_destinationPhone.value=s.destinationPhone;s_amount.value=s.amount;s_currency.value=s.currency;});}
-function closeStockModal(){stockModal.style.display='none';currentStockId=null;}
-function saveStock(){postData('/stock/new',{_id:currentStockId,sender:s_sender.value,senderPhone:s_senderPhone.value,destination:s_destination.value,destinationPhone:s_destinationPhone.value,amount:parseFloat(s_amount.value),currency:s_currency.value}).then(()=>location.reload());}
-function deleteStock(id){if(confirm('Supprimer ?'))postData('/stock/delete',{id}).then(()=>location.reload());}
 
-/* Client */
-function openClientModal(id=null){currentClientId=id;clientModal.style.display='flex';}
-function closeClientModal(){clientModal.style.display='none';currentClientId=null;}
-function saveClient(){postData('/client/new',{_id:currentClientId,firstName:c_firstName.value,lastName:c_lastName.value,phone:c_phone.value,email:c_email.value,kycVerified:c_kyc.value==='true'}).then(()=>location.reload());}
-function deleteClient(id){if(confirm('Supprimer ?'))postData('/client/delete',{id}).then(()=>location.reload());}
+function openTransfertModal(id = null) {
+  currentTransfertId = id;
+  document.getElementById('transfertModal').style.display = 'flex';
 
-/* Rate */
-function openRateModal(id=null){currentRateId=id;rateModal.style.display='flex';}
-function closeRateModal(){rateModal.style.display='none';currentRateId=null;}
-function saveRate(){postData('/rate/new',{_id:currentRateId,from:r_from.value,to:r_to.value,rate:parseFloat(r_rate.value)}).then(()=>location.reload());}
-function deleteRate(id){if(confirm('Supprimer ?'))postData('/rate/delete',{id}).then(()=>location.reload());}
+  // Nouveau
+  if (!id) {
+    t_code.value = '';
+    t_origin.value = '';
+    t_sender.value = '';
+    t_senderPhone.value = '';
+    t_destination.value = '';
+    t_receiver.value = '';
+    t_receiverPhone.value = '';
+    t_amount.value = '';
+    t_fees.value = '';
+    t_received.value = '';
+    return;
+  }
+
+  fetch('/transfert/' + id)
+    .then(r => r.json())
+    .then(t => {
+      t_code.value = t.code;
+      t_origin.value = t.originLocation;
+      t_sender.value = t.senderFirstName;
+      t_senderPhone.value = t.senderPhone;
+      t_destination.value = t.destinationLocation;
+      t_receiver.value = t.receiverFirstName;
+      t_receiverPhone.value = t.receiverPhone;
+      t_amount.value = t.amount;
+      t_fees.value = t.fees;
+      t_received.value = t.received;
+      t_currency.value = t.currency;
+      t_recoveryMode.value = t.recoveryMode;
+    });
+}
+
+function closeTransfertModal(){
+  document.getElementById('transfertModal').style.display='none';
+  currentTransfertId=null;
+}
+function saveTransfert(){
+  const amount=parseFloat(t_amount.value)||0;
+  const fees=parseFloat(t_fees.value)||0;
+  postData('/transfert/new',{
+    _id:currentTransfertId,
+    originLocation:t_origin.value,
+    senderFirstName:t_sender.value,
+    senderPhone:t_senderPhone.value,
+    destinationLocation:t_destination.value,
+    receiverFirstName:t_receiver.value,
+    receiverPhone:t_receiverPhone.value,
+    amount,
+    fees,
+    received:amount-fees,
+    currency:t_currency.value,
+    recoveryMode:t_recoveryMode.value
+  }).then(()=>location.reload());
+}
+function deleteTransfert(id){
+  if(confirm('Supprimer ?'))
+    postData('/transfert/delete',{id}).then(()=>location.reload());
+}
+function retirerTransfert(id){
+  if(confirm('Marquer comme retiré ?'))
+    postData('/transfert/retirer',{id,mode:'ESPECE'}).then(()=>location.reload());
+}
+
+/* ================= STOCK ================= */
+function openStockModal(id = null) {
+  currentStockId = id;
+  stockModal.style.display = 'flex';
+
+  if (!id) {
+    s_code.value = '';
+    s_sender.value = '';
+    s_senderPhone.value = '';
+    s_destination.value = '';
+    s_destinationPhone.value = '';
+    s_amount.value = '';
+    return;
+  }
+
+  fetch('/stock/' + id)  // <-- ici
+    .then(r => r.json())
+    .then(s => {
+      s_code.value = s.code;
+      s_sender.value = s.sender;
+      s_senderPhone.value = s.senderPhone;
+      s_destination.value = s.destination;
+      s_destinationPhone.value = s.destinationPhone;
+      s_amount.value = s.amount;
+      s_currency.value = s.currency;
+    });
+}
+
+function saveStock() {
+  postData('/stock/new', {   // <-- ici
+    _id: currentStockId,
+    sender: s_sender.value,
+    senderPhone: s_senderPhone.value,
+    destination: s_destination.value,
+    destinationPhone: s_destinationPhone.value,
+    amount: parseFloat(s_amount.value),
+    currency: s_currency.value,
+  }).then(() => location.reload());
+}
+
+function deleteStock(id) {
+  if (confirm('Supprimer ?'))
+    postData('/stock/delete', { id }).then(() => location.reload()); // <-- ici
+}
+
+/* ================= CLIENT ================= */
+function openClientModal(id=null){
+  currentClientId=id;
+  clientModal.style.display='flex';
+}
+function closeClientModal(){
+  clientModal.style.display='none';
+  currentClientId=null;
+}
+function saveClient(){
+  postData('/client/new',{
+    _id:currentClientId,
+    firstName:c_firstName.value,
+    lastName:c_lastName.value,
+    phone:c_phone.value,
+    email:c_email.value,
+    kycVerified:c_kyc.value==='true'
+  }).then(()=>location.reload());
+}
+function deleteClient(id){
+  if(confirm('Supprimer ?'))
+    postData('/client/delete',{id}).then(()=>location.reload());
+}
+
+/* ================= RATE ================= */
+function openRateModal(id=null){
+  currentRateId=id;
+  rateModal.style.display='flex';
+}
+function closeRateModal(){
+  rateModal.style.display='none';
+  currentRateId=null;
+}
+function saveRate(){
+  postData('/rate/new',{
+    _id:currentRateId,
+    from:r_from.value,
+    to:r_to.value,
+    rate:parseFloat(r_rate.value)
+  }).then(()=>location.reload());
+}
+function deleteRate(id){
+  if(confirm('Supprimer ?'))
+    postData('/rate/delete',{id}).then(()=>location.reload());
+}
 
 /* Export */
 function exportPDF(){window.open('/export/pdf','_blank');}
