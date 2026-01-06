@@ -399,232 +399,92 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 </div></div>
 
 <script>
-let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
+<script>
+/* =======================
+   VARIABLES GLOBALES
+======================= */
+let currentTransfertId = null;
+let currentClientId = null;
+let currentStockId = null;
+let currentRateId = null;
 
-function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+/* =======================
+   ELEMENTS TRANSFERT
+======================= */
+const t_code = document.getElementById('t_code');
+const t_origin = document.getElementById('t_origin');
+const t_sender = document.getElementById('t_sender');
+const t_senderPhone = document.getElementById('t_senderPhone');
+const t_destination = document.getElementById('t_destination');
+const t_receiver = document.getElementById('t_receiver');
+const t_receiverPhone = document.getElementById('t_receiverPhone');
+const t_amount = document.getElementById('t_amount');
+const t_fees = document.getElementById('t_fees');
+const t_received = document.getElementById('t_received');
+const t_currency = document.getElementById('t_currency');
+const t_recoveryMode = document.getElementById('t_recoveryMode');
 
-function searchTransferts(){
-const params=new URLSearchParams({code:f_code.value,sender:f_sender.value,receiver:f_receiver.value,currency:f_currency.value,status:f_status.value,dateFrom:f_date_from.value,dateTo:f_date_to.value});
-window.location.href='/dashboard?'+params.toString();
+/* =======================
+   VALIDATION TELEPHONE
+======================= */
+function isValidPhone(phone) {
+  if (!phone) return false;
+  const clean = phone.replace(/\s+/g, '');
+  return /^(00224\d{9}|00336\d{9}|00337\d{9})$/.test(clean);
 }
 
-/* Transfert */
-
-
+/* =======================
+   MODAL TRANSFERT
+======================= */
 function openTransfertModal(id = null) {
   currentTransfertId = id;
   document.getElementById('transfertModal').style.display = 'flex';
-
-  // Nouveau
-  if (!id) {
-    t_code.value = '';
-    t_origin.value = '';
-    t_sender.value = '';
-    t_senderPhone.value = '';
-    t_destination.value = '';
-    t_receiver.value = '';
-    t_receiverPhone.value = '';
-    t_amount.value = '';
-    t_fees.value = '';
-    t_received.value = '';
-    return;
-  }
-
-  fetch('/transfert/' + id)
-    .then(r => r.json())
-    .then(t => {
-      t_code.value = t.code;
-      t_origin.value = t.originLocation;
-      t_sender.value = t.senderFirstName;
-      t_senderPhone.value = t.senderPhone;
-      t_destination.value = t.destinationLocation;
-      t_receiver.value = t.receiverFirstName;
-      t_receiverPhone.value = t.receiverPhone;
-      t_amount.value = t.amount;
-      t_fees.value = t.fees;
-      t_received.value = t.received;
-      t_currency.value = t.currency;
-      t_recoveryMode.value = t.recoveryMode;
-    });
 }
 
-function closeTransfertModal(){
-  document.getElementById('transfertModal').style.display='none';
-  currentTransfertId=null;
+function closeTransfertModal() {
+  document.getElementById('transfertModal').style.display = 'none';
+  currentTransfertId = null;
 }
 
-
-function closeStockModal(){
-  document.getElementById('stockModal').style.display='none';
-  currentStockId=null;
-}
-
-
-function saveTransfert(){
-  const amount=parseFloat(t_amount.value)||0;
-  const fees=parseFloat(t_fees.value)||0;
-  postData('/transfert/new',{
-    _id:currentTransfertId,
-    originLocation:t_origin.value,
-    senderFirstName:t_sender.value,
-    senderPhone:t_senderPhone.value,
-    destinationLocation:t_destination.value,
-    receiverFirstName:t_receiver.value,
-    receiverPhone:t_receiverPhone.value,
-    amount,
-    fees,
-    received:amount-fees,
-    currency:t_currency.value,
-    recoveryMode:t_recoveryMode.value
-  }).then(()=>location.reload());
-}
-function deleteTransfert(id){
-  if(confirm('Supprimer ?'))
-    postData('/transfert/delete',{id}).then(()=>location.reload());
-}
-function retirerTransfert(id){
-  if(confirm('Marquer comme retiré ?'))
-    postData('/transfert/retirer',{id,mode:'ESPECE'}).then(()=>location.reload());
-}
-
-/* ================= STOCK ================= */
-function openStockModal(id = null) {
-  currentStockId = id;
-  stockModal.style.display = 'flex';
-
-  if (!id) {
-    s_code.value = '';
-    s_sender.value = '';
-    s_senderPhone.value = '';
-    s_destination.value = '';
-    s_destinationPhone.value = '';
-    s_amount.value = '';
-    return;
-  }
-
-  fetch('/stock/' + id)  // <-- ici
-    .then(r => r.json())
-    .then(s => {
-      s_code.value = s.code;
-      s_sender.value = s.sender;
-      s_senderPhone.value = s.senderPhone;
-      s_destination.value = s.destination;
-      s_destinationPhone.value = s.destinationPhone;
-      s_amount.value = s.amount;
-      s_currency.value = s.currency;
-    });
-}
-
-function saveStock() {
-  postData('/stock/new', {   // <-- ici
-    _id: currentStockId,
-    sender: s_sender.value,
-    senderPhone: s_senderPhone.value,
-    destination: s_destination.value,
-    destinationPhone: s_destinationPhone.value,
-    amount: parseFloat(s_amount.value),
-    currency: s_currency.value,
-  }).then(() => location.reload());
-}
-
-function deleteStock(id) {
-  if (confirm('Supprimer ?'))
-    postData('/stock/delete', { id }).then(() => location.reload()); // <-- ici
-}
-
-/* ================= CLIENT ================= */
+/* =======================
+   MODAL CLIENT
+======================= */
 function openClientModal(id = null) {
   currentClientId = id;
-  //clientModal.style.display = 'flex';
   document.getElementById('clientModal').style.display = 'flex';
-  
-  
-
-  if (!id) {
-    c_firstName.value = '';
-    c_lastName.value = '';
-    c_phone.value = '';
-    c_email.value = '';
-    c_kyc.value = 'false';
-    return;
-  }
-
-  fetch('/client/' + id)
-    .then(r => r.json())
-    .then(c => {
-      c_firstName.value = c.firstName || '';
-      c_lastName.value = c.lastName || '';
-      c_phone.value = c.phone || '';
-      c_email.value = c.email || '';
-      c_kyc.value = c.kycVerified ? 'true' : 'false';
-    });
 }
 
-function closeClientModal(){
-  clientModal.style.display='none';
-  currentClientId=null;
-}
-function saveClient(){
-  postData('/client/new',{
-    _id:currentClientId,
-    firstName:c_firstName.value,
-    lastName:c_lastName.value,
-    phone:c_phone.value,
-    email:c_email.value,
-    kycVerified:c_kyc.value==='true'
-  }).then(()=>location.reload());
-}
-function deleteClient(id){
-  if(confirm('Supprimer ?'))
-    postData('/client/delete',{id}).then(()=>location.reload());
+function closeClientModal() {
+  document.getElementById('clientModal').style.display = 'none';
+  currentClientId = null;
 }
 
-/* ================= RATE ================= */
+/* =======================
+   MODAL STOCK
+======================= */
+function openStockModal(id = null) {
+  currentStockId = id;
+  document.getElementById('stockModal').style.display = 'flex';
+}
+
+function closeStockModal() {
+  document.getElementById('stockModal').style.display = 'none';
+  currentStockId = null;
+}
+
+/* =======================
+   MODAL RATE
+======================= */
 function openRateModal(id = null) {
   currentRateId = id;
   document.getElementById('rateModal').style.display = 'flex';
-
-  if (!id) {
-    r_from.value = '';
-    r_to.value = '';
-    r_rate.value = '';
-    r_createdAt.value = '';
-    return;
-  }
-
-  fetch('/rate/' + id)
-    .then(r => r.json())
-    .then(rate => {
-      r_from.value = rate.from || '';
-      r_to.value = rate.to || '';
-      r_rate.value = rate.rate || '';
-      r_createdAt.value = rate.createdAt
-        ? rate.createdAt.substring(0, 10)
-        : '';
-    });
 }
 
-
-function closeRateModal(){
-  rateModal.style.display='none';
-  currentRateId=null;
+function closeRateModal() {
+  document.getElementById('rateModal').style.display = 'none';
+  currentRateId = null;
 }
-function saveRate(){
-  postData('/rate/new',{
-    _id:currentRateId,
-    from:r_from.value,
-    to:r_to.value,
-    rate:parseFloat(r_rate.value)
-  }).then(()=>location.reload());
-}
-function deleteRate(id){
-  if(confirm('Supprimer ?'))
-    postData('/rate/delete',{id}).then(()=>location.reload());
-}
-
-/* Export */
-function exportPDF(){window.open('/export/pdf','_blank');}
-function exportExcel(){window.open('/export/excel','_blank');}
+</script>
 
 </script>
 </html>
@@ -650,19 +510,43 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
+
+    // 🔹 Validation des numéros de téléphone
+    function isValidPhone(phone) {
+      if (!phone) return false;
+      phone = phone.toString().trim().replace(/\s+/g, '');
+      // Guinée : 00224XXXXXXXXX (9 chiffres après 00224)
+      // France : 00336XXXXXXXX ou 00337XXXXXXXX (9 chiffres après 00336/00337)
+      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
+      return regex.test(phone);
+    }
+
+    if (
+      (data.senderPhone && !isValidPhone(data.senderPhone)) ||
+      (data.receiverPhone && !isValidPhone(data.receiverPhone))
+    ) {
+      return res.status(400).json({
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
+      });
+    }
+
+    // 🔹 Création ou mise à jour
     if (data._id) {
       await Transfert.findByIdAndUpdate(data._id, data, { new: true });
     } else {
       data.code = await generateUniqueCode();
       data.userType = 'Client';
+      data.received = (parseFloat(data.amount) || 0) - (parseFloat(data.fees) || 0);
       await new Transfert(data).save();
     }
+
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
+    console.error('Erreur saveTransfert:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // Supprimer un transfert
 app.post('/transfert/delete', requireLogin, async (req, res) => {
@@ -769,33 +653,48 @@ app.get('/client/:id', requireLogin, async (req, res) => {
 /* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
   try {
-    let stock;
+    const data = req.body;
 
-    if (req.body._id) {
-      // Modification du stock existant
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
+    // 🔹 Validation téléphone
+    function isValidPhone(phone) {
+      if (!phone) return false;
+      phone = phone.toString().trim().replace(/\s+/g, '');
+	  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
+
+
+      return regex.test(phone);
+    }
+
+    if (
+      (data.senderPhone && !isValidPhone(data.senderPhone)) ||
+      (data.destinationPhone && !isValidPhone(data.destinationPhone))
+    ) {
+      return res.status(400).json({
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
+      });
+    }
+
+    let stock;
+    if (data._id) {
+      stock = await StockHistory.findByIdAndUpdate(data._id, data, { new: true });
       await StockHistory.create({
         action: 'MODIFICATION',
         stockId: stock._id,
         ...stock.toObject(),
       });
     } else {
-      // Création d'un nouveau stock
-      req.body.code = await generateUniqueCode();
-      stock = await new StockHistory(req.body).save();
-      //await StockHistory.create({
-      //  action: 'CREATION',
-      //  stockId: stock._id,
-     //   ...stock.toObject(),
-     // });
+      data.code = await generateUniqueCode();
+      stock = await new StockHistory(data).save();
+      // StockHistory.create({action:'CREATION', stockId:stock._id, ...stock.toObject()});
     }
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
+    console.error('Erreur saveStock:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 
 // Supprimer un stock
@@ -813,17 +712,35 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
   try {
-    if (req.body._id) {
-      await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
-    } else {
-      await new Client(req.body).save();
+    const data = req.body;
+
+    // 🔹 Validation téléphone
+    function isValidPhone(phone) {
+      if (!phone) return false;
+      phone = phone.toString().trim().replace(/\s+/g, '');
+      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
+      return regex.test(phone);
     }
+
+    if (data.phone && !isValidPhone(data.phone)) {
+      return res.status(400).json({
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
+      });
+    }
+
+    if (data._id) {
+      await Client.findByIdAndUpdate(data._id, data, { new: true });
+    } else {
+      await new Client(data).save();
+    }
+
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
+    console.error('Erreur saveClient:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // Supprimer un client
 app.post('/client/delete', requireLogin, async (req, res) => {
