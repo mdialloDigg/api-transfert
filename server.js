@@ -449,7 +449,32 @@ function exportExcel(){window.open('/export/excel','_blank');}
 app.get('/transfert/:id',requireLogin,async(req,res)=>{const t=await Transfert.findById(req.params.id);res.json(t);});
 app.post('/transfert/new',requireLogin,async(req,res)=>{try{const data=req.body;if(data._id){await Transfert.findByIdAndUpdate(data._id,data,{new:true});}else{data.code=await generateUniqueCode();data.userType='Client';await new Transfert(data).save();}res.json({success:true});}catch(err){console.error(err);res.status(500).json({success:false});}});
 app.post('/transfert/delete',async(req,res)=>{await Transfert.findByIdAndDelete(req.body.id);res.json({success:true});});
-app.post('/transfert/retirer',requireLogin,async(req,res)=>{try{const {id,mode}=req.body;const t=await Transfert.findById(id);if(!t) return res.status(404).json({error:'Transfert introuvable'});if(t.retired) return res.status(400).json({error:'Déjà retiré'});const montantRetire=t.amount-t.fees;const stock=await StockHistory.findOne({destination:t.destinationLocation,currency:t.currency});if(!stock) return res.status(400).json({error:'Stock introuvable'});if(stock.amount<montantRetire) return res.status(400).json({error:'Stock insuffisant'});stock.amount-=montantRetire;await stock.save();t.retired=true;t.retraitHistory.push({date:new Date(),mode:mode||'ESPECE'});await t.save();res.json({success:true});}catch(err){console.error(err);res.status(500).json({error:err.message});});
+app.post('/transfert/retirer', requireLogin, async (req, res) => {
+  try {
+    const { id, mode } = req.body;
+    const t = await Transfert.findById(id);
+    if (!t) return res.status(404).json({ error: 'Transfert introuvable' });
+    if (t.retired) return res.status(400).json({ error: 'Déjà retiré' });
+
+    const montantRetire = t.amount - t.fees;
+    const stock = await StockHistory.findOne({ destination: t.destinationLocation, currency: t.currency });
+    if (!stock) return res.status(400).json({ error: 'Stock introuvable' });
+    if (stock.amount < montantRetire) return res.status(400).json({ error: 'Stock insuffisant' });
+
+    stock.amount -= montantRetire;
+    await stock.save();
+
+    t.retired = true;
+    t.retraitHistory.push({ date: new Date(), mode: mode || 'ESPECE' });
+    await t.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+pp.post('/transfert/retirer',requireLogin,async(req,res)=>{try{const {id,mode}=req.body;const t=await Transfert.findById(id);if(!t) return res.status(404).json({error:'Transfert introuvable'});if(t.retired) return res.status(400).json({error:'Déjà retiré'});const montantRetire=t.amount-t.fees;const stock=await StockHistory.findOne({destination:t.destinationLocation,currency:t.currency});if(!stock) return res.status(400).json({error:'Stock introuvable'});if(stock.amount<montantRetire) return res.status(400).json({error:'Stock insuffisant'});stock.amount-=montantRetire;await stock.save();t.retired=true;t.retraitHistory.push({date:new Date(),mode:mode||'ESPECE'});await t.save();res.json({success:true});}catch(err){console.error(err);res.status(500).json({error:err.message});});
 
 // ================= CRUD STOCK =================
 app.get('/stock/:id',requireLogin,async(req,res)=>{const stock=await StockHistory.findById(req.params.id);res.json(stock);});
