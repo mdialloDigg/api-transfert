@@ -427,6 +427,21 @@ let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRate
 
 function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
+const t_code = document.getElementById('t_code');
+const t_origin = document.getElementById('t_origin');
+const t_sender = document.getElementById('t_sender');
+const t_senderPhone = document.getElementById('t_senderPhone');
+const t_destination = document.getElementById('t_destination');
+const t_receiver = document.getElementById('t_receiver');
+const t_receiverPhone = document.getElementById('t_receiverPhone');
+const t_amount = document.getElementById('t_amount');
+const t_fees = document.getElementById('t_fees');
+const t_received = document.getElementById('t_received');
+const t_currency = document.getElementById('t_currency');
+const t_recoveryMode = document.getElementById('t_recoveryMode');
+
+
+
 function searchTransferts(){
 const params=new URLSearchParams({code:f_code.value,sender:f_sender.value,receiver:f_receiver.value,currency:f_currency.value,status:f_status.value,dateFrom:f_date_from.value,dateTo:f_date_to.value});
 window.location.href='/dashboard?'+params.toString();
