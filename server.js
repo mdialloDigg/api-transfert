@@ -166,6 +166,23 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
+  
+const clientModal = document.getElementById('clientModal');
+const rateModal = document.getElementById('rateModal');
+const transfertModal = document.getElementById('transfertModal');
+const stockModal = document.getElementById('stockModal');
+
+
+const c_firstName = document.getElementById('c_firstName');
+const c_lastName = document.getElementById('c_lastName');
+const c_phone = document.getElementById('c_phone');
+const c_email = document.getElementById('c_email');
+const c_kyc = document.getElementById('c_kyc');
+
+
+const r_from = document.getElementById('r_from');
+const r_to = document.getElementById('r_to');
+const r_rate = document.getElementById('r_rate');
 
   // === HTML complet avec toutes les colonnes et modals ===
   // [INSÉRER ICI LE BLOC HTML/JS DE MON MESSAGE PRÉCÉDENT]
