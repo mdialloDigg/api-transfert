@@ -270,7 +270,7 @@ ${p.imprimer?`<button onclick="window.open('/transfert/print/${t._id}','_blank')
 <th>Date création</th>
 <th>Actions</th>
 </tr>
-${stocks.map(s=>`
+${stockHistory.map(s=>`
 <tr>
 <td>${s.code}</td>
 <td>${s.sender}</td>
