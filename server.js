@@ -740,6 +740,19 @@ app.get('/stock/:id', requireLogin, async (req, res) => {
   }
 });
 
+app.get('/rate/:id', requireLogin, async (req, res) => {
+  try {
+    const rate = await Rate.findById(req.params.id);
+    if (!rate) return res.status(404).json({ error: 'Rate introuvable' });
+    res.json(rate);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 // Créer ou mettre à jour un stock
 
 /* CREATE / UPDATE */
