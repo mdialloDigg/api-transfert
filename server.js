@@ -751,6 +751,17 @@ app.get('/rate/:id', requireLogin, async (req, res) => {
   }
 });
 
+// Obtenir un client par ID
+app.get('/client/:id', requireLogin, async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Client introuvable' });
+    res.json(client);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 // Créer ou mettre à jour un stock
