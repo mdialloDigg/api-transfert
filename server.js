@@ -403,7 +403,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="c_lastName" placeholder="Nom">
 <input id="c_phone"
        placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
-       pattern="^(00224\d{9}|0033\d{9})$"
+       pattern="^(00224\d{9}|0033[67]\d{8})$"
        title="Format requis : 00224XXXXXXXXX (Guinée) ou 0033XXXXXXXXX (France)"
        required>
 <input id="c_email" placeholder="Email">
@@ -777,7 +777,7 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       phone = phone.toString().trim().replace(/\s+/g, '');
       // Guinée : 00224XXXXXXXXX (9 chiffres après 00224)
       // France : 00336XXXXXXXX ou 00337XXXXXXXX (9 chiffres après 00336/00337)
-      const regex = /^(00224\d{9}|00336\d{8}|00337\d{9})$/;
+      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
       return regex.test(phone);
     }
 
@@ -919,7 +919,8 @@ app.post('/stock/new', requireLogin, async (req, res) => {
     function isValidPhone(phone) {
       if (!phone) return false;
       phone = phone.toString().trim().replace(/\s+/g, '');
-      const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
+	  const regex = /^(00224\d{9}|0033[67]\d{8})$/;
+
       return regex.test(phone);
     }
 
