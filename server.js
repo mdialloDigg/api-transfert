@@ -509,7 +509,7 @@ function openTransfertModal(id = null) {
       t_currency.value = t.currency;
       t_recoveryMode.value = t.recoveryMode;
     });
-}
+} 
 
 function closeTransfertModal(){
   document.getElementById('transfertModal').style.display='none';
@@ -682,7 +682,7 @@ function deleteStock(id) {
 function openClientModal(id = null) {
   currentClientId = id;
   //clientModal.style.display = 'flex';
-  document.getElementById('clientModal').style.display = 'none';
+  document.getElementById('clientModal').style.display = 'flex';
   
   
 
@@ -707,8 +707,8 @@ function openClientModal(id = null) {
 }
 
 function closeClientModal(){
-  clientModal.style.display='none';
-  currentClientId=null;
+  document.getElementById('clientModal').style.display='none';
+  currentClientId = null;
 }
 
 function deleteClient(id){
