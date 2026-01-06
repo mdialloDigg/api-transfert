@@ -607,17 +607,58 @@ function openStockModal(id = null) {
     });
 }
 
+function saveClient() {
+  const phoneClean = c_phone.value.trim().replace(/\s+/g, '');
+  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+
+  if (!regex.test(phoneClean)) {
+    alert('Numéro téléphone invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+    return;
+  }
+
+  postData('/client/new', {
+    _id: currentClientId,
+    firstName: c_firstName.value,
+    lastName: c_lastName.value,
+    phone: phoneClean,
+    email: c_email.value,
+    kycVerified: c_kyc.value === 'true'
+  }).then((res) => {
+    if (res.success) location.reload();
+    else alert(res.error || 'Erreur serveur');
+  });
+}
+
+
 function saveStock() {
-  postData('/stock/new', {   // <-- ici
+  const senderPhoneClean = s_senderPhone.value.trim().replace(/\s+/g, '');
+  const destinationPhoneClean = s_destinationPhone.value.trim().replace(/\s+/g, '');
+  const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+
+  if (!regex.test(senderPhoneClean)) {
+    alert('Numéro expéditeur invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+    return;
+  }
+
+  if (!regex.test(destinationPhoneClean)) {
+    alert('Numéro destinataire invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+    return;
+  }
+
+  postData('/stock/new', {
     _id: currentStockId,
     sender: s_sender.value,
-    senderPhone: s_senderPhone.value,
+    senderPhone: senderPhoneClean,
     destination: s_destination.value,
-    destinationPhone: s_destinationPhone.value,
+    destinationPhone: destinationPhoneClean,
     amount: parseFloat(s_amount.value),
     currency: s_currency.value,
-  }).then(() => location.reload());
+  }).then((res) => {
+    if (res.success) location.reload();
+    else alert(res.error || 'Erreur serveur');
+  });
 }
+
 
 function deleteStock(id) {
   if (confirm('Supprimer ?'))
@@ -884,45 +925,47 @@ app.get('/client/:id', requireLogin, async (req, res) => {
 
 /* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
-
-
   try {
-	  
-	  	if (
-  (req.body.senderPhone && !isValidPhone(req.body.senderPhone)) ||
-  (req.body.destinationPhone && !isValidPhone(req.body.destinationPhone))
-) {
-  return res.status(400).json({
-    error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
-  });
-}
-    let stock;
+    const data = req.body;
 
-    if (req.body._id) {
-      // Modification du stock existant
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
+    // 🔹 Validation téléphone
+    function isValidPhone(phone) {
+      if (!phone) return false;
+      phone = phone.toString().trim().replace(/\s+/g, '');
+      const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+      return regex.test(phone);
+    }
+
+    if (
+      (data.senderPhone && !isValidPhone(data.senderPhone)) ||
+      (data.destinationPhone && !isValidPhone(data.destinationPhone))
+    ) {
+      return res.status(400).json({
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
+      });
+    }
+
+    let stock;
+    if (data._id) {
+      stock = await StockHistory.findByIdAndUpdate(data._id, data, { new: true });
       await StockHistory.create({
         action: 'MODIFICATION',
         stockId: stock._id,
         ...stock.toObject(),
       });
     } else {
-      // Création d'un nouveau stock
-      req.body.code = await generateUniqueCode();
-      stock = await new StockHistory(req.body).save();
-      //await StockHistory.create({
-      //  action: 'CREATION',
-      //  stockId: stock._id,
-     //   ...stock.toObject(),
-     // });
+      data.code = await generateUniqueCode();
+      stock = await new StockHistory(data).save();
+      // StockHistory.create({action:'CREATION', stockId:stock._id, ...stock.toObject()});
     }
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
+    console.error('Erreur saveStock:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 
 // Supprimer un stock
@@ -939,25 +982,36 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // ================= CRUD CLIENT =================
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
-	
-
   try {
-	  if (req.body.phone && !isValidPhone(req.body.phone)) {
-  return res.status(400).json({
-    error: 'Numéro invalide. Format requis : 00224XXXXXXXX ou 0033XXXXXXXXXX'
-  });
-}
-    if (req.body._id) {
-      await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
-    } else {
-      await new Client(req.body).save();
+    const data = req.body;
+
+    // 🔹 Validation téléphone
+    function isValidPhone(phone) {
+      if (!phone) return false;
+      phone = phone.toString().trim().replace(/\s+/g, '');
+      const regex = /^(00224\d{9}|00336\d{8}|00337\d{8})$/;
+      return regex.test(phone);
     }
+
+    if (data.phone && !isValidPhone(data.phone)) {
+      return res.status(400).json({
+        error: 'Numéro invalide. Format requis : 00224XXXXXXXXX (Guinée) ou 00336/00337XXXXXXXX (France)'
+      });
+    }
+
+    if (data._id) {
+      await Client.findByIdAndUpdate(data._id, data, { new: true });
+    } else {
+      await new Client(data).save();
+    }
+
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
+    console.error('Erreur saveClient:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // Supprimer un client
 app.post('/client/delete', requireLogin, async (req, res) => {
