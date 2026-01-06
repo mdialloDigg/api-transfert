@@ -350,15 +350,15 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="t_origin" placeholder="Origine">
 <input id="t_sender" placeholder="Nom expéditeur">
 <input id="t_senderPhone"
-       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
-       pattern="^(00224\d{8}|0033\d{10})$"
+       placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
+       pattern="^(00224\d{9}|0033\d{9})$"
        title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)">
 <input id="t_destination" placeholder="Destination">
 <input id="t_receiver" placeholder="Nom destinataire">
 <input id="t_receiverPhone"
-       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
-       pattern="^(00224\d{8}|0033\d{10})$"
-       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
+       pattern="^(00224\d{9}|0033\d{9})$"
+       title="Format requis : 00224XXXXXXXXX (Guinée) ou 0033XXXXXXXXX (France)"
        required>
 <input id="t_amount" type="number" placeholder="Montant">
 <input id="t_fees" type="number" placeholder="Frais">
@@ -375,15 +375,15 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="s_code" readonly placeholder="Code">
 <input id="s_sender" placeholder="Expéditeur">
 <input id="s_phone"
-       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
-       pattern="^(00224\d{8}|0033\d{10})$"
-       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
+       pattern="^(00224\d{9}|0033\d{9})$"
+       title="Format requis : 00224XXXXXXXXX (Guinée) ou 0033XXXXXXXXX (France)"
        required>
 <input id="s_destination" placeholder="Destination">
 <input id="s_destinationPhone"
-       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
-       pattern="^(00224\d{8}|0033\d{10})$"
-       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
+       pattern="^(00224\d{9}|0033\d{9})$"
+       title="Format requis : 00224XXXXXXXXX (Guinée) ou 0033XXXXXXXXX (France)"
        required>
 <input id="s_amount" type="number" placeholder="Montant">
 <select id="s_currency"><option>GNF</option><option>XOF</option><option>EUR</option><option>USD</option></select>
@@ -397,9 +397,9 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="c_firstName" placeholder="Prénom">
 <input id="c_lastName" placeholder="Nom">
 <input id="c_phone"
-       placeholder="00224XXXXXXXX ou 0033XXXXXXXXXX"
-       pattern="^(00224\d{8}|0033\d{10})$"
-       title="Format requis : 00224XXXXXXXX (Guinée) ou 0033XXXXXXXXXX (France)"
+       placeholder="00224XXXXXXXXX ou 0033XXXXXXXXX"
+       pattern="^(00224\d{9}|0033\d{9})$"
+       title="Format requis : 00224XXXXXXXXX (Guinée) ou 0033XXXXXXXXX (France)"
        required>
 <input id="c_email" placeholder="Email">
 <select id="c_kyc"><option value="false">Non</option><option value="true">Oui</option></select>
@@ -479,9 +479,42 @@ function closeStockModal(){
 }
 
 
+
+/**
+ * Vérifie si le numéro de téléphone est valide
+ * Guinée : 00224 + 9 chiffres
+ * France : 0033 + 9 chiffres, mobile commence par 6 ou 7
+ */
 function isValidPhone(phone) {
-  return /^(00224\d{8}|0033\d{10})$/.test(phone);
+  if (!phone) return false;
+
+  // 1️⃣ Nettoyage obligatoire (espaces, tabulations, caractères invisibles)
+  phone = phone.toString().trim().replace(/\s+/g, '');
+
+  // 2️⃣ Regex officielle
+  const regex = /^(00224\d{9}|0033[67]\d{9})$/;
+
+  return regex.test(phone);
 }
+
+/**
+ * test(phone)
+ * Vérifie si un numéro de téléphone est valide
+ * Guinée : 00224 + 9 chiffres
+ * France : 0033 + 9 chiffres, mobile commence par 6 ou 7
+ */
+function test(phone) {
+  if (!phone) return false;
+
+  // 1️⃣ Nettoyage : enlever espaces et caractères invisibles
+  phone = phone.toString().trim().replace(/\s+/g, '');
+
+  // 2️⃣ Validation avec regex
+  const regex = /^(00224\d{9}|0033[67]\d{9})$/;
+
+  return regex.test(phone);
+}
+
 
 
 function saveTransfert(){
