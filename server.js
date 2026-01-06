@@ -425,8 +425,17 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <script>
 let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
 
-function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+<script>
+/* =======================
+   VARIABLES GLOBALES
+======================= */
+let currentTransfertId = null;
+let currentClientId = null;
+let currentStockId = null;
 
+/* =======================
+   ELEMENTS TRANSFERT
+======================= */
 const t_code = document.getElementById('t_code');
 const t_origin = document.getElementById('t_origin');
 const t_sender = document.getElementById('t_sender');
@@ -440,29 +449,40 @@ const t_received = document.getElementById('t_received');
 const t_currency = document.getElementById('t_currency');
 const t_recoveryMode = document.getElementById('t_recoveryMode');
 
-
-
-function searchTransferts(){
-const params=new URLSearchParams({code:f_code.value,sender:f_sender.value,receiver:f_receiver.value,currency:f_currency.value,status:f_status.value,dateFrom:f_date_from.value,dateTo:f_date_to.value});
-window.location.href='/dashboard?'+params.toString();
+/* =======================
+   VALIDATION TELEPHONE
+======================= */
+function isValidPhone(phone) {
+  if (!phone) return false;
+  const clean = phone.replace(/\s+/g, '');
+  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
+  return regex.test(clean);
 }
 
+/* =======================
+   MODAL TRANSFERT
+======================= */
+function openTransfertModal(id = null) {
+  currentTransfertId = id;
+  document.getElementById('transfertModal').style.display = 'flex';
+}
 
+function closeTransfertModal() {
+  document.getElementById('transfertModal').style.display = 'none';
+  currentTransfertId = null;
+}
 
-/*
 function saveTransfert() {
   const senderPhoneClean = t_senderPhone.value.trim().replace(/\s+/g, '');
   const receiverPhoneClean = t_receiverPhone.value.trim().replace(/\s+/g, '');
 
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-
-  if (!regex.test(senderPhoneClean)) {
-    alert('Numéro expéditeur invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+  if (!isValidPhone(senderPhoneClean)) {
+    alert('Numéro expéditeur invalide');
     return;
   }
 
-  if (!regex.test(receiverPhoneClean)) {
-    alert('Numéro destinataire invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
+  if (!isValidPhone(receiverPhoneClean)) {
+    alert('Numéro destinataire invalide');
     return;
   }
 
@@ -477,358 +497,50 @@ function saveTransfert() {
     destinationLocation: t_destination.value,
     receiverFirstName: t_receiver.value,
     receiverPhone: receiverPhoneClean,
-    amount,
-    fees,
+    amount: amount,
+    fees: fees,
     received: amount - fees,
     currency: t_currency.value,
     recoveryMode: t_recoveryMode.value
-  }).then((res) => {
-    if (res.success) location.reload();
-    else alert(res.error || 'Erreur serveur');
-  });
-}
-
-*/
-
-
-function saveTransfert() {
-  const senderPhone = t_senderPhone.value;
-  const receiverPhone = t_receiverPhone.value;
-
-  if (!isValidPhone(senderPhone)) {
-    alert('Numéro expéditeur invalide');
-    return;
-  }
-
-  if (!isValidPhone(receiverPhone)) {
-    alert('Numéro destinataire invalide');
-    return;
-  }
-
-  // ✅ SI ON ARRIVE ICI → le bouton fonctionne
-  postData('/transfert/new', {
-    //senderPhone: senderPhone.replace(/\s+/g, ''),
-    //receiverPhone: receiverPhone.replace(/\s+/g, ''),
-    // le reste de tes champs
-  _id: currentTransfertId,
-    originLocation: t_origin.value,
-    senderFirstName: t_sender.value,
-    senderPhone: senderPhoneClean,
-    destinationLocation: t_destination.value,
-    receiverFirstName: t_receiver.value,
-    receiverPhone: receiverPhoneClean,
-    amount,
-    fees,
-    received: amount - fees,
-    currency: t_currency.value,
-    recoveryMode: t_recoveryMode.value
-
   }).then(res => {
     if (res.success) location.reload();
-    else alert(res.error || 'Erreur');
-  });
-}
-
-
-/* Transfert */
-
-
-function openTransfertModal(id = null) {
-  currentTransfertId = id;
-  document.getElementById('transfertModal').style.display = 'flex';
-
-  // Nouveau
-  if (!id) {
-    t_code.value = '';
-    t_origin.value = '';
-    t_sender.value = '';
-    t_senderPhone.value = '';
-    t_destination.value = '';
-    t_receiver.value = '';
-    t_receiverPhone.value = '';
-    t_amount.value = '';
-    t_fees.value = '';
-    t_received.value = '';
-    return;
-  }
-
-  fetch('/transfert/' + id)
-    .then(r => r.json())
-    .then(t => {
-      t_code.value = t.code;
-      t_origin.value = t.originLocation;
-      t_sender.value = t.senderFirstName;
-      t_senderPhone.value = t.senderPhone;
-      t_destination.value = t.destinationLocation;
-      t_receiver.value = t.receiverFirstName;
-      t_receiverPhone.value = t.receiverPhone;
-      t_amount.value = t.amount;
-      t_fees.value = t.fees;
-      t_received.value = t.received;
-      t_currency.value = t.currency;
-      t_recoveryMode.value = t.recoveryMode;
-    });
-} 
-
-function closeTransfertModal(){
-  document.getElementById('transfertModal').style.display='none';
-  currentTransfertId=null;
-}
-
-
-function closeStockModal(){
-  document.getElementById('stockModal').style.display='none';
-  currentStockId=null;
-}
-
-
-
-/**
- * Vérifie si le numéro de téléphone est valide
- * Guinée : 00224 + 9 chiffres
- * France : 0033 + 9 chiffres, mobile commence par 6 ou 7
- */
-/**************** PHONE MODULE ****************/
-
-function cleanPhone(phone) {
-  if (!phone) return '';
-  return phone.toString().replace(/[\s\-().]/g, '');
-}
-
-function normalizePhone(phone) {
-  phone = cleanPhone(phone);
-
-  // Guinée
-  if (phone.startsWith('+224')) phone = '00224' + phone.slice(4);
-  if (phone.startsWith('224') && phone.length === 12) phone = '00224' + phone.slice(3);
-
-  // France
-  if (phone.startsWith('+33')) phone = '0033' + phone.slice(3);
-  if (phone.startsWith('33') && phone.length === 11) phone = '0033' + phone.slice(2);
-  if (phone.startsWith('0') && phone.length === 10) phone = '0033' + phone.slice(1);
-
-  return phone;
-}
-
-function isValidPhone(phone) {
-  if (!phone) return false;
-
-  const clean = phone.replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-
-  return regex.test(clean);
-}
-
-/* 
-
-function isValidPhone(phone) {
-  phone = normalizePhone(phone);
-  return (
-    /^00224\d{9}$/.test(phone) ||   // Guinée
-    /^0033\d{9}$/.test(phone)       // France
-  );
-}
-
-*/
-/************************************************/
-
-
-
-/**
- * test(phone)
- * Vérifie si un numéro de téléphone est valide
- * Guinée : 00224 + 9 chiffres
- * France : 0033 + 9 chiffres, mobile commence par 6 ou 7
- */
-function test(phone) {
-  if (!phone) return false;
-
-  // 1️⃣ Nettoyage : enlever espaces et caractères invisibles
-  phone = phone.toString().trim().replace(/\s+/g, '');
-
-  // 2️⃣ Validation avec regex
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-
-  return regex.test(phone);
-}
-
-
-
-function deleteTransfert(id){
-  if(confirm('Supprimer ?'))
-    postData('/transfert/delete',{id}).then(()=>location.reload());
-}
-function retirerTransfert(id){
-  if(confirm('Marquer comme retiré ?'))
-    postData('/transfert/retirer',{id,mode:'ESPECE'}).then(()=>location.reload());
-}
-
-/* ================= STOCK ================= */
-function openStockModal(id = null) {
-  currentStockId = id;
-  document.getElementById('stockModal').style.display = 'flex';
-
-  if (!id) {
-    s_code.value = '';
-    s_sender.value = '';
-    s_senderPhone.value = '';
-    s_destination.value = '';
-    s_destinationPhone.value = '';
-    s_amount.value = '';
-    return;
-  }
-
-  fetch('/stock/' + id)  // <-- ici
-    .then(r => r.json())
-    .then(s => {
-      s_code.value = s.code;
-      s_sender.value = s.sender;
-      s_senderPhone.value = s.senderPhone;
-      s_destination.value = s.destination;
-      s_destinationPhone.value = s.destinationPhone;
-      s_amount.value = s.amount;
-      s_currency.value = s.currency;
-    });
-}
-
-function saveClient() {
-  const phoneClean = c_phone.value.trim().replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-
-  if (!regex.test(phoneClean)) {
-    alert('Numéro téléphone invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
-    return;
-  }
-
-  postData('/client/new', {
-    _id: currentClientId,
-    firstName: c_firstName.value,
-    lastName: c_lastName.value,
-    phone: phoneClean,
-    email: c_email.value,
-    kycVerified: c_kyc.value === 'true'
-  }).then((res) => {
-    if (res.success) location.reload();
     else alert(res.error || 'Erreur serveur');
   });
 }
 
-
-function saveStock() {
-  const senderPhoneClean = s_senderPhone.value.trim().replace(/\s+/g, '');
-  const destinationPhoneClean = s_destinationPhone.value.trim().replace(/\s+/g, '');
-  const regex = /^(00224\d{9}|00336\d{9}|00337\d{9})$/;
-
-  if (!regex.test(senderPhoneClean)) {
-    alert('Numéro expéditeur invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
-    return;
-  }
-
-  if (!regex.test(destinationPhoneClean)) {
-    alert('Numéro destinataire invalide ! Format : 00224XXXXXXXXX ou 00336/00337XXXXXXXX');
-    return;
-  }
-
-  postData('/stock/new', {
-    _id: currentStockId,
-    sender: s_sender.value,
-    senderPhone: senderPhoneClean,
-    destination: s_destination.value,
-    destinationPhone: destinationPhoneClean,
-    amount: parseFloat(s_amount.value),
-    currency: s_currency.value,
-  }).then((res) => {
-    if (res.success) location.reload();
-    else alert(res.error || 'Erreur serveur');
-  });
-}
-
-
-function deleteStock(id) {
-  if (confirm('Supprimer ?'))
-    postData('/stock/delete', { id }).then(() => location.reload()); // <-- ici
-}
-
-/* ================= CLIENT ================= */
+/* =======================
+   MODAL CLIENT
+======================= */
 function openClientModal(id = null) {
   currentClientId = id;
-  //clientModal.style.display = 'flex';
   document.getElementById('clientModal').style.display = 'flex';
-  
-  
-
-  if (!id) {
-    c_firstName.value = '';
-    c_lastName.value = '';
-    c_phone.value = '';
-    c_email.value = '';
-    c_kyc.value = 'false';
-    return;
-  }
-
-  fetch('/client/' + id)
-    .then(r => r.json())
-    .then(c => {
-      c_firstName.value = c.firstName || '';
-      c_lastName.value = c.lastName || '';
-      c_phone.value = c.phone || '';
-      c_email.value = c.email || '';
-      c_kyc.value = c.kycVerified ? 'true' : 'false';
-    });
 }
 
-function closeClientModal(){
-  document.getElementById('clientModal').style.display='none';
+function closeClientModal() {
+  document.getElementById('clientModal').style.display = 'none';
   currentClientId = null;
 }
 
-function deleteClient(id){
-  if(confirm('Supprimer ?'))
-    postData('/client/delete',{id}).then(()=>location.reload());
+/* =======================
+   MODAL STOCK
+======================= */
+function openStockModal(id = null) {
+  currentStockId = id;
+  document.getElementById('stockModal').style.display = 'flex';
 }
 
-/* ================= RATE ================= */
-function openRateModal(id = null) {
-  currentRateId = id;
-  document.getElementById('rateModal').style.display = 'flex';
-
-  if (!id) {
-    r_from.value = '';
-    r_to.value = '';
-    r_rate.value = '';
-    return;
-  }
-
-  fetch('/rate/' + id)
-    .then(r => r.json())
-    .then(rate => {
-      r_from.value = rate.from || '';
-      r_to.value = rate.to || '';
-      r_rate.value = rate.rate || '';
-    });
+function closeStockModal() {
+  document.getElementById('stockModal').style.display = 'none';
+  currentStockId = null;
 }
 
+/* =======================
+   DEBUG (OPTIONNEL)
+======================= */
+// Décommente si tu veux tester les clics
+// document.body.addEventListener('click', e => console.log('CLICK:', e.target));
+</script>
 
-function closeRateModal(){
-  document.getElementById('rateModal').style.display = 'none';
-  currentRateId=null;
-}
-function saveRate(){
-  postData('/rate/new',{
-    _id:currentRateId,
-    from:r_from.value,
-    to:r_to.value,
-    rate:parseFloat(r_rate.value)
-  }).then(()=>location.reload());
-}
-function deleteRate(id){
-  if(confirm('Supprimer ?'))
-    postData('/rate/delete',{id}).then(()=>location.reload());
-}
-
-/* Export */
-function exportPDF(){window.open('/export/pdf','_blank');}
-function exportExcel(){window.open('/export/excel','_blank');}
 
 </script>
 </html>
