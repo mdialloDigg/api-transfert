@@ -303,7 +303,7 @@ ${p.suppression?`<button onclick="deleteStock('${s._id}')">❌</button>`:''}
 <th>Prénom</th>
 <th>Téléphone</th>
 <th>Email</th>
-<th><Lieu></th>
+<th>Lieu</th>
 <th>KYC</th>
 <th>Date création</th>
 <th>Actions</th>
