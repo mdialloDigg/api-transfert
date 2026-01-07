@@ -908,6 +908,20 @@ app.get('/client/:id', requireLogin, async (req, res) => {
 /* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
   try {
+
+    // ================= VALIDATION NUMÉRO DE TÉLÉPHONE =================
+    // ✅ Validation numéro téléphone
+    function isValidPhone(phone) {
+      if (!phone) return true; // autorise vide
+      const clean = phone.replace(/\s+/g, ''); // enlever espaces
+      if (!/^\d+$/.test(clean)) return false; // doit être que des chiffres
+
+      // Préfixes autorisés et longueur
+      if (clean.startsWith('00224') && clean.length === 14) return true; // Guinée
+      if (clean.startsWith('0033') && clean.length === 13) return true;  // France
+      return false;
+    }
+
     let stock;
 
     // ===== VALIDATION TELEPHONE STOCK =====
@@ -964,15 +978,19 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
   try {
+    // ================= VALIDATION NUMÉRO DE TÉLÉPHONE =================
+    // ✅ Validation numéro téléphone
     function isValidPhone(phone) {
-      if (!phone) return true;
-      const clean = phone.replace(/\s+/g, '');
-      if (!/^\d+$/.test(clean)) return false;
-      const prefixes = ['00224', '00336', '00337'];
-      const prefix = prefixes.find(p => clean.startsWith(p));
-      if (!prefix) return false;
-      return clean.length === prefix.length + 9;
+      if (!phone) return true; // autorise vide
+      const clean = phone.replace(/\s+/g, ''); // enlever espaces
+      if (!/^\d+$/.test(clean)) return false; // doit être que des chiffres
+
+      // Préfixes autorisés et longueur
+      if (clean.startsWith('00224') && clean.length === 14) return true; // Guinée
+      if (clean.startsWith('0033') && clean.length === 13) return true;  // France
+      return false;
     }
+
 
     if (!isValidPhone(req.body.phone)) {
       return res.status(400).json({ success:false, error:'Numéro client invalide' });
