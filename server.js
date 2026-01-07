@@ -303,7 +303,7 @@ ${p.suppression?`<button onclick="deleteStock('${s._id}')">❌</button>`:''}
 <th>Prénom</th>
 <th>Téléphone</th>
 <th>Email</th>
-<th><Location></th>
+<th><Lieu></th>
 <th>KYC</th>
 <th>Date création</th>
 <th>Actions</th>
@@ -314,7 +314,7 @@ ${clients.map(c=>`
 <td>${c.firstName}</td>
 <td>${c.phone}</td>
 <td>${c.email||'-'}</td>
-<td>${c.Location}</td>
+<td>${c.location || '-'}</td>
 <td>${c.kycVerified?'✅':'❌'}</td>
 <td>${new Date(c.createdAt).toLocaleString()}</td>
 <td>
@@ -612,17 +612,30 @@ function closeClientModal(){
   clientModal.style.display='none';
   currentClientId=null;
 }
+
 function saveClient(){
   postData('/client/new',{
-    _id:currentClientId,
-    firstName:c_firstName.value,
-    lastName:c_lastName.value,
-    phone:c_phone.value,
-    email:c_email.value,
-    location:c_location.value,
-    kycVerified:c_kyc.value==='true'
-  }).then(()=>location.reload());
+    _id: currentClientId,
+    firstName: c_firstName.value.trim(),
+    lastName: c_lastName.value.trim(),
+    phone: c_phone.value.trim(),
+    email: c_email.value.trim(),
+    location: c_location.value.trim(),
+    kycVerified: c_kyc.value === 'true'
+  })
+  .then(res=>{
+    if(!res.success){
+      alert(res.error || 'Erreur création client');
+      return;
+    }
+    location.reload();
+  })
+  .catch(err=>{
+    alert('Erreur réseau');
+    console.error(err);
+  });
 }
+
 function deleteClient(id){
   if(confirm('Supprimer ?'))
     postData('/client/delete',{id}).then(()=>location.reload());
