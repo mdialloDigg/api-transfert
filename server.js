@@ -456,28 +456,17 @@ function closeTransfertModal(){
 function isValidPhone(phone) {
   if (!phone) return false;
 
-  // Supprime les espaces
-  const clean = phone.split(' ').join('');
+  const clean = phone.replace(/\s+/g, '');
 
-  // Vérifie que ce sont uniquement des chiffres
   if (!/^\d+$/.test(clean)) return false;
 
-  // Préfixes autorisés
   const prefixes = ['00224', '00336', '00337'];
-
-  // Vérifie le préfixe
   const prefix = prefixes.find(p => clean.startsWith(p));
   if (!prefix) return false;
 
-  // Vérifie la longueur totale (préfixe + 9 chiffres)
   return clean.length === prefix.length + 9;
 }
 
-
-function closeStockModal(){
-  document.getElementById('stockModal').style.display='none';
-  currentStockId=null;
-}
 
 
 function saveTransfert(){
@@ -670,7 +659,15 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
-
+function isValidPhone(phone) {
+  if (!phone) return true; // autorise vide
+  const clean = phone.replace(/\s+/g, '');
+  if (!/^\d+$/.test(clean)) return false;
+  const prefixes = ['00224', '00336', '00337'];
+  const prefix = prefixes.find(p => clean.startsWith(p));
+  if (!prefix) return false;
+  return clean.length === prefix.length + 9;
+}
     if (data.senderPhone && !isValidPhone(data.senderPhone)) {
       return res.status(400).json({
         success: false,
@@ -863,6 +860,17 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
   try {
+
+function isValidPhone(phone) {
+  if (!phone) return true; // autorise vide
+  const clean = phone.replace(/\s+/g, '');
+  if (!/^\d+$/.test(clean)) return false;
+  const prefixes = ['00224', '00336', '00337'];
+  const prefix = prefixes.find(p => clean.startsWith(p));
+  if (!prefix) return false;
+  return clean.length === prefix.length + 9;
+}
+
     if (req.body.phone && !isValidPhone(req.body.phone)) {
       return res.status(400).json({
         success: false,
