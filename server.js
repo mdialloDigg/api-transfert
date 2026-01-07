@@ -453,6 +453,26 @@ function closeTransfertModal(){
   currentTransfertId=null;
 }
 
+function isValidPhone(phone) {
+  if (!phone) return false;
+
+  // Supprime les espaces
+  const clean = phone.split(' ').join('');
+
+  // Vérifie que ce sont uniquement des chiffres
+  if (!/^\d+$/.test(clean)) return false;
+
+  // Préfixes autorisés
+  const prefixes = ['00224', '00336', '00337'];
+
+  // Vérifie le préfixe
+  const prefix = prefixes.find(p => clean.startsWith(p));
+  if (!prefix) return false;
+
+  // Vérifie la longueur totale (préfixe + 9 chiffres)
+  return clean.length === prefix.length + 9;
+}
+
 
 function closeStockModal(){
   document.getElementById('stockModal').style.display='none';
@@ -650,6 +670,23 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
+
+    // ===== VALIDATION TELEPHONES =====
+    if (data.senderPhone && !isValidPhone(data.senderPhone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numéro expéditeur invalide'
+      });
+    }
+
+    if (data.receiverPhone && !isValidPhone(data.receiverPhone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numéro destinataire invalide'
+      });
+    }
+    // =================================
+
     if (data._id) {
       await Transfert.findByIdAndUpdate(data._id, data, { new: true });
     } else {
@@ -657,7 +694,9 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       data.userType = 'Client';
       await new Transfert(data).save();
     }
+
     res.json({ success: true });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
@@ -767,35 +806,48 @@ app.get('/client/:id', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un stock
 
 /* CREATE / UPDATE */
+/* CREATE / UPDATE */
 app.post('/stock/new', requireLogin, async (req, res) => {
   try {
     let stock;
 
+    // ===== VALIDATION TELEPHONE STOCK =====
+    if (req.body.phone && !isValidPhone(req.body.phone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numéro de téléphone du stock invalide'
+      });
+    }
+    // =====================================
+
     if (req.body._id) {
       // Modification du stock existant
-      stock = await StockHistory.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      stock = await StockHistory.findByIdAndUpdate(
+        req.body._id,
+        req.body,
+        { new: true }
+      );
+
       await StockHistory.create({
         action: 'MODIFICATION',
         stockId: stock._id,
         ...stock.toObject(),
       });
+
     } else {
       // Création d'un nouveau stock
       req.body.code = await generateUniqueCode();
       stock = await new StockHistory(req.body).save();
-      //await StockHistory.create({
-      //  action: 'CREATION',
-      //  stockId: stock._id,
-     //   ...stock.toObject(),
-     // });
     }
 
     res.json({ success: true });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
   }
 });
+
 
 
 // Supprimer un stock
@@ -813,11 +865,19 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
   try {
+    if (req.body.phone && !isValidPhone(req.body.phone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numéro de téléphone invalide'
+      });
+    }
+
     if (req.body._id) {
       await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
     } else {
       await new Client(req.body).save();
     }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
