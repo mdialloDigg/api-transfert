@@ -659,27 +659,23 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
-function isValidPhone(phone) {
-  if (!phone) return true; // autorise vide
-  const clean = phone.replace(/\s+/g, '');
-  if (!/^\d+$/.test(clean)) return false;
-  const prefixes = ['00224', '00336', '00337'];
-  const prefix = prefixes.find(p => clean.startsWith(p));
-  if (!prefix) return false;
-  return clean.length === prefix.length + 9;
-}
-    if (data.senderPhone && !isValidPhone(data.senderPhone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Numéro expéditeur invalide'
-      });
+
+    // Validation numéro téléphone
+    function isValidPhone(phone) {
+      if (!phone) return true; // autorise vide
+      const clean = phone.replace(/\s+/g, '');
+      if (!/^\d+$/.test(clean)) return false;
+      const prefixes = ['00224', '00336', '00337'];
+      const prefix = prefixes.find(p => clean.startsWith(p));
+      if (!prefix) return false;
+      return clean.length === prefix.length + 9;
     }
 
-    if (data.receiverPhone && !isValidPhone(data.receiverPhone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Numéro destinataire invalide'
-      });
+    if (!isValidPhone(data.senderPhone)) {
+      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
+    }
+    if (!isValidPhone(data.receiverPhone)) {
+      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
     }
 
     if (data._id) {
@@ -691,7 +687,6 @@ function isValidPhone(phone) {
     }
 
     res.json({ success: true });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: err.message });
@@ -860,22 +855,18 @@ app.post('/stock/delete', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un client
 app.post('/client/new', requireLogin, async (req, res) => {
   try {
+    function isValidPhone(phone) {
+      if (!phone) return true;
+      const clean = phone.replace(/\s+/g, '');
+      if (!/^\d+$/.test(clean)) return false;
+      const prefixes = ['00224', '00336', '00337'];
+      const prefix = prefixes.find(p => clean.startsWith(p));
+      if (!prefix) return false;
+      return clean.length === prefix.length + 9;
+    }
 
-function isValidPhone(phone) {
-  if (!phone) return true; // autorise vide
-  const clean = phone.replace(/\s+/g, '');
-  if (!/^\d+$/.test(clean)) return false;
-  const prefixes = ['00224', '00336', '00337'];
-  const prefix = prefixes.find(p => clean.startsWith(p));
-  if (!prefix) return false;
-  return clean.length === prefix.length + 9;
-}
-
-    if (req.body.phone && !isValidPhone(req.body.phone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Numéro de téléphone client invalide'
-      });
+    if (!isValidPhone(req.body.phone)) {
+      return res.status(400).json({ success:false, error:'Numéro client invalide' });
     }
 
     if (req.body._id) {
@@ -885,10 +876,9 @@ function isValidPhone(phone) {
     }
 
     res.json({ success: true });
-
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success:false, error: err.message });
   }
 });
 
