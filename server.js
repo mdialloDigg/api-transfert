@@ -519,18 +519,16 @@ function findClient(){
 }
 
 
+
 function isValidPhone(phone) {
-  if (!phone) return false;
+  if (!phone) return true; // autorise vide
+  const clean = phone.replace(/\s+/g, ''); // retirer espaces
+  if (!/^\d+$/.test(clean)) return false; // doit être que des chiffres
 
-  const clean = phone.replace(/\s+/g, '');
-
-  if (!/^\d+$/.test(clean)) return false;
-
-  const prefixes = ['00224', '0033', '0033'];
-  const prefix = prefixes.find(p => clean.startsWith(p));
-  if (!prefix) return false;
-
-  return clean.length === prefix.length + 9;
+  // Vérifie les préfixes et longueur
+  if (clean.startsWith('00224') && clean.length === 14) return true;  // 00224 + 9 chiffres
+  if (clean.startsWith('0033') && clean.length === 13) return true;   // 0033 + 9 chiffres
+  return false;
 }
 
 
@@ -744,15 +742,18 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
     const data = req.body;
 
     // ================= VALIDATION NUMÉRO DE TÉLÉPHONE =================
+    // ✅ Validation numéro téléphone
     function isValidPhone(phone) {
       if (!phone) return true; // autorise vide
-      const clean = phone.replace(/\s+/g, '');
-      if (!/^\d+$/.test(clean)) return false;
-      const prefixes = ['00224', '00336', '00337'];
-      const prefix = prefixes.find(p => clean.startsWith(p));
-      if (!prefix) return false;
-      return clean.length === prefix.length + 9;
+      const clean = phone.replace(/\s+/g, ''); // enlever espaces
+      if (!/^\d+$/.test(clean)) return false; // doit être que des chiffres
+
+      // Préfixes autorisés et longueur
+      if (clean.startsWith('00224') && clean.length === 14) return true; // Guinée
+      if (clean.startsWith('0033') && clean.length === 13) return true;  // France
+      return false;
     }
+
 
     if (!isValidPhone(data.senderPhone)) {
       return res.status(400).json({ success: false, error: 'Numéro expéditeur invalide' });
