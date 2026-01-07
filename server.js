@@ -671,7 +671,6 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
 
-    // ===== VALIDATION TELEPHONES =====
     if (data.senderPhone && !isValidPhone(data.senderPhone)) {
       return res.status(400).json({
         success: false,
@@ -685,10 +684,9 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
         error: 'Numéro destinataire invalide'
       });
     }
-    // =================================
 
     if (data._id) {
-      await Transfert.findByIdAndUpdate(data._id, data, { new: true });
+      await Transfert.findByIdAndUpdate(data._id, data);
     } else {
       data.code = await generateUniqueCode();
       data.userType = 'Client';
@@ -699,7 +697,7 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -868,20 +866,21 @@ app.post('/client/new', requireLogin, async (req, res) => {
     if (req.body.phone && !isValidPhone(req.body.phone)) {
       return res.status(400).json({
         success: false,
-        error: 'Numéro de téléphone invalide'
+        error: 'Numéro de téléphone client invalide'
       });
     }
 
     if (req.body._id) {
-      await Client.findByIdAndUpdate(req.body._id, req.body, { new: true });
+      await Client.findByIdAndUpdate(req.body._id, req.body);
     } else {
       await new Client(req.body).save();
     }
 
     res.json({ success: true });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
