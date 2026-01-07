@@ -79,6 +79,7 @@ const clientSchema = new mongoose.Schema({
   lastName:String,
   phone:String,
   email:String,
+  location:String,
   kycVerified:{type:Boolean,default:false},
   createdAt:{type:Date,default:Date.now}
 });
@@ -189,6 +190,11 @@ input,select{width:100%;padding:6px;margin-bottom:10px;}
 <body>
 
 <h2>📊 Dashboard</h2>
+<h3>🔎 Rechercher client destinataire</h3>
+<input id="searchPhone" placeholder="Téléphone du client">
+<button onclick="findClient()">Trouver</button>
+<p id="clientResult"></p>
+
 <a href="/logout">🚪 Déconnexion</a>
 <button onclick="exportPDF()">📄 Export PDF</button>
 <button onclick="exportExcel()">📊 Export Excel</button>
@@ -297,6 +303,7 @@ ${p.suppression?`<button onclick="deleteStock('${s._id}')">❌</button>`:''}
 <th>Prénom</th>
 <th>Téléphone</th>
 <th>Email</th>
+<th>Lieu</th>
 <th>KYC</th>
 <th>Date création</th>
 <th>Actions</th>
@@ -307,6 +314,7 @@ ${clients.map(c=>`
 <td>${c.firstName}</td>
 <td>${c.phone}</td>
 <td>${c.email||'-'}</td>
+<td>${c.location || '-'}</td>
 <td>${c.kycVerified?'✅':'❌'}</td>
 <td>${new Date(c.createdAt).toLocaleString()}</td>
 <td>
@@ -383,6 +391,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <input id="c_lastName" placeholder="Nom">
 <input id="c_phone" placeholder="Téléphone">
 <input id="c_email" placeholder="Email">
+<input id="c_location" placeholder="Lieu / Ville">
 <select id="c_kyc"><option value="false">Non</option><option value="true">Oui</option></select>
 <button onclick="saveClient()">Enregistrer</button>
 <button onclick="closeClientModal()">Fermer</button>
@@ -399,6 +408,7 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 </div></div>
 
 <script>
+const connectedUser = "${req.session.user.username}";
 let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
 
 function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
@@ -420,7 +430,7 @@ function openTransfertModal(id = null) {
     t_code.value = '';
     t_origin.value = '';
     t_sender.value = '';
-    t_senderPhone.value = '';
+    t_sender.value = connectedUser; // ✅ ICI
     t_destination.value = '';
     t_receiver.value = '';
     t_receiverPhone.value = '';
@@ -452,6 +462,33 @@ function closeTransfertModal(){
   document.getElementById('transfertModal').style.display='none';
   currentTransfertId=null;
 }
+
+function findClient(){
+  const phone = document.getElementById('searchPhone').value;
+  if(!phone) return alert('Entrez un numéro');
+
+  fetch('/client/by-phone/' + phone)
+    .then(r=>r.json())
+    .then(data=>{
+      if(!data.found){
+        clientResult.innerText = '❌ Client introuvable';
+        return;
+      }
+
+      clientResult.innerText = '✅ Client trouvé';
+
+      // OUVRIR NOUVEAU TRANSFERT
+      openTransfertModal();
+
+      // PRÉ-REMPLIR DESTINATAIRE
+      t_receiver.value = data.client.firstName + ' ' + data.client.lastName;
+      t_receiverPhone.value = data.client.phone;
+
+      // OPTIONNEL : destination = lieu du client
+      t_destination.value = data.client.location || '';
+    });
+}
+
 
 function isValidPhone(phone) {
   if (!phone) return false;
@@ -554,6 +591,7 @@ function openClientModal(id = null) {
     c_lastName.value = '';
     c_phone.value = '';
     c_email.value = '';
+    c_location.value = '';
     c_kyc.value = 'false';
     return;
   }
@@ -565,6 +603,7 @@ function openClientModal(id = null) {
       c_lastName.value = c.lastName || '';
       c_phone.value = c.phone || '';
       c_email.value = c.email || '';
+      c_location.value = c.location || '';
       c_kyc.value = c.kycVerified ? 'true' : 'false';
     });
 }
@@ -573,16 +612,30 @@ function closeClientModal(){
   clientModal.style.display='none';
   currentClientId=null;
 }
+
 function saveClient(){
   postData('/client/new',{
-    _id:currentClientId,
-    firstName:c_firstName.value,
-    lastName:c_lastName.value,
-    phone:c_phone.value,
-    email:c_email.value,
-    kycVerified:c_kyc.value==='true'
-  }).then(()=>location.reload());
+    _id: currentClientId,
+    firstName: c_firstName.value.trim(),
+    lastName: c_lastName.value.trim(),
+    phone: c_phone.value.trim(),
+    email: c_email.value.trim(),
+    location: c_location.value.trim(),
+    kycVerified: c_kyc.value === 'true'
+  })
+  .then(res=>{
+    if(!res.success){
+      alert(res.error || 'Erreur création client');
+      return;
+    }
+    location.reload();
+  })
+  .catch(err=>{
+    alert('Erreur réseau');
+    console.error(err);
+  });
 }
+
 function deleteClient(id){
   if(confirm('Supprimer ?'))
     postData('/client/delete',{id}).then(()=>location.reload());
@@ -961,6 +1014,12 @@ app.get('/transfert/print/:id', requireLogin, async (req, res) => {
     console.error('Erreur impression transfert:', err);
     res.status(500).send('Erreur serveur');
   }
+});
+
+app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
+  const client = await Client.findOne({ phone: req.params.phone });
+  if(!client) return res.json({ found:false });
+  res.json({ found:true, client });
 });
 
 

@@ -5,6 +5,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
+const twilio = require('twilio');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -119,6 +120,34 @@ function setPermissions(username){
   if(username==='admin2'){return {lecture:true,ecriture:true,retrait:false,modification:true,suppression:true,imprimer:true};}
   return {lecture:true,ecriture:true,retrait:true,modification:true,suppression:true,imprimer:true};
 }
+
+// ================= SMS (TWILIO) =================
+const smsClient = twilio(
+  process.env.TWILIO_SID,
+  process.env.TWILIO_TOKEN
+);
+
+function normalizePhone(phone) {
+  if (!phone) return null;
+  let p = phone.replace(/\s+/g, '');
+  if (p.startsWith('00')) p = '+' + p.substring(2);
+  if (!p.startsWith('+')) p = '+' + p;
+  return p;
+}
+
+async function sendSMS(to, message) {
+  try {
+    if (!to) return;
+    await smsClient.messages.create({
+      from: process.env.TWILIO_PHONE,
+      to: normalizePhone(to),
+      body: message
+    });
+  } catch (err) {
+    console.error('❌ ERREUR SMS:', err.message);
+  }
+}
+
 
 // ================= LOGIN =================
 app.get('/login',(req,res)=>{
@@ -709,11 +738,12 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 });
 
 // Créer ou mettre à jour un transfert
+// ================= CRUD TRANSFERT AVEC SMS =================
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validation numéro téléphone
+    // ================= VALIDATION NUMÉRO DE TÉLÉPHONE =================
     function isValidPhone(phone) {
       if (!phone) return true; // autorise vide
       const clean = phone.replace(/\s+/g, '');
@@ -725,21 +755,46 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
     }
 
     if (!isValidPhone(data.senderPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
+      return res.status(400).json({ success: false, error: 'Numéro expéditeur invalide' });
     }
     if (!isValidPhone(data.receiverPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
+      return res.status(400).json({ success: false, error: 'Numéro destinataire invalide' });
     }
 
+    let transfert;
+
+    // ================= MISE À JOUR =================
     if (data._id) {
-      await Transfert.findByIdAndUpdate(data._id, data);
+      transfert = await Transfert.findByIdAndUpdate(data._id, data, { new: true });
     } else {
+      // ================= CRÉATION =================
       data.code = await generateUniqueCode();
       data.userType = 'Client';
-      await new Transfert(data).save();
+      transfert = await new Transfert(data).save();
+
+      // ================= ENVOI SMS DESTINATAIRE =================
+      const smsDest = `
+TRANSFERT REÇU
+Montant : ${data.amount - data.fees} ${data.currency}
+Expéditeur : ${data.senderFirstName}
+Code : ${data.code}
+`;
+      await sendSMS(data.receiverPhone, smsDest);
+
+      // ================= ENVOI SMS EXPÉDITEUR (OPTIONNEL) =================
+      if (data.senderPhone) {
+        const smsSender = `
+Votre transfert ${data.code}
+Montant : ${data.amount} ${data.currency}
+Destinataire : ${data.receiverFirstName}
+a été créé avec succès.
+`;
+        await sendSMS(data.senderPhone, smsSender);
+      }
     }
 
-    res.json({ success: true });
+    res.json({ success: true, transfert });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: err.message });
