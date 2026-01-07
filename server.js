@@ -460,7 +460,7 @@ function isValidPhone(phone) {
 
   if (!/^\d+$/.test(clean)) return false;
 
-  const prefixes = ['00224', '00336', '00337'];
+  const prefixes = ['00224', '0033', '0033'];
   const prefix = prefixes.find(p => clean.startsWith(p));
   if (!prefix) return false;
 
