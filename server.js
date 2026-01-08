@@ -254,7 +254,6 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
-
   const shipments = await Shipment.find().sort({ createdAt: -1 });
 
 
@@ -562,6 +561,23 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 
 
 <script>
+
+// ================= SHIPMENT DOM =================
+const sh_sender = document.getElementById('sh_sender');
+const sh_senderPhone = document.getElementById('sh_senderPhone');
+const sh_senderAddress = document.getElementById('sh_senderAddress');
+
+const sh_receiver = document.getElementById('sh_receiver');
+const sh_receiverPhone = document.getElementById('sh_receiverPhone');
+const sh_receiverAddress = document.getElementById('sh_receiverAddress');
+
+const sh_origin = document.getElementById('sh_origin');
+const sh_destination = document.getElementById('sh_destination');
+const sh_weight = document.getElementById('sh_weight');
+const sh_price = document.getElementById('sh_price');
+const sh_description = document.getElementById('sh_description');
+
+
 const connectedUser = "${req.session.user.username}";
 let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
 
