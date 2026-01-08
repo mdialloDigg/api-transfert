@@ -889,50 +889,6 @@ async function saveShipmentStatus() {
   }
 }
 
-let currentShipmentId = null;
-
-// Ouvrir le modal avec le statut actuel
-function openShipmentStatus(id) {
-  currentShipmentId = id;
-  document.getElementById('shipmentStatusModal').style.display = 'flex';
-
-  // Préremplir le select avec le statut actuel
-  fetch('/shipment/' + id)
-    .then(r => r.json())
-    .then(s => {
-      document.getElementById('sh_status').value = s.status;
-    })
-    .catch(err => console.error(err));
-}
-
-// Fermer le modal
-function closeShipmentStatusModal() {
-  document.getElementById('shipmentStatusModal').style.display = 'none';
-  currentShipmentId = null;
-}
-
-// Enregistrer le nouveau statut
-async function saveShipmentStatus() {
-  try {
-    const status = document.getElementById('sh_status').value;
-
-    const res = await fetch('/shipment/status', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id: currentShipmentId, status })
-    });
-
-    const result = await res.json();
-    if (!result.success) return alert(result.error || 'Erreur lors de l\'enregistrement');
-
-    closeShipmentStatusModal();
-    location.reload();
-  } catch (err) {
-    console.error(err);
-    alert('Erreur réseau');
-  }
-}
-
 
 /* ================= RATE ================= */
 function openRateModal(id = null) {
@@ -1444,42 +1400,6 @@ app.post('/shipment/status', requireLogin, async (req,res)=>{
 
     shipment.status = status;
     shipment.history.push({ status, date: new Date(), location: shipment.destination || '', agent: req.session.user.username });
-    await shipment.save();
-
-    res.json({ success:true });
-  } catch(err){
-    console.error(err);
-    res.status(500).json({ success:false, error: err.message });
-  }
-});
-
-// Obtenir un colis par ID (pour préremplissage)
-app.get('/shipment/:id', requireLogin, async (req, res) => {
-  try {
-    const shipment = await Shipment.findById(req.params.id);
-    if (!shipment) return res.status(404).json({ error: 'Colis introuvable' });
-    res.json(shipment);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Mettre à jour le statut
-app.post('/shipment/status', requireLogin, async (req,res)=>{
-  try {
-    const { id, status } = req.body;
-    const shipment = await Shipment.findById(id);
-    if(!shipment) return res.status(404).json({ success:false, error:'Colis introuvable' });
-
-    // Ajouter au log historique
-    shipment.status = status;
-    shipment.history.push({
-      status,
-      date: new Date(),
-      location: shipment.destination || '',
-      agent: req.session.user.username
-    });
     await shipment.save();
 
     res.json({ success:true });
