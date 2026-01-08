@@ -94,6 +94,64 @@ const rateSchema = new mongoose.Schema({
 });
 const Rate = mongoose.model('Rate',rateSchema);
 
+// ================= LOGISTIQUE / COLIS =================
+const shipmentSchema = new mongoose.Schema({
+  code: { type: String, unique: true },
+
+  senderName: String,
+  senderPhone: String,
+  senderAddress: String,
+
+  receiverName: String,
+  receiverPhone: String,
+  receiverAddress: String,
+
+  origin: String,
+  destination: String,
+
+  weight: Number,
+  description: String,
+  value: Number,
+
+  price: Number,
+
+  status: {
+    type: String,
+    enum: [
+      'CREÉ',
+      'EN TRANSIT',
+      'ARRIVÉ',
+      'EN LIVRAISON',
+      'LIVRÉ',
+      'ANNULÉ'
+    ],
+    default: 'CREÉ'
+  },
+
+  history: [{
+    status: String,
+    location: String,
+    date: { type: Date, default: Date.now },
+    agent: String
+  }],
+
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Shipment = mongoose.model('Shipment', shipmentSchema);
+
+// ================= TARIFS LOGISTIQUE =================
+const shippingRateSchema = new mongoose.Schema({
+  origin: String,
+  destination: String,
+  pricePerKg: Number,   // prix par kilo
+  minPrice: Number,     // prix minimum
+  createdAt: { type: Date, default: Date.now }
+});
+
+const ShippingRate = mongoose.model('ShippingRate', shippingRateSchema);
+
+
 const authSchema = new mongoose.Schema({
   username:String,
   password:String,
@@ -196,6 +254,9 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
+
+  const shipments = await Shipment.find().sort({ createdAt: -1 });
+
 
   // === HTML complet avec toutes les colonnes et modals ===
   // [INSÉRER ICI LE BLOC HTML/JS DE MON MESSAGE PRÉCÉDENT]
@@ -354,6 +415,45 @@ ${p.suppression?`<button onclick="deleteClient('${c._id}')">❌</button>`:''}
 `).join('')}
 </table>
 
+<!-- ================== LOGISTIQUE ================== -->
+<h3>📦 Logistique / Colis</h3>
+<button onclick="openShipmentModal()">➕ Nouveau Colis</button>
+
+<table>
+<tr>
+  <th>Code</th>
+  <th>Expéditeur</th>
+  <th>Destinataire</th>
+  <th>Origine</th>
+  <th>Destination</th>
+  <th>Poids</th>
+  <th>Prix</th>
+  <th>Statut</th>
+  <th>Date</th>
+  <th>Actions</th>
+</tr>
+
+${shipments.map(s => `
+<tr>
+  <td>${s.code}</td>
+  <td>${s.senderName}</td>
+  <td>${s.receiverName}</td>
+  <td>${s.origin}</td>
+  <td>${s.destination}</td>
+  <td>${s.weight || '-'} kg</td>
+  <td>${s.price || '-'} GNF</td>
+  <td>${s.status}</td>
+  <td>${new Date(s.createdAt).toLocaleString()}</td>
+  <td>
+  <button onclick="openShipmentStatus('${s._id}')">🔄 Statut</button>
+  <button onclick="window.open('/track/${s.code}','_blank')">📍 Suivi</button>
+  <button onclick="window.open('/shipment/print/${s._id}','_blank')">🖨</button>
+  </td>
+
+</tr>
+`).join('')}
+</table>
+
 <!-- ================== RATES ================== -->
 <h3>Taux de Change</h3>
 <button onclick="openRateModal()">➕ Nouveau Taux</button>
@@ -436,9 +536,90 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <button onclick="closeRateModal()">Fermer</button>
 </div></div>
 
+<div id="shipmentModal" class="modal">
+<div class="modal-content">
+<h3>Nouveau Colis</h3>
+
+<input id="sh_sender" placeholder="Nom expéditeur">
+<input id="sh_senderPhone" placeholder="Téléphone expéditeur">
+<input id="sh_senderAddress" placeholder="Adresse expéditeur">
+
+<input id="sh_receiver" placeholder="Nom destinataire">
+<input id="sh_receiverPhone" placeholder="Téléphone destinataire">
+<input id="sh_receiverAddress" placeholder="Adresse destinataire">
+
+<input id="sh_origin" placeholder="Origine">
+<input id="sh_destination" placeholder="Destination">
+<input id="sh_weight" type="number" placeholder="Poids (kg)">
+<input id="sh_price" readonly placeholder="Prix automatique">
+
+<input id="sh_description" placeholder="Description">
+
+<button onclick="saveShipment()">Enregistrer</button>
+<button onclick="closeShipmentModal()">Fermer</button>
+</div>
+</div>
+
+
 <script>
 const connectedUser = "${req.session.user.username}";
 let currentTransfertId=null,currentStockId=null,currentClientId=null,currentRateId=null;
+
+let currentShipmentId = null;
+
+function calculateShipmentPrice(){
+  if(!sh_origin.value || !sh_destination.value || !sh_weight.value) return;
+
+  postData('/shipment/calculate-price',{
+    origin: sh_origin.value,
+    destination: sh_destination.value,
+    weight: parseFloat(sh_weight.value)
+  }).then(res=>{
+    if(res.success){
+      sh_price.value = res.price;
+    }else{
+      sh_price.value = 'Tarif non défini';
+    }
+  });
+}
+
+sh_weight.onchange = calculateShipmentPrice;
+sh_destination.onchange = calculateShipmentPrice;
+
+function openShipmentModal(){
+  shipmentModal.style.display = 'flex';
+}
+function closeShipmentModal(){
+  shipmentModal.style.display = 'none';
+}
+
+function saveShipment(){
+  postData('/shipment/new',{
+    senderName: sh_sender.value,
+    senderPhone: sh_senderPhone.value,
+    senderAddress: sh_senderAddress.value,
+    receiverName: sh_receiver.value,
+    receiverPhone: sh_receiverPhone.value,
+    receiverAddress: sh_receiverAddress.value,
+    origin: sh_origin.value,
+    destination: sh_destination.value,
+    weight: sh_weight.value,
+    price: sh_price.value
+    description: sh_description.value
+  }).then(()=>location.reload());
+}
+
+function openShipmentStatus(id){
+  const status = prompt(
+    'Nouveau statut:\nCREÉ\nEN TRANSIT\nARRIVÉ\nEN LIVRAISON\nLIVRÉ\nANNULÉ'
+  );
+  const location = prompt('Lieu actuel :');
+  if(!status || !location) return;
+
+  postData('/shipment/status',{ id, status, location })
+    .then(()=>location.reload());
+}
+
 
 function postData(url,data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
 
@@ -1096,6 +1277,171 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
   res.json({ found:true, client });
 });
 
+// ================= CRÉER COLIS =================
+app.post('/shipment/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+
+    data.code = await generateUniqueCode();
+    data.status = 'CREÉ';
+
+    data.history = [{
+      status: 'CREÉ',
+      location: data.origin,
+      agent: req.session.user.username
+    }];
+
+    const shipment = await new Shipment(data).save();
+
+    // SMS DESTINATAIRE
+    await sendSMS(
+      data.receiverPhone,
+      `📦 COLIS ENREGISTRÉ
+Code : ${data.code}
+Origine : ${data.origin}
+Destination : ${data.destination}`
+    );
+
+    res.json({ success: true, shipment });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// ================= MAJ STATUT COLIS =================
+app.post('/shipment/status', requireLogin, async (req, res) => {
+  try {
+    const { id, status, location } = req.body;
+
+    const shipment = await Shipment.findById(id);
+    if (!shipment) {
+      return res.status(404).json({ error: 'Colis introuvable' });
+    }
+
+    shipment.status = status;
+    shipment.history.push({
+      status,
+      location,
+      agent: req.session.user.username
+    });
+
+    await shipment.save();
+
+    // SMS AUTOMATIQUE
+    await sendSMS(
+      shipment.receiverPhone,
+      `📦 COLIS ${shipment.code}
+Statut : ${status}
+Lieu : ${location}`
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// ================= TRACKING PUBLIC =================
+app.get('/track/:code', async (req, res) => {
+  const shipment = await Shipment.findOne({ code: req.params.code });
+  if (!shipment) return res.send('❌ Colis introuvable');
+
+  res.send(`
+    <h2>📦 Suivi Colis ${shipment.code}</h2>
+    <p><b>Statut :</b> ${shipment.status}</p>
+    <ul>
+      ${shipment.history.map(h => `
+        <li>${new Date(h.date).toLocaleString()} — ${h.status} (${h.location})</li>
+      `).join('')}
+    </ul>
+  `);
+});
+
+// ================= IMPRIMER COLIS =================
+app.get('/shipment/print/:id', requireLogin, async (req, res) => {
+  try {
+    const s = await Shipment.findById(req.params.id);
+    if (!s) return res.status(404).send('Colis introuvable');
+
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Bon d'expédition ${s.code}</title>
+        <style>
+          body { font-family: Arial; margin: 20px; }
+          h2 { color: #ff8c42; }
+          .box { border: 1px solid #333; padding: 15px; margin-bottom: 15px; }
+          p { margin: 4px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>📦 Bon d'expédition</h2>
+
+        <div class="box">
+          <p><b>Code colis :</b> ${s.code}</p>
+          <p><b>Date :</b> ${new Date(s.createdAt).toLocaleString()}</p>
+          <p><b>Statut :</b> ${s.status}</p>
+        </div>
+
+        <div class="box">
+          <h3>Expéditeur</h3>
+          <p>${s.senderName}</p>
+          <p>📞 ${s.senderPhone || '-'}</p>
+          <p>${s.senderAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <h3>Destinataire</h3>
+          <p>${s.receiverName}</p>
+          <p>📞 ${s.receiverPhone || '-'}</p>
+          <p>${s.receiverAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Origine :</b> ${s.origin}</p>
+          <p><b>Destination :</b> ${s.destination}</p>
+          <p><b>Poids :</b> ${s.weight || '-'} kg</p>
+          <p><b>Description :</b> ${s.description || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Signature agent :</b> ____________________</p>
+          <br>
+          <p><b>Signature client :</b> ____________________</p>
+        </div>
+
+        <script>
+          window.onload = () => window.print();
+        </script>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+// ================= CALCUL TARIF =================
+app.post('/shipment/calculate-price', requireLogin, async (req, res) => {
+  const { origin, destination, weight } = req.body;
+
+  const rate = await ShippingRate.findOne({ origin, destination });
+  if (!rate) {
+    return res.json({ success: false, error: 'Tarif non défini' });
+  }
+
+  const price = Math.max(rate.minPrice, weight * rate.pricePerKg);
+
+  res.json({ success: true, price });
+});
 
 
 // ================= EXPORT =================
