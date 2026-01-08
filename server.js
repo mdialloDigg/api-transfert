@@ -516,6 +516,22 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 </div>
 </div>
 
+<div id="shipmentStatusModal" class="modal">
+  <div class="modal-content">
+    <h3>Modifier le statut du colis</h3>
+    <select id="sh_status">
+      <option value="CREÉ">CREÉ</option>
+      <option value="EN TRANSIT">EN TRANSIT</option>
+      <option value="ARRIVÉ">ARRIVÉ</option>
+      <option value="EN LIVRAISON">EN LIVRAISON</option>
+      <option value="LIVRÉ">LIVRÉ</option>
+      <option value="ANNULÉ">ANNULÉ</option>
+    </select>
+    <button onclick="saveShipmentStatus()">Enregistrer</button>
+    <button onclick="closeShipmentStatusModal()">Fermer</button>
+  </div>
+</div>
+
 
 <div id="rateModal" class="modal">
 <div class="modal-content">
@@ -820,6 +836,35 @@ async function saveShipment() {
     }
 
     alert('Colis enregistré !');
+    location.reload();
+  } catch (err) {
+    console.error(err);
+    alert('Erreur réseau');
+  }
+}
+
+let currentShipmentId = null;
+
+function openShipmentStatus(id) {
+  currentShipmentId = id;
+  document.getElementById('shipmentStatusModal').style.display = 'flex';
+}
+
+function closeShipmentStatusModal() {
+  document.getElementById('shipmentStatusModal').style.display = 'none';
+  currentShipmentId = null;
+}
+
+async function saveShipmentStatus() {
+  try {
+    const status = document.getElementById('sh_status').value;
+    const res = await fetch('/shipment/status', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id: currentShipmentId, status })
+    });
+    const result = await res.json();
+    if (!result.success) return alert(result.error || 'Erreur');
     location.reload();
   } catch (err) {
     console.error(err);
@@ -1326,6 +1371,23 @@ app.post('/shipment/new', requireLogin, async (req, res) => {
     res.json({ success: true, shipment });
   } catch (err) {
     console.error('Erreur création colis:', err);
+    res.status(500).json({ success:false, error: err.message });
+  }
+});
+
+app.post('/shipment/status', requireLogin, async (req,res)=>{
+  try {
+    const { id, status } = req.body;
+    const shipment = await Shipment.findById(id);
+    if(!shipment) return res.status(404).json({ success:false, error:'Colis introuvable' });
+
+    shipment.status = status;
+    shipment.history.push({ status, date: new Date(), location: shipment.destination || '', agent: req.session.user.username });
+    await shipment.save();
+
+    res.json({ success:true });
+  } catch(err){
+    console.error(err);
     res.status(500).json({ success:false, error: err.message });
   }
 });
