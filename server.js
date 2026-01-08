@@ -1175,6 +1175,158 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
 });
 
 
+// ================= CRÉER COLIS =================
+app.post('/shipment/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+
+    data.code = await generateUniqueCode();
+    data.status = 'CREÉ';
+
+    data.history = [{
+      status: 'CREÉ',
+      location: data.origin,
+      agent: req.session.user.username
+    }];
+
+    const shipment = await new Shipment(data).save();
+
+    // SMS DESTINATAIRE
+    await sendSMS(
+      data.receiverPhone,
+      `📦 COLIS ENREGISTRÉ
+Code : ${data.code}
+Origine : ${data.origin}
+Destination : ${data.destination}`
+    );
+
+    res.json({ success: true, shipment });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// ================= MAJ STATUT COLIS =================
+app.post('/shipment/status', requireLogin, async (req, res) => {
+  try {
+    const { id, status, location } = req.body;
+
+    const shipment = await Shipment.findById(id);
+    if (!shipment) {
+      return res.status(404).json({ error: 'Colis introuvable' });
+    }
+
+    shipment.status = status;
+    shipment.history.push({
+      status,
+      location,
+      agent: req.session.user.username
+    });
+
+    await shipment.save();
+
+    // SMS AUTOMATIQUE
+    await sendSMS(
+      shipment.receiverPhone,
+      `📦 COLIS ${shipment.code}
+Statut : ${status}
+Lieu : ${location}`
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// ================= TRACKING PUBLIC =================
+app.get('/track/:code', async (req, res) => {
+  const shipment = await Shipment.findOne({ code: req.params.code });
+  if (!shipment) return res.send('❌ Colis introuvable');
+
+  res.send(`
+    <h2>📦 Suivi Colis ${shipment.code}</h2>
+    <p><b>Statut :</b> ${shipment.status}</p>
+    <ul>
+      ${shipment.history.map(h => `
+        <li>${new Date(h.date).toLocaleString()} — ${h.status} (${h.location})</li>
+      `).join('')}
+    </ul>
+  `);
+});
+
+// ================= IMPRIMER COLIS =================
+app.get('/shipment/print/:id', requireLogin, async (req, res) => {
+  try {
+    const s = await Shipment.findById(req.params.id);
+    if (!s) return res.status(404).send('Colis introuvable');
+
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Bon d'expédition ${s.code}</title>
+        <style>
+          body { font-family: Arial; margin: 20px; }
+          h2 { color: #ff8c42; }
+          .box { border: 1px solid #333; padding: 15px; margin-bottom: 15px; }
+          p { margin: 4px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>📦 Bon d'expédition</h2>
+
+        <div class="box">
+          <p><b>Code colis :</b> ${s.code}</p>
+          <p><b>Date :</b> ${new Date(s.createdAt).toLocaleString()}</p>
+          <p><b>Statut :</b> ${s.status}</p>
+        </div>
+
+        <div class="box">
+          <h3>Expéditeur</h3>
+          <p>${s.senderName}</p>
+          <p>📞 ${s.senderPhone || '-'}</p>
+          <p>${s.senderAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <h3>Destinataire</h3>
+          <p>${s.receiverName}</p>
+          <p>📞 ${s.receiverPhone || '-'}</p>
+          <p>${s.receiverAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Origine :</b> ${s.origin}</p>
+          <p><b>Destination :</b> ${s.destination}</p>
+          <p><b>Poids :</b> ${s.weight || '-'} kg</p>
+          <p><b>Description :</b> ${s.description || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Signature agent :</b> ____________________</p>
+          <br>
+          <p><b>Signature client :</b> ____________________</p>
+        </div>
+
+        <script>
+          window.onload = () => window.print();
+        </script>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
 
 // ================= EXPORT =================
 app.get('/export/pdf',requireLogin,async(req,res)=>{const doc=new PDFDocument();res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','inline; filename=export.pdf');doc.text('Liste des transferts\n\n');const transferts=await Transfert.find().sort({createdAt:-1});transferts.forEach(t=>doc.text(`Code: ${t.code} - Exp: ${t.senderFirstName} - Dest: ${t.receiverFirstName} - Montant: ${t.amount} ${t.currency}`));doc.pipe(res);doc.end();});
