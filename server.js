@@ -384,6 +384,46 @@ ${p.suppression?`<button onclick="deleteClient('${c._id}')">❌</button>`:''}
 `).join('')}
 </table>
 
+
+<!-- ================== LOGISTIQUE ================== -->
+<h3>📦 Logistique / Colis</h3>
+<button onclick="openShipmentModal()">➕ Nouveau Colis</button>
+
+<table>
+<tr>
+  <th>Code</th>
+  <th>Expéditeur</th>
+  <th>Destinataire</th>
+  <th>Origine</th>
+  <th>Destination</th>
+  <th>Poids</th>
+  <th>Prix</th>
+  <th>Statut</th>
+  <th>Date</th>
+  <th>Actions</th>
+</tr>
+
+${shipments.map(s => `
+<tr>
+  <td>${s.code}</td>
+  <td>${s.senderName}</td>
+  <td>${s.receiverName}</td>
+  <td>${s.origin}</td>
+  <td>${s.destination}</td>
+  <td>${s.weight || '-'} kg</td>
+  <td>${s.price || '-'} GNF</td>
+  <td>${s.status}</td>
+  <td>${new Date(s.createdAt).toLocaleString()}</td>
+  <td>
+  <button onclick="openShipmentStatus('${s._id}')">🔄 Statut</button>
+  <button onclick="window.open('/track/${s.code}','_blank')">📍 Suivi</button>
+  <button onclick="window.open('/shipment/print/${s._id}','_blank')">🖨</button>
+  </td>
+
+</tr>
+`).join('')}
+</table>
+
 <!-- ================== RATES ================== -->
 <h3>Taux de Change</h3>
 <button onclick="openRateModal()">➕ Nouveau Taux</button>
