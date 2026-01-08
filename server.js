@@ -763,66 +763,6 @@ function deleteClient(id){
 
 
 /*=================Logistique===============*/
-let currentShipmentId = null;
-
-function calculateShipmentPrice(){
-  if(!sh_origin.value || !sh_destination.value || !sh_weight.value) return;
-
-  postData('/shipment/calculate-price',{
-    origin: sh_origin.value,
-    destination: sh_destination.value,
-    weight: parseFloat(sh_weight.value)
-  }).then(res=>{
-    if(res.success){
-      sh_price.value = res.price;
-    }else{
-      sh_price.value = 'Tarif non défini';
-    }
-  });
-}
-
-sh_weight.onchange = calculateShipmentPrice;
-sh_origin.onchange = calculateShipmentPrice;
-sh_destination.onchange = calculateShipmentPrice;
-
-
-
-function saveShipment(){
-  postData('/shipment/new',{
-    senderName: sh_sender.value,
-    senderPhone: sh_senderPhone.value,
-    senderAddress: sh_senderAddress.value,
-    receiverName: sh_receiver.value,
-    receiverPhone: sh_receiverPhone.value,
-    receiverAddress: sh_receiverAddress.value,
-    origin: sh_origin.value,
-    destination: sh_destination.value,
-    weight: sh_weight.value,
-    price: sh_price.value,
-    description: sh_description.value
-  }).then(()=>location.reload());
-}
-
-
-function openShipmentModal(){
-  document.getElementById('shipmentModal').style.display = 'flex';
-}
-
-function closeShipmentModal(){
-  document.getElementById('shipmentModal').style.display = 'none';
-}
-
-function openShipmentStatus(id){
-  const status = prompt(
-    'Nouveau statut:\nCREÉ\nEN TRANSIT\nARRIVÉ\nEN LIVRAISON\nLIVRÉ\nANNULÉ'
-  );
-  const location = prompt('Lieu actuel :');
-  if(!status || !location) return;
-
-  postData('/shipment/status',{ id, status, location })
-    .then(()=>location.reload());
-}
-
 
 
 /* ================= RATE ================= */
@@ -1205,8 +1145,6 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
   if(!client) return res.json({ found:false });
   res.json({ found:true, client });
 });
-
-///
 
 
 
