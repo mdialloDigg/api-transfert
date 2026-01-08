@@ -763,6 +763,24 @@ function deleteClient(id){
 
 
 /*=================Logistique===============*/
+function openShipmentModal() {
+  // Afficher le modal
+  const modal = document.getElementById('shipmentModal');
+  modal.style.display = 'flex';
+
+  // Réinitialiser tous les champs du formulaire
+  document.getElementById('sh_sender').value = '';
+  document.getElementById('sh_senderPhone').value = '';
+  document.getElementById('sh_senderAddress').value = '';
+  document.getElementById('sh_receiver').value = '';
+  document.getElementById('sh_receiverPhone').value = '';
+  document.getElementById('sh_receiverAddress').value = '';
+  document.getElementById('sh_origin').value = '';
+  document.getElementById('sh_destination').value = '';
+  document.getElementById('sh_weight').value = '';
+  document.getElementById('sh_price').value = '';
+  document.getElementById('sh_description').value = '';
+}
 
 
 /* ================= RATE ================= */
