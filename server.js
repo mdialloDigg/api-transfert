@@ -584,14 +584,10 @@ function calculateShipmentPrice(){
 }
 
 sh_weight.onchange = calculateShipmentPrice;
+sh_origin.onchange = calculateShipmentPrice;
 sh_destination.onchange = calculateShipmentPrice;
 
-function openShipmentModal(){
-  shipmentModal.style.display = 'flex';
-}
-function closeShipmentModal(){
-  shipmentModal.style.display = 'none';
-}
+
 
 function saveShipment(){
   postData('/shipment/new',{
@@ -604,9 +600,18 @@ function saveShipment(){
     origin: sh_origin.value,
     destination: sh_destination.value,
     weight: sh_weight.value,
-    price: sh_price.value
+    price: sh_price.value,
     description: sh_description.value
   }).then(()=>location.reload());
+}
+
+
+function openShipmentModal(){
+  document.getElementById('shipmentModal').style.display = 'flex';
+}
+
+function closeShipmentModal(){
+  document.getElementById('shipmentModal').style.display = 'none';
 }
 
 function openShipmentStatus(id){
