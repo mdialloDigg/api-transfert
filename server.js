@@ -791,6 +791,41 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+async function saveShipment() {
+  try {
+    const data = {
+      senderName: sh_sender.value.trim(),
+      senderPhone: sh_senderPhone.value.trim(),
+      senderAddress: sh_senderAddress.value.trim(),
+      receiverName: sh_receiver.value.trim(),
+      receiverPhone: sh_receiverPhone.value.trim(),
+      receiverAddress: sh_receiverAddress.value.trim(),
+      origin: sh_origin.value.trim(),
+      destination: sh_destination.value.trim(),
+      weight: parseFloat(sh_weight.value) || 0,
+      description: sh_description.value.trim(),
+      price: parseFloat(sh_price.value) || 0
+    };
+
+    const res = await fetch('/shipment/new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    const result = await res.json();
+
+    if (!result.success) {
+      return alert(result.error || 'Erreur lors de la création du colis');
+    }
+
+    alert('Colis enregistré !');
+    location.reload();
+  } catch (err) {
+    console.error(err);
+    alert('Erreur réseau');
+  }
+}
 
 
 /* ================= RATE ================= */
@@ -1192,13 +1227,13 @@ app.post('/shipment/new', requireLogin, async (req, res) => {
     const shipment = await new Shipment(data).save();
 
     // SMS DESTINATAIRE
-    await sendSMS(
-      data.receiverPhone,
-      `📦 COLIS ENREGISTRÉ
-Code : ${data.code}
-Origine : ${data.origin}
-Destination : ${data.destination}`
-    );
+    //await sendSMS(
+   //   data.receiverPhone,
+   //   `📦 COLIS ENREGISTRÉ
+//Code : ${data.code}
+//Origine : ${data.origin}
+//Destination : ${data.destination}`
+ //   );
 
     res.json({ success: true, shipment });
 
@@ -1259,6 +1294,42 @@ app.get('/track/:code', async (req, res) => {
     </ul>
   `);
 });
+
+
+app.post('/shipment/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+
+    // Validation téléphone expéditeur et destinataire
+    function isValidPhone(phone) {
+      if (!phone) return true; // autorise vide
+      const clean = phone.replace(/\s+/g, '');
+      const prefixes = ['00224', '00336', '00337'];
+      const prefix = prefixes.find(p => clean.startsWith(p));
+      if (!prefix) return false;
+      return clean.length === prefix.length + 9;
+    }
+
+    if (!isValidPhone(data.senderPhone)) {
+      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
+    }
+    if (!isValidPhone(data.receiverPhone)) {
+      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
+    }
+
+    // Générer un code unique
+    data.code = await generateUniqueCode();
+
+    const shipment = new Shipment(data);
+    await shipment.save();
+
+    res.json({ success: true, shipment });
+  } catch (err) {
+    console.error('Erreur création colis:', err);
+    res.status(500).json({ success:false, error: err.message });
+  }
+});
+
 
 // ================= IMPRIMER COLIS =================
 app.get('/shipment/print/:id', requireLogin, async (req, res) => {
