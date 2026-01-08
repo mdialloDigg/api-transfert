@@ -226,6 +226,7 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
+  const shipments = await Shipment.find().sort({ createdAt: -1 });
 
   // === HTML complet avec toutes les colonnes et modals ===
   // [INSÉRER ICI LE BLOC HTML/JS DE MON MESSAGE PRÉCÉDENT]
@@ -495,6 +496,26 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <button onclick="saveClient()">Enregistrer</button>
 <button onclick="closeClientModal()">Fermer</button>
 </div></div>
+
+<div id="shipmentModal" class="modal">
+<div class="modal-content">
+<h3>Nouveau Colis</h3>
+<input id="sh_sender" placeholder="Nom expéditeur">
+<input id="sh_senderPhone" placeholder="Téléphone expéditeur">
+<input id="sh_senderAddress" placeholder="Adresse expéditeur">
+<input id="sh_receiver" placeholder="Nom destinataire">
+<input id="sh_receiverPhone" placeholder="Téléphone destinataire">
+<input id="sh_receiverAddress" placeholder="Adresse destinataire">
+<input id="sh_origin" placeholder="Origine">
+<input id="sh_destination" placeholder="Destination">
+<input id="sh_weight" type="number" placeholder="Poids (kg)">
+<input id="sh_price" readonly placeholder="Prix automatique">
+<input id="sh_description" placeholder="Description">
+<button onclick="saveShipment()">Enregistrer</button>
+<button onclick="closeShipmentModal()">Fermer</button>
+</div>
+</div>
+
 
 <div id="rateModal" class="modal">
 <div class="modal-content">
