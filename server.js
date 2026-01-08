@@ -761,6 +761,70 @@ function deleteClient(id){
     postData('/client/delete',{id}).then(()=>location.reload());
 }
 
+
+/*=================Logistique===============*/
+let currentShipmentId = null;
+
+function calculateShipmentPrice(){
+  if(!sh_origin.value || !sh_destination.value || !sh_weight.value) return;
+
+  postData('/shipment/calculate-price',{
+    origin: sh_origin.value,
+    destination: sh_destination.value,
+    weight: parseFloat(sh_weight.value)
+  }).then(res=>{
+    if(res.success){
+      sh_price.value = res.price;
+    }else{
+      sh_price.value = 'Tarif non défini';
+    }
+  });
+}
+
+sh_weight.onchange = calculateShipmentPrice;
+sh_origin.onchange = calculateShipmentPrice;
+sh_destination.onchange = calculateShipmentPrice;
+
+
+
+function saveShipment(){
+  postData('/shipment/new',{
+    senderName: sh_sender.value,
+    senderPhone: sh_senderPhone.value,
+    senderAddress: sh_senderAddress.value,
+    receiverName: sh_receiver.value,
+    receiverPhone: sh_receiverPhone.value,
+    receiverAddress: sh_receiverAddress.value,
+    origin: sh_origin.value,
+    destination: sh_destination.value,
+    weight: sh_weight.value,
+    price: sh_price.value,
+    description: sh_description.value
+  }).then(()=>location.reload());
+}
+
+
+function openShipmentModal(){
+  document.getElementById('shipmentModal').style.display = 'flex';
+}
+
+function closeShipmentModal(){
+  document.getElementById('shipmentModal').style.display = 'none';
+}
+
+function openShipmentStatus(id){
+  const status = prompt(
+    'Nouveau statut:\nCREÉ\nEN TRANSIT\nARRIVÉ\nEN LIVRAISON\nLIVRÉ\nANNULÉ'
+  );
+  const location = prompt('Lieu actuel :');
+  if(!status || !location) return;
+
+  postData('/shipment/status',{ id, status, location })
+    .then(()=>location.reload());
+}
+
+
+
 /* ================= RATE ================= */
 function openRateModal(id = null) {
   currentRateId = id;
@@ -1140,6 +1204,175 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
   const client = await Client.findOne({ phone: req.params.phone });
   if(!client) return res.json({ found:false });
   res.json({ found:true, client });
+});
+
+
+
+
+// ================= CRÉER COLIS =================
+app.post('/shipment/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+
+    data.code = await generateUniqueCode();
+    data.status = 'CREÉ';
+
+    data.history = [{
+      status: 'CREÉ',
+      location: data.origin,
+      agent: req.session.user.username
+    }];
+
+    const shipment = await new Shipment(data).save();
+
+    // SMS DESTINATAIRE
+    await sendSMS(
+      data.receiverPhone,
+      `📦 COLIS ENREGISTRÉ
+Code : ${data.code}
+Origine : ${data.origin}
+Destination : ${data.destination}`
+    );
+
+    res.json({ success: true, shipment });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// ================= MAJ STATUT COLIS =================
+app.post('/shipment/status', requireLogin, async (req, res) => {
+  try {
+    const { id, status, location } = req.body;
+
+    const shipment = await Shipment.findById(id);
+    if (!shipment) {
+      return res.status(404).json({ error: 'Colis introuvable' });
+    }
+
+    shipment.status = status;
+    shipment.history.push({
+      status,
+      location,
+      agent: req.session.user.username
+    });
+
+    await shipment.save();
+
+    // SMS AUTOMATIQUE
+    await sendSMS(
+      shipment.receiverPhone,
+      `📦 COLIS ${shipment.code}
+Statut : ${status}
+Lieu : ${location}`
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// ================= TRACKING PUBLIC =================
+app.get('/track/:code', async (req, res) => {
+  const shipment = await Shipment.findOne({ code: req.params.code });
+  if (!shipment) return res.send('❌ Colis introuvable');
+
+  res.send(`
+    <h2>📦 Suivi Colis ${shipment.code}</h2>
+    <p><b>Statut :</b> ${shipment.status}</p>
+    <ul>
+      ${shipment.history.map(h => `
+        <li>${new Date(h.date).toLocaleString()} — ${h.status} (${h.location})</li>
+      `).join('')}
+    </ul>
+  `);
+});
+
+// ================= IMPRIMER COLIS =================
+app.get('/shipment/print/:id', requireLogin, async (req, res) => {
+  try {
+    const s = await Shipment.findById(req.params.id);
+    if (!s) return res.status(404).send('Colis introuvable');
+
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Bon d'expédition ${s.code}</title>
+        <style>
+          body { font-family: Arial; margin: 20px; }
+          h2 { color: #ff8c42; }
+          .box { border: 1px solid #333; padding: 15px; margin-bottom: 15px; }
+          p { margin: 4px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>📦 Bon d'expédition</h2>
+
+        <div class="box">
+          <p><b>Code colis :</b> ${s.code}</p>
+          <p><b>Date :</b> ${new Date(s.createdAt).toLocaleString()}</p>
+          <p><b>Statut :</b> ${s.status}</p>
+        </div>
+
+        <div class="box">
+          <h3>Expéditeur</h3>
+          <p>${s.senderName}</p>
+          <p>📞 ${s.senderPhone || '-'}</p>
+          <p>${s.senderAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <h3>Destinataire</h3>
+          <p>${s.receiverName}</p>
+          <p>📞 ${s.receiverPhone || '-'}</p>
+          <p>${s.receiverAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Origine :</b> ${s.origin}</p>
+          <p><b>Destination :</b> ${s.destination}</p>
+          <p><b>Poids :</b> ${s.weight || '-'} kg</p>
+          <p><b>Description :</b> ${s.description || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Signature agent :</b> ____________________</p>
+          <br>
+          <p><b>Signature client :</b> ____________________</p>
+        </div>
+
+        <script>
+          window.onload = () => window.print();
+        </script>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+// ================= CALCUL TARIF =================
+app.post('/shipment/calculate-price', requireLogin, async (req, res) => {
+  const { origin, destination, weight } = req.body;
+
+  const rate = await ShippingRate.findOne({ origin, destination });
+  if (!rate) {
+    return res.json({ success: false, error: 'Tarif non défini' });
+  }
+
+  const price = Math.max(rate.minPrice, weight * rate.pricePerKg);
+
+  res.json({ success: true, price });
 });
 
 
