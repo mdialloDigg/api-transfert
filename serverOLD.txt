@@ -856,37 +856,29 @@ function closeShipmentStatusModal() {
   currentShipmentId = null;
 }
 
+
+
 async function saveShipmentStatus() {
-  try {
-    const status = document.getElementById('sh_status').value;
-    const res = await fetch('/shipment/status', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ id: currentShipmentId, status })
-    });
-    const result = await res.json();
-    if (!result.success) return alert(result.error || 'Erreur');
-    location.reload();
-  } catch (err) {
-    console.error(err);
-    alert('Erreur réseau');
+  if (!currentShipmentId) {
+    return alert('❌ Aucun colis sélectionné');
   }
-}
 
-let currentShipmentId = null;
+  const status = document.getElementById('sh_status').value;
 
-// Ouvrir le modal avec le statut actuel
-function openShipmentStatus(id) {
-  currentShipmentId = id;
-  document.getElementById('shipmentStatusModal').style.display = 'flex';
+  const res = await fetch('/shipment/status', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id: currentShipmentId, status })
+  });
 
-  // Préremplir le select avec le statut actuel
-  fetch('/shipment/' + id)
-    .then(r => r.json())
-    .then(s => {
-      document.getElementById('sh_status').value = s.status;
-    })
-    .catch(err => console.error(err));
+  const result = await res.json();
+
+  if (!result.success) {
+    return alert(result.error || 'Erreur enregistrement statut');
+  }
+
+  closeShipmentStatusModal();
+  location.reload();
 }
 
 // Fermer le modal
