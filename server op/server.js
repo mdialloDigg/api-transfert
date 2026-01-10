@@ -93,6 +93,65 @@ const rateSchema = new mongoose.Schema({
 });
 const Rate = mongoose.model('Rate',rateSchema);
 
+// ================= LOGISTIQUE / COLIS =================
+const shipmentSchema = new mongoose.Schema({
+  code: { type: String, unique: true },
+
+  senderName: String,
+  senderPhone: String,
+  senderAddress: String,
+
+  receiverName: String,
+  receiverPhone: String,
+  receiverAddress: String,
+
+  origin: String,
+  destination: String,
+
+  weight: Number,
+  description: String,
+  value: Number,
+
+  price: Number,
+
+  status: {
+    type: String,
+    enum: [
+      'CREÉ',
+      'EN TRANSIT',
+      'ARRIVÉ',
+      'EN LIVRAISON',
+      'LIVRÉ',
+      'ANNULÉ'
+    ],
+    default: 'CREÉ'
+  },
+
+  history: [{
+    status: String,
+    location: String,
+    date: { type: Date, default: Date.now },
+    agent: String
+  }],
+
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Shipment = mongoose.model('Shipment', shipmentSchema);
+
+// ================= TARIFS LOGISTIQUE =================
+const shippingRateSchema = new mongoose.Schema({
+  origin: String,
+  destination: String,
+  pricePerKg: Number,   // prix par kilo
+  minPrice: Number,     // prix minimum
+  createdAt: { type: Date, default: Date.now }
+});
+
+const ShippingRate = mongoose.model('ShippingRate', shippingRateSchema);
+
+
+
 const authSchema = new mongoose.Schema({
   username:String,
   password:String,
@@ -167,6 +226,7 @@ app.get('/dashboard',requireLogin,async(req,res)=>{
   const clients = await Client.find().sort({createdAt:-1});
   const rates = await Rate.find().sort({createdAt:-1});
   const p = req.session.user.permissions;
+  const shipments = await Shipment.find().sort({ createdAt: -1 });
 
   // === HTML complet avec toutes les colonnes et modals ===
   // [INSÉRER ICI LE BLOC HTML/JS DE MON MESSAGE PRÉCÉDENT]
@@ -325,6 +385,46 @@ ${p.suppression?`<button onclick="deleteClient('${c._id}')">❌</button>`:''}
 `).join('')}
 </table>
 
+
+<!-- ================== LOGISTIQUE ================== -->
+<h3>📦 Logistique / Colis</h3>
+<button onclick="openShipmentModal()">➕ Nouveau Colis</button>
+
+<table>
+<tr>
+  <th>Code</th>
+  <th>Expéditeur</th>
+  <th>Destinataire</th>
+  <th>Origine</th>
+  <th>Destination</th>
+  <th>Poids</th>
+  <th>Prix</th>
+  <th>Statut</th>
+  <th>Date</th>
+  <th>Actions</th>
+</tr>
+
+${shipments.map(s => `
+<tr>
+  <td>${s.code}</td>
+  <td>${s.senderName}</td>
+  <td>${s.receiverName}</td>
+  <td>${s.origin}</td>
+  <td>${s.destination}</td>
+  <td>${s.weight || '-'} kg</td>
+  <td>${s.price || '-'} GNF</td>
+  <td>${s.status}</td>
+  <td>${new Date(s.createdAt).toLocaleString()}</td>
+  <td>
+  <button onclick="openShipmentStatus('${s._id}')">🔄 Statut</button>
+  <button onclick="window.open('/track/${s.code}','_blank')">📍 Suivi</button>
+  <button onclick="window.open('/shipment/print/${s._id}','_blank')">🖨</button>
+  </td>
+
+</tr>
+`).join('')}
+</table>
+
 <!-- ================== RATES ================== -->
 <h3>Taux de Change</h3>
 <button onclick="openRateModal()">➕ Nouveau Taux</button>
@@ -396,6 +496,59 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <button onclick="saveClient()">Enregistrer</button>
 <button onclick="closeClientModal()">Fermer</button>
 </div></div>
+
+<div id="shipmentModal" class="modal">
+<div class="modal-content">
+<h3>Nouveau Colis</h3>
+<input id="sh_sender" placeholder="Nom expéditeur">
+<input id="sh_senderPhone" placeholder="Téléphone expéditeur">
+<input id="sh_senderAddress" placeholder="Adresse expéditeur">
+<input id="sh_receiver" placeholder="Nom destinataire">
+<input id="sh_receiverPhone" placeholder="Téléphone destinataire">
+<input id="sh_receiverAddress" placeholder="Adresse destinataire">
+<input id="sh_origin" placeholder="Origine">
+<input id="sh_destination" placeholder="Destination">
+<input id="sh_weight" type="number" placeholder="Poids (kg)">
+<input id="sh_price" readonly placeholder="Prix automatique">
+<input id="sh_description" placeholder="Description">
+<button onclick="saveShipment()">Enregistrer</button>
+<button onclick="closeShipmentModal()">Fermer</button>
+</div>
+</div>
+
+<div id="shipmentStatusModal" class="modal">
+  <div class="modal-content">
+    <h3>Modifier le statut du colis</h3>
+    <select id="sh_status">
+      <option value="CREÉ">CREÉ</option>
+      <option value="EN TRANSIT">EN TRANSIT</option>
+      <option value="ARRIVÉ">ARRIVÉ</option>
+      <option value="EN LIVRAISON">EN LIVRAISON</option>
+      <option value="LIVRÉ">LIVRÉ</option>
+      <option value="ANNULÉ">ANNULÉ</option>
+    </select>
+    <button onclick="saveShipmentStatus()">Enregistrer</button>
+    <button onclick="closeShipmentStatusModal()">Fermer</button>
+  </div>
+</div>
+
+<div id="shipmentStatusModal" class="modal">
+  <div class="modal-content">
+    <h3>Modifier le statut du colis</h3>
+    <select id="sh_status">
+      <option value="CREÉ">CREÉ</option>
+      <option value="EN TRANSIT">EN TRANSIT</option>
+      <option value="ARRIVÉ">ARRIVÉ</option>
+      <option value="EN LIVRAISON">EN LIVRAISON</option>
+      <option value="LIVRÉ">LIVRÉ</option>
+      <option value="ANNULÉ">ANNULÉ</option>
+    </select>
+    <br>
+    <button onclick="saveShipmentStatus()">Enregistrer</button>
+    <button onclick="closeShipmentStatusModal()">Fermer</button>
+  </div>
+</div>
+
 
 <div id="rateModal" class="modal">
 <div class="modal-content">
@@ -640,6 +793,102 @@ function deleteClient(id){
   if(confirm('Supprimer ?'))
     postData('/client/delete',{id}).then(()=>location.reload());
 }
+
+
+/*=================Logistique===============*/
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.openShipmentModal = function() {
+    const modal = document.getElementById('shipmentModal');
+    if (!modal) return console.error('Modal non trouvé !');
+
+    modal.style.display = 'flex';
+
+    document.getElementById('sh_sender').value = '';
+    document.getElementById('sh_senderPhone').value = '';
+    document.getElementById('sh_senderAddress').value = '';
+    document.getElementById('sh_receiver').value = '';
+    document.getElementById('sh_receiverPhone').value = '';
+    document.getElementById('sh_receiverAddress').value = '';
+    document.getElementById('sh_origin').value = '';
+    document.getElementById('sh_destination').value = '';
+    document.getElementById('sh_weight').value = '';
+    document.getElementById('sh_price').value = '';
+    document.getElementById('sh_description').value = '';
+  }
+
+  window.closeShipmentModal = function() {
+    const modal = document.getElementById('shipmentModal');
+    if (!modal) return;
+    modal.style.display = 'none';
+  }
+});
+
+async function saveShipment() {
+  try {
+    const data = {
+      senderName: sh_sender.value.trim(),
+      senderPhone: sh_senderPhone.value.trim(),
+      senderAddress: sh_senderAddress.value.trim(),
+      receiverName: sh_receiver.value.trim(),
+      receiverPhone: sh_receiverPhone.value.trim(),
+      receiverAddress: sh_receiverAddress.value.trim(),
+      origin: sh_origin.value.trim(),
+      destination: sh_destination.value.trim(),
+      weight: parseFloat(sh_weight.value) || 0,
+      description: sh_description.value.trim(),
+      price: parseFloat(sh_price.value) || 0
+    };
+
+    const res = await fetch('/shipment/new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    const result = await res.json();
+
+    if (!result.success) {
+      return alert(result.error || 'Erreur lors de la création du colis');
+    }
+
+    alert('Colis enregistré !');
+    location.reload();
+  } catch (err) {
+    console.error(err);
+    alert('Erreur réseau');
+  }
+}
+
+let currentShipmentId = null;
+
+function openShipmentStatus(id) {
+  currentShipmentId = id;
+  document.getElementById('shipmentStatusModal').style.display = 'flex';
+}
+
+function closeShipmentStatusModal() {
+  document.getElementById('shipmentStatusModal').style.display = 'none';
+  currentShipmentId = null;
+}
+
+async function saveShipmentStatus() {
+  try {
+    const status = document.getElementById('sh_status').value;
+    const res = await fetch('/shipment/status', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id: currentShipmentId, status })
+    });
+    const result = await res.json();
+    if (!result.success) return alert(result.error || 'Erreur');
+    location.reload();
+  } catch (err) {
+    console.error(err);
+    alert('Erreur réseau');
+  }
+}
+
 
 /* ================= RATE ================= */
 function openRateModal(id = null) {
@@ -1022,6 +1271,211 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
   res.json({ found:true, client });
 });
 
+
+// ================= CRÉER COLIS =================
+app.post('/shipment/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+
+    data.code = await generateUniqueCode();
+    data.status = 'CREÉ';
+
+    data.history = [{
+      status: 'CREÉ',
+      location: data.origin,
+      agent: req.session.user.username
+    }];
+
+    const shipment = await new Shipment(data).save();
+
+    // SMS DESTINATAIRE
+    //await sendSMS(
+   //   data.receiverPhone,
+   //   `📦 COLIS ENREGISTRÉ
+//Code : ${data.code}
+//Origine : ${data.origin}
+//Destination : ${data.destination}`
+ //   );
+
+    res.json({ success: true, shipment });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// ================= MAJ STATUT COLIS =================
+app.post('/shipment/status', requireLogin, async (req, res) => {
+  try {
+    const { id, status, location } = req.body;
+
+    const shipment = await Shipment.findById(id);
+    if (!shipment) {
+      return res.status(404).json({ error: 'Colis introuvable' });
+    }
+
+    shipment.status = status;
+    shipment.history.push({
+      status,
+      location,
+      agent: req.session.user.username
+    });
+
+    await shipment.save();
+
+    // SMS AUTOMATIQUE
+    await sendSMS(
+      shipment.receiverPhone,
+      `📦 COLIS ${shipment.code}
+Statut : ${status}
+Lieu : ${location}`
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// ================= TRACKING PUBLIC =================
+app.get('/track/:code', async (req, res) => {
+  const shipment = await Shipment.findOne({ code: req.params.code });
+  if (!shipment) return res.send('❌ Colis introuvable');
+
+  res.send(`
+    <h2>📦 Suivi Colis ${shipment.code}</h2>
+    <p><b>Statut :</b> ${shipment.status}</p>
+    <ul>
+      ${shipment.history.map(h => `
+        <li>${new Date(h.date).toLocaleString()} — ${h.status} (${h.location})</li>
+      `).join('')}
+    </ul>
+  `);
+});
+
+
+app.post('/shipment/new', requireLogin, async (req, res) => {
+  try {
+    const data = req.body;
+
+    // Validation téléphone expéditeur et destinataire
+    function isValidPhone(phone) {
+      if (!phone) return true; // autorise vide
+      const clean = phone.replace(/\s+/g, '');
+      const prefixes = ['00224', '00336', '00337'];
+      const prefix = prefixes.find(p => clean.startsWith(p));
+      if (!prefix) return false;
+      return clean.length === prefix.length + 9;
+    }
+
+    if (!isValidPhone(data.senderPhone)) {
+      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
+    }
+    if (!isValidPhone(data.receiverPhone)) {
+      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
+    }
+
+    // Générer un code unique
+    data.code = await generateUniqueCode();
+
+    const shipment = new Shipment(data);
+    await shipment.save();
+
+    res.json({ success: true, shipment });
+  } catch (err) {
+    console.error('Erreur création colis:', err);
+    res.status(500).json({ success:false, error: err.message });
+  }
+});
+
+app.post('/shipment/status', requireLogin, async (req,res)=>{
+  try {
+    const { id, status } = req.body;
+    const shipment = await Shipment.findById(id);
+    if(!shipment) return res.status(404).json({ success:false, error:'Colis introuvable' });
+
+    shipment.status = status;
+    shipment.history.push({ status, date: new Date(), location: shipment.destination || '', agent: req.session.user.username });
+    await shipment.save();
+
+    res.json({ success:true });
+  } catch(err){
+    console.error(err);
+    res.status(500).json({ success:false, error: err.message });
+  }
+});
+
+
+// ================= IMPRIMER COLIS =================
+app.get('/shipment/print/:id', requireLogin, async (req, res) => {
+  try {
+    const s = await Shipment.findById(req.params.id);
+    if (!s) return res.status(404).send('Colis introuvable');
+
+    res.send(`
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Bon d'expédition ${s.code}</title>
+        <style>
+          body { font-family: Arial; margin: 20px; }
+          h2 { color: #ff8c42; }
+          .box { border: 1px solid #333; padding: 15px; margin-bottom: 15px; }
+          p { margin: 4px 0; }
+        </style>
+      </head>
+      <body>
+        <h2>📦 Bon d'expédition</h2>
+
+        <div class="box">
+          <p><b>Code colis :</b> ${s.code}</p>
+          <p><b>Date :</b> ${new Date(s.createdAt).toLocaleString()}</p>
+          <p><b>Statut :</b> ${s.status}</p>
+        </div>
+
+        <div class="box">
+          <h3>Expéditeur</h3>
+          <p>${s.senderName}</p>
+          <p>📞 ${s.senderPhone || '-'}</p>
+          <p>${s.senderAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <h3>Destinataire</h3>
+          <p>${s.receiverName}</p>
+          <p>📞 ${s.receiverPhone || '-'}</p>
+          <p>${s.receiverAddress || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Origine :</b> ${s.origin}</p>
+          <p><b>Destination :</b> ${s.destination}</p>
+          <p><b>Poids :</b> ${s.weight || '-'} kg</p>
+          <p><b>Description :</b> ${s.description || '-'}</p>
+        </div>
+
+        <div class="box">
+          <p><b>Signature agent :</b> ____________________</p>
+          <br>
+          <p><b>Signature client :</b> ____________________</p>
+        </div>
+
+        <script>
+          window.onload = () => window.print();
+        </script>
+      </body>
+      </html>
+    `);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Erreur serveur');
+  }
+});
 
 
 // ================= EXPORT =================
