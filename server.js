@@ -1258,36 +1258,39 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
 
 
 // ================= CRÉER COLIS =================
+// ================= CRÉER COLIS =================
 app.post('/shipment/new', requireLogin, async (req, res) => {
   try {
-    const { sender, receiver, phone, destination, price } = req.body;
+    const data = req.body;
 
-    if (!price) {
-      return res.status(400).json({ success:false, error:'Prix obligatoire' });
-    }
+    data.code = await generateUniqueCode();
+    data.status = 'CREÉ';
 
-    const shipment = new Shipment({
-      sender,
-      receiver,
-      phone,
-      destination,
-      price: Number(price),
+    data.history = [{
       status: 'CREÉ',
-      history: [{
-        status: 'CREÉ',
-        date: new Date(),
-        agent: req.session.user.username
-      }]
-    });
+      location: data.origin,
+      agent: req.session.user.username
+    }];
 
-    await shipment.save();
-    res.json({ success:true });
+    const shipment = await new Shipment(data).save();
+
+    // SMS DESTINATAIRE
+    //await sendSMS(
+   //   data.receiverPhone,
+   //   `📦 COLIS ENREGISTRÉ
+//Code : ${data.code}
+//Origine : ${data.origin}
+//Destination : ${data.destination}`
+ //   );
+
+    res.json({ success: true, shipment });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success:false, error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // ================= MAJ STATUT COLIS =================
 app.post('/shipment/status', requireLogin, async (req, res) => {
