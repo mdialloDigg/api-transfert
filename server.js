@@ -814,31 +814,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 async function saveShipment() {
-  const sender = document.getElementById('sender').value;
-  const receiver = document.getElementById('receiver').value;
-  const phone = document.getElementById('phone').value;
-  const destination = document.getElementById('destination').value;
-  const price = document.getElementById('price').value;
+  const data = {
+    senderName: document.getElementById('sh_sender').value,
+    senderPhone: document.getElementById('sh_senderPhone').value,
+    senderAddress: document.getElementById('sh_senderAddress').value,
 
-  if (!price) {
-    return alert('❌ Le prix est obligatoire');
+    receiverName: document.getElementById('sh_receiver').value,
+    receiverPhone: document.getElementById('sh_receiverPhone').value,
+    receiverAddress: document.getElementById('sh_receiverAddress').value,
+
+    origin: document.getElementById('sh_origin').value,
+    destination: document.getElementById('sh_destination').value,
+
+    weight: Number(document.getElementById('sh_weight').value || 0),
+    description: document.getElementById('sh_description').value,
+
+    price: Number(document.getElementById('price').value)
+  };
+
+  if (!data.price) {
+    alert('❌ Le prix est obligatoire');
+    return;
   }
 
   const res = await fetch('/shipment/new', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sender,
-      receiver,
-      phone,
-      destination,
-      price: Number(price)
-    })
+    body: JSON.stringify(data)
   });
 
   const result = await res.json();
+
   if (!result.success) {
-    alert(result.error || 'Erreur enregistrement');
+    alert(result.error || 'Erreur enregistrement colis');
   } else {
     location.reload();
   }
@@ -1258,39 +1266,6 @@ app.get('/client/by-phone/:phone', requireLogin, async (req,res)=>{
 
 
 // ================= CRÉER COLIS =================
-// ================= CRÉER COLIS =================
-app.post('/shipment/new', requireLogin, async (req, res) => {
-  try {
-    const data = req.body;
-
-    data.code = await generateUniqueCode();
-    data.status = 'CREÉ';
-
-    data.history = [{
-      status: 'CREÉ',
-      location: data.origin,
-      agent: req.session.user.username
-    }];
-
-    const shipment = await new Shipment(data).save();
-
-    // SMS DESTINATAIRE
-    //await sendSMS(
-   //   data.receiverPhone,
-   //   `📦 COLIS ENREGISTRÉ
-//Code : ${data.code}
-//Origine : ${data.origin}
-//Destination : ${data.destination}`
- //   );
-
-    res.json({ success: true, shipment });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 
 // ================= MAJ STATUT COLIS =================
 app.post('/shipment/status', requireLogin, async (req, res) => {
@@ -1339,39 +1314,30 @@ app.get('/track/:code', async (req, res) => {
 });
 
 
+
 app.post('/shipment/new', requireLogin, async (req, res) => {
   try {
     const data = req.body;
 
-    // Validation téléphone expéditeur et destinataire
-    function isValidPhone(phone) {
-      if (!phone) return true; // autorise vide
-      const clean = phone.replace(/\s+/g, '');
-      const prefixes = ['00224', '00336', '00337'];
-      const prefix = prefixes.find(p => clean.startsWith(p));
-      if (!prefix) return false;
-      return clean.length === prefix.length + 9;
-    }
-
-    if (!isValidPhone(data.senderPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
-    }
-    if (!isValidPhone(data.receiverPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
-    }
-
-    // Générer un code unique
     data.code = await generateUniqueCode();
+    data.status = 'CREÉ';
 
-    const shipment = new Shipment(data);
-    await shipment.save();
+    data.history = [{
+      status: 'CREÉ',
+      location: data.origin,
+      agent: req.session.user.username
+    }];
+
+    const shipment = await new Shipment(data).save();
 
     res.json({ success: true, shipment });
+
   } catch (err) {
     console.error('Erreur création colis:', err);
     res.status(500).json({ success:false, error: err.message });
   }
 });
+
 
 app.post('/shipment/status', requireLogin, async (req,res)=>{
   try {
