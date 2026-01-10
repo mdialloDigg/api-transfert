@@ -1326,12 +1326,7 @@ app.post('/shipment/status', requireLogin, async (req, res) => {
     await shipment.save();
 
     // SMS AUTOMATIQUE
-    await sendSMS(
-      shipment.receiverPhone,
-      `📦 COLIS ${shipment.code}
-Statut : ${status}
-Lieu : ${location}`
-    );
+
 
     res.json({ success: true });
 
