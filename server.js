@@ -1,4 +1,4 @@
-require('dotenv').config();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -953,40 +953,103 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 // Créer ou mettre à jour un transfert
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
-    const data = req.body;
+    const {
+      _id,
+      originLocation,
+      senderFirstName,
+      senderPhone,
+      destinationLocation,
+      receiverFirstName,
+      receiverPhone,
+      amount,
+      fees,
+      currency,
+      recoveryMode
+    } = req.body;
 
-    // Validation numéro téléphone
-    function isValidPhone(phone) {
-      if (!phone) return true; // autorise vide
+    /* ===== VALIDATION ===== */
+    const isValidPhone = phone => {
+      if (!phone) return true;
       const clean = phone.replace(/\s+/g, '');
       if (!/^\d+$/.test(clean)) return false;
-      const prefixes = ['00224', '00336', '00337'];
-      const prefix = prefixes.find(p => clean.startsWith(p));
-      if (!prefix) return false;
-      return clean.length === prefix.length + 9;
+      return ['00224', '00336', '00337'].some(p =>
+        clean.startsWith(p) && clean.length === p.length + 9
+      );
+    };
+
+    if (!originLocation || !destinationLocation) {
+      return res.status(400).json({
+        success: false,
+        error: 'Origine et destination obligatoires'
+      });
     }
 
-    if (!isValidPhone(data.senderPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
-    }
-    if (!isValidPhone(data.receiverPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
+    if (!senderFirstName || !receiverFirstName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Expéditeur et destinataire obligatoires'
+      });
     }
 
-    if (data._id) {
-      await Transfert.findByIdAndUpdate(data._id, data);
+    if (!isValidPhone(senderPhone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numéro expéditeur invalide'
+      });
+    }
+
+    if (!isValidPhone(receiverPhone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Numéro destinataire invalide'
+      });
+    }
+
+    const montant = Number(amount);
+    const frais = Number(fees) || 0;
+
+    if (montant <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Montant invalide'
+      });
+    }
+
+    /* ===== DONNÉES TRANSFERT ===== */
+    const transfertData = {
+      originLocation,
+      senderFirstName,
+      senderPhone,
+      destinationLocation,
+      receiverFirstName,
+      receiverPhone,
+      amount: montant,
+      fees: frais,
+      received: montant - frais,
+      currency: currency || 'GNF',
+      recoveryMode,
+      userType: 'Client'
+    };
+
+    /* ===== CREATE / UPDATE ===== */
+    if (_id) {
+      await Transfert.findByIdAndUpdate(_id, transfertData);
     } else {
-      data.code = await generateUniqueCode();
-      data.userType = 'Client';
-      await new Transfert(data).save();
+      transfertData.code = await generateUniqueCode();
+      await Transfert.create(transfertData);
     }
 
     res.json({ success: true });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('ERREUR TRANSFERT:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
   }
 });
+
 
 // Supprimer un transfert
 app.post('/transfert/delete', requireLogin, async (req, res) => {
