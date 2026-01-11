@@ -458,10 +458,10 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <div class="modal-content">
 <h3>Transfert</h3>
 <input id="t_code" readonly placeholder="Code">
-<input id="t_origin" placeholder="Origine">
+<select id="t_origin"><option>FRANCE</option><option>SUISSE</option><option>BELGIQUE</option><option>USA</option></select>
 <input id="t_sender" placeholder="Nom expéditeur">
 <input id="t_senderPhone" placeholder="Téléphone expéditeur">
-<input id="t_destination" placeholder="Destination">
+<select id="t_destination"><option>CONAKRY</option><option>LABE</option><option>FRANCE</option><option>USA</option></select>
 <input id="t_receiver" placeholder="Nom destinataire">
 <input id="t_receiverPhone" placeholder="Téléphone destinataire">
 <input id="t_amount" type="number" placeholder="Montant">
