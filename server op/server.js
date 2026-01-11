@@ -1,4 +1,4 @@
-require('dotenv').config();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -458,10 +458,10 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <div class="modal-content">
 <h3>Transfert</h3>
 <input id="t_code" readonly placeholder="Code">
-<input id="t_origin" placeholder="Origine">
+<select id="t_origin"><option>FRANCE</option><option>SUISSE</option><option>BELGIQUE</option><option>USA</option></select>
 <input id="t_sender" placeholder="Nom expéditeur">
 <input id="t_senderPhone" placeholder="Téléphone expéditeur">
-<input id="t_destination" placeholder="Destination">
+<select id="t_destination"><option>CONAKRY</option><option>LABE</option><option>FRANCE</option><option>USA</option></select>
 <input id="t_receiver" placeholder="Nom destinataire">
 <input id="t_receiverPhone" placeholder="Téléphone destinataire">
 <input id="t_amount" type="number" placeholder="Montant">
@@ -626,7 +626,7 @@ function findClient(){
       t_receiverPhone.value = data.client.phone;
 
       // OPTIONNEL : destination = lieu du client
-      t_destination.value = data.client.location || '';
+      t_destination.value = data.client.location;
     });
 }
 
@@ -951,42 +951,65 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 });
 
 // Créer ou mettre à jour un transfert
+
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
-    const data = req.body;
+    const {
+      _id,
+      originLocation,
+      senderFirstName,
+      senderPhone,
+      destinationLocation,
+      receiverFirstName,
+      receiverPhone,
+      amount,
+      fees,
+      currency,
+      recoveryMode
+    } = req.body;
 
-    // Validation numéro téléphone
-    function isValidPhone(phone) {
-      if (!phone) return true; // autorise vide
-      const clean = phone.replace(/\s+/g, '');
-      if (!/^\d+$/.test(clean)) return false;
-      const prefixes = ['00224', '00336', '00337'];
-      const prefix = prefixes.find(p => clean.startsWith(p));
-      if (!prefix) return false;
-      return clean.length === prefix.length + 9;
-    }
+    if (!originLocation || !destinationLocation)
+      return res.status(400).json({ success:false, error:'Origine / destination requises' });
 
-    if (!isValidPhone(data.senderPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro expéditeur invalide' });
-    }
-    if (!isValidPhone(data.receiverPhone)) {
-      return res.status(400).json({ success:false, error:'Numéro destinataire invalide' });
-    }
+    if (!senderFirstName || !receiverFirstName)
+      return res.status(400).json({ success:false, error:'Noms requis' });
 
-    if (data._id) {
-      await Transfert.findByIdAndUpdate(data._id, data);
+    const montant = Number(amount);
+    const frais = Number(fees) || 0;
+
+    if (montant <= 0)
+      return res.status(400).json({ success:false, error:'Montant invalide' });
+
+    const transfertData = {
+      originLocation,
+      destinationLocation,
+      senderFirstName,
+      senderPhone,
+      receiverFirstName,
+      receiverPhone,
+      amount: montant,
+      fees: frais,
+      received: montant - frais,
+      currency: currency || 'GNF',
+      recoveryMode,
+      userType: 'Client'
+    };
+
+    if (_id) {
+      await Transfert.findByIdAndUpdate(_id, transfertData);
     } else {
-      data.code = await generateUniqueCode();
-      data.userType = 'Client';
-      await new Transfert(data).save();
+      transfertData.code = await generateUniqueCode();
+      await Transfert.create(transfertData);
     }
 
-    res.json({ success: true });
+    res.json({ success:true });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success:false, error:err.message });
   }
 });
+
 
 // Supprimer un transfert
 app.post('/transfert/delete', requireLogin, async (req, res) => {
