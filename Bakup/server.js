@@ -626,7 +626,7 @@ function findClient(){
       t_receiverPhone.value = data.client.phone;
 
       // OPTIONNEL : destination = lieu du client
-      t_destination.value = data.client.location || '';
+      t_destination.value = data.client.location;
     });
 }
 
