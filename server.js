@@ -951,6 +951,7 @@ app.get('/transfert/:id', requireLogin, async (req, res) => {
 });
 
 // Créer ou mettre à jour un transfert
+
 app.post('/transfert/new', requireLogin, async (req, res) => {
   try {
     const {
@@ -967,60 +968,23 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       recoveryMode
     } = req.body;
 
-    /* ===== VALIDATION ===== */
-    const isValidPhone = phone => {
-      if (!phone) return true;
-      const clean = phone.replace(/\s+/g, '');
-      if (!/^\d+$/.test(clean)) return false;
-      return ['00224', '00336', '00337'].some(p =>
-        clean.startsWith(p) && clean.length === p.length + 9
-      );
-    };
+    if (!originLocation || !destinationLocation)
+      return res.status(400).json({ success:false, error:'Origine / destination requises' });
 
-    if (!originLocation || !destinationLocation) {
-      return res.status(400).json({
-        success: false,
-        error: 'Origine et destination obligatoires'
-      });
-    }
-
-    if (!senderFirstName || !receiverFirstName) {
-      return res.status(400).json({
-        success: false,
-        error: 'Expéditeur et destinataire obligatoires'
-      });
-    }
-
-    if (!isValidPhone(senderPhone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Numéro expéditeur invalide'
-      });
-    }
-
-    if (!isValidPhone(receiverPhone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Numéro destinataire invalide'
-      });
-    }
+    if (!senderFirstName || !receiverFirstName)
+      return res.status(400).json({ success:false, error:'Noms requis' });
 
     const montant = Number(amount);
     const frais = Number(fees) || 0;
 
-    if (montant <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Montant invalide'
-      });
-    }
+    if (montant <= 0)
+      return res.status(400).json({ success:false, error:'Montant invalide' });
 
-    /* ===== DONNÉES TRANSFERT ===== */
     const transfertData = {
       originLocation,
+      destinationLocation,
       senderFirstName,
       senderPhone,
-      destinationLocation,
       receiverFirstName,
       receiverPhone,
       amount: montant,
@@ -1031,7 +995,6 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       userType: 'Client'
     };
 
-    /* ===== CREATE / UPDATE ===== */
     if (_id) {
       await Transfert.findByIdAndUpdate(_id, transfertData);
     } else {
@@ -1039,14 +1002,11 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
       await Transfert.create(transfertData);
     }
 
-    res.json({ success: true });
+    res.json({ success:true });
 
   } catch (err) {
-    console.error('ERREUR TRANSFERT:', err);
-    res.status(500).json({
-      success: false,
-      error: 'Erreur serveur'
-    });
+    console.error(err);
+    res.status(500).json({ success:false, error:err.message });
   }
 });
 
