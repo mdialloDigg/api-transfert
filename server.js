@@ -585,23 +585,24 @@ function openTransfertModal(id = null) {
 
   // Nouveau
   if (!id) {
-    t_code.value = '';
-    t_origin.value = '';
+  t_code.value = '';
+  t_origin.value = '';
+  t_destination.value = '';
 
-    t_sender.value = connectedUser; // ✅ ICI
-    t_destination.value = '';
-	
-	t_senderFirstName.value = '';
-	t_senderLastName.value = '';
-	t_receiverFirstName.value = '';
-	t_receiverLastName.value = '';
+  t_senderFirstName.value = '';
+  t_senderLastName.value = '';
+  t_senderPhone.value = '';
 
-    t_receiverPhone.value = '';
-    t_amount.value = '';
-    t_fees.value = '';
-    t_received.value = '';
-    return;
-  }
+  t_receiverFirstName.value = '';
+  t_receiverLastName.value = '';
+  t_receiverPhone.value = '';
+
+  t_amount.value = '';
+  t_fees.value = '';
+  t_received.value = '';
+  return;
+}
+
 
   fetch('/transfert/' + id)
     .then(r => r.json())
@@ -632,12 +633,12 @@ function closeTransfertModal(){
 }
 
 function findClient(){
-  const phone = document.getElementById('searchPhone').value;
+  const phone = document.getElementById('searchPhone').value.trim();
   if(!phone) return alert('Entrez un numéro');
 
   fetch('/client/by-phone/' + phone)
-    .then(r=>r.json())
-    .then(data=>{
+    .then(r => r.json())
+    .then(data => {
       if(!data.found){
         clientResult.innerText = '❌ Client introuvable';
         return;
@@ -645,22 +646,17 @@ function findClient(){
 
       clientResult.innerText = '✅ Client trouvé';
 
-      // OUVRIR NOUVEAU TRANSFERT
-      openTransfertModal();
+      // ouvrir le modal AVANT de remplir
+      openTransfertModal(null);
 
-      // PRÉ-REMPLIR DESTINATAIRE
-
-	  
-	  t_receiverFirstName.value = data.client.firstName;
-      t_receiverLastName.value  = data.client.lastName;
-      t_receiverPhone.value     = data.client.phone;
-      t_destination.value       = data.client.location;
-	  
-
-      // OPTIONNEL : destination = lieu du client
-      t_destination.value = data.client.location;
+      // remplir le destinataire
+      t_receiverFirstName.value = data.client.firstName || '';
+      t_receiverLastName.value  = data.client.lastName || '';
+      t_receiverPhone.value     = data.client.phone || '';
+      t_destination.value       = data.client.location || '';
     });
 }
+
 
 
 function isValidPhone(phone) {
