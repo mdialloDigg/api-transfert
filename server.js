@@ -284,10 +284,12 @@ ${p.ecriture?`<button onclick="openTransfertModal()">➕ Nouveau Transfert</butt
 <tr>
 <th>Code</th>
 <th>Origine</th>
-<th>Expéditeur</th>
+<th>Expéditeur Prénom</th>
+<th>Expéditeur Nom</th>
 <th>Tel Expéditeur</th>
 <th>Destination</th>
-<th>Destinataire</th>
+<th>Destinataire Prénom</th>
+<th>Destinataire Nom</th>
 <th>Tel Destinataire</th>
 <th>Montant</th>
 <th>Frais</th>
