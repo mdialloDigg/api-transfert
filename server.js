@@ -302,10 +302,15 @@ ${transferts.map(t=>`
 <tr>
 <td>${t.code}</td>
 <td>${t.originLocation}</td>
-<td>${t.senderFirstName} ${t.senderLastName}</td>
+<td>${t.senderFirstName}</td>
+<td>${t.senderLastName}</td>
+
+<td>${t.receiverFirstName} </td>
+<td>${t.receiverLastName} </td>
+
 <td>${t.senderPhone||'-'}</td>
 <td>${t.destinationLocation}</td>
-<td>${t.receiverFirstName} ${t.receiverLastName}</td>
+
 <td>${t.receiverPhone||'-'}</td>
 <td>${t.amount}</td>
 <td>${t.fees}</td>
@@ -459,11 +464,21 @@ ${p.suppression?`<button onclick="deleteRate('${r._id}')">❌</button>`:''}
 <h3>Transfert</h3>
 <input id="t_code" readonly placeholder="Code">
 <select id="t_origin"><option>FRANCE</option><option>SUISSE</option><option>BELGIQUE</option><option>USA</option></select>
-<input id="t_sender" placeholder="Nom expéditeur">
+
+
+
+<input id="t_senderFirstName" placeholder="Prénom expéditeur">
+<input id="t_senderLastName" placeholder="Nom expéditeur">
 <input id="t_senderPhone" placeholder="Téléphone expéditeur">
-<select id="t_destination"><option>CONAKRY</option><option>LABE</option><option>FRANCE</option><option>USA</option></select>
-<input id="t_receiver" placeholder="Nom destinataire">
+
+<input id="t_receiverFirstName" placeholder="Prénom destinataire">
+<input id="t_receiverLastName" placeholder="Nom destinataire">
 <input id="t_receiverPhone" placeholder="Téléphone destinataire">
+
+
+<select id="t_destination"><option>CONAKRY</option><option>LABE</option><option>FRANCE</option><option>USA</option></select>
+
+
 <input id="t_amount" type="number" placeholder="Montant">
 <input id="t_fees" type="number" placeholder="Frais">
 <input id="t_received" readonly placeholder="Reçu">
@@ -570,10 +585,15 @@ function openTransfertModal(id = null) {
   if (!id) {
     t_code.value = '';
     t_origin.value = '';
-    t_sender.value = '';
+
     t_sender.value = connectedUser; // ✅ ICI
     t_destination.value = '';
-    t_receiver.value = '';
+	
+	t_senderFirstName.value = '';
+	t_senderLastName.value = '';
+	t_receiverFirstName.value = '';
+	t_receiverLastName.value = '';
+
     t_receiverPhone.value = '';
     t_amount.value = '';
     t_fees.value = '';
@@ -586,16 +606,21 @@ function openTransfertModal(id = null) {
     .then(t => {
       t_code.value = t.code;
       t_origin.value = t.originLocation;
-      t_sender.value = t.senderFirstName;
       t_senderPhone.value = t.senderPhone;
       t_destination.value = t.destinationLocation;
-      t_receiver.value = t.receiverFirstName;
       t_receiverPhone.value = t.receiverPhone;
       t_amount.value = t.amount;
       t_fees.value = t.fees;
       t_received.value = t.received;
       t_currency.value = t.currency;
       t_recoveryMode.value = t.recoveryMode;
+	  
+	  t_senderFirstName.value = t.senderFirstName || '';
+	  t_senderLastName.value = t.senderLastName || '';
+	  t_receiverFirstName.value = t.receiverFirstName || '';
+	  t_receiverLastName.value = t.receiverLastName || '';
+
+
     });
 }
 
@@ -653,10 +678,16 @@ function saveTransfert(){
   postData('/transfert/new',{
     _id:currentTransfertId,
     originLocation:t_origin.value,
-    senderFirstName:t_sender.value,
+
     senderPhone:t_senderPhone.value,
     destinationLocation:t_destination.value,
-    receiverFirstName:t_receiver.value,
+
+	senderFirstName: t_senderFirstName.value.trim(),
+	senderLastName: t_senderLastName.value.trim(),
+	receiverFirstName: t_receiverFirstName.value.trim(),
+	receiverLastName: t_receiverLastName.value.trim(),
+
+
     receiverPhone:t_receiverPhone.value,
     amount,
     fees,
@@ -957,10 +988,17 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
     const {
       _id,
       originLocation,
-      senderFirstName,
+
       senderPhone,
       destinationLocation,
-      receiverFirstName,
+
+senderFirstName,
+senderLastName,
+receiverFirstName,
+receiverLastName,
+
+	  
+	  
       receiverPhone,
       amount,
       fees,
@@ -983,9 +1021,15 @@ app.post('/transfert/new', requireLogin, async (req, res) => {
     const transfertData = {
       originLocation,
       destinationLocation,
-      senderFirstName,
+
       senderPhone,
-      receiverFirstName,
+
+senderFirstName: senderFirstName?.trim() || '',
+senderLastName: senderLastName?.trim() || '',
+receiverFirstName: receiverFirstName?.trim() || '',
+receiverLastName: receiverLastName?.trim() || '',
+
+
       receiverPhone,
       amount: montant,
       fees: frais,
@@ -1409,7 +1453,13 @@ app.get('/shipment/print/:id', requireLogin, async (req, res) => {
 
         <div class="box">
           <h3>Expéditeur</h3>
-          <p>${s.senderName}</p>
+
+
+
+<p><strong>Expéditeur :</strong> ${t.senderFirstName} ${t.senderLastName}</p>
+<p><strong>Destinataire :</strong> ${t.receiverFirstName} ${t.receiverLastName}</p>
+
+
           <p>📞 ${s.senderPhone || '-'}</p>
           <p>${s.senderAddress || '-'}</p>
         </div>
