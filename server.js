@@ -622,7 +622,7 @@ function findClient(){
       openTransfertModal();
 
       // PRÉ-REMPLIR DESTINATAIRE
-      t_receiver.value = data.client.firstName + ' ' + data.client.lastName;
+      t_receiver.value = data.client.firstName;
       t_receiverPhone.value = data.client.phone;
 
       // OPTIONNEL : destination = lieu du client

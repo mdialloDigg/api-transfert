@@ -1177,7 +1177,7 @@ app.post('/client/new', requireLogin, async (req, res) => {
       if (!phone) return true;
       const clean = phone.replace(/\s+/g, '');
       if (!/^\d+$/.test(clean)) return false;
-      const prefixes = ['00224', '0033', '0033'];
+      const prefixes = ['00224', '00336', '00337'];
       const prefix = prefixes.find(p => clean.startsWith(p));
       if (!prefix) return false;
       return clean.length === prefix.length + 9;
